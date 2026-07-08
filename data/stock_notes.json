@@ -1,0 +1,22 @@
+{
+  "GNA": {
+    "business": "The Co. has an extensive product portfolio, built over the years, offering a large variety of axle shafts, spindles, and other shafts having a combined capacity of 6.7 million pieces.",
+    "market_position": "The market share in the rear axle shafts was estimated to be nearly 50%.",
+    "triggers": [
+      "Down cycle was dominant and visible in stock prices.",
+      "Market was very pessimistic about Auto sector as a whole",
+      "Valuations were mouth watering"
+    ],
+    "source": "Intrinsic Value Equity Advisors / manual"
+  },
+  "FIEM": {
+    "business": "The co. enjoys a significant market share for the supply of automotive lighting & signaling equipment and rearview mirrors to Two-wheeler and Four-wheeler OEMs.",
+    "market_position": "In FY19, it had about 27-30% market share of the total 2 Wheeler headlamp market in India. The market share in the conventional lighting side in FY22 is estimated to be more than 30%.",
+    "triggers": [
+      "Down cycle was dominant and visible in stock prices.",
+      "Market was very pessimistic about Auto sector as a whole",
+      "Valuations were mouth watering"
+    ],
+    "source": "Intrinsic Value Equity Advisors / manual"
+  }
+}

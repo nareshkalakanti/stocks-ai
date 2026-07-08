@@ -1,0 +1,1198 @@
+"""PEAD 2 dashboard HTML — light/dark theme, SC/TV links, fullscreen."""
+
+from __future__ import annotations
+
+import html
+import json
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+
+import numpy as np
+import pandas as pd
+
+from stocks.shared.corp_tags import corp_tags_dict_for_ticker
+from stocks.shared.superstars.holdings import superstar_pead_map
+from stocks.shared.stock_notes import attach_stock_notes, sync_stock_notes_from_file
+from stocks.dashboards.expand_panel_html import EXPAND_PANEL_JS
+from stocks.strategies.pead2.strategy import enrich_pead_candidates, attach_strategy_breakout_signals
+from stocks.shared.links import screener_url, tradingview_url
+from stocks.core.text_utils import safe_str
+
+
+_PEAD2_FONT_LINKS = """
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+"""
+
+_PEAD2_DASHBOARD_CSS = """
+<style>
+  :root, [data-theme="light"] {
+    --bg: #f4f6f9;
+    --panel: #ffffff;
+    --panel-2: #f8fafc;
+    --border: #e2e8f0;
+    --text: #0f172a;
+    --muted: #64748b;
+    --accent: #2563eb;
+    --accent-soft: #eff6ff;
+    --input-bg: #ffffff;
+    --row-even: #f8fafc;
+    --row-hover: #f1f5f9;
+    --thead: #f1f5f9;
+    --btn-bg: #ffffff;
+    --btn-hover: #f1f5f9;
+    --link: #2563eb;
+    --link-bg: #eff6ff;
+    --green: #059669;
+    --green-dk: #047857;
+    --green-bg: #ecfdf5;
+    --amber: #d97706;
+    --amber-bg: #fffbeb;
+    --red: #dc2626;
+    --red-bg: #fef2f2;
+    --shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  }
+  [data-theme="dark"] {
+    --bg: #0a0c10;
+    --panel: #12151c;
+    --panel-2: #0d1017;
+    --border: #2a3140;
+    --text: #e8eaed;
+    --muted: #9aa3b2;
+    --accent: #6ea8fe;
+    --accent-soft: #1a2744;
+    --input-bg: #0d1017;
+    --row-even: #0f1219;
+    --row-hover: #1a2030;
+    --thead: #141820;
+    --btn-bg: #1a2030;
+    --btn-hover: #252d3d;
+    --link: #6ea8fe;
+    --link-bg: #1a2744;
+    --green: #4ade80;
+    --green-dk: #166534;
+    --green-bg: #14281f;
+    --amber: #fbbf24;
+    --amber-bg: #2d2618;
+    --red: #f87171;
+    --red-bg: #2d1818;
+    --shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13.5px;
+    line-height: 1.45;
+    letter-spacing: -0.01em;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  body.fs-active { overflow: hidden; }
+  .dash {
+    display: grid;
+    grid-template-columns: 1fr;
+    height: 100%;
+    min-height: 680px;
+  }
+  .dash.fs {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    min-height: 100vh;
+    height: 100vh;
+    background: var(--bg);
+    box-shadow: var(--shadow);
+  }
+  .sidebar {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 16px 14px;
+    overflow-y: auto;
+    min-width: 0;
+  }
+  .sidebar-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin: 0 0 14px;
+  }
+  .dash.sidebar-hidden .sidebar {
+    padding: 0;
+    border: none;
+    overflow: hidden;
+  }
+  .main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    padding: 12px 14px;
+    overflow: hidden;
+  }
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+  .title { font-size: 19px; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
+  .meta { color: var(--muted); font-size: 12px; margin-top: 2px; font-weight: 500; }
+  .top-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .icon-btn {
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--btn-bg);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .icon-btn:hover { background: var(--btn-hover); }
+  .icon-btn.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .quarter-toggle { display: inline-flex; gap: 4px; margin-left: 10px; vertical-align: middle; }
+  .quarter-btn {
+    padding: 5px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--btn-bg);
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .quarter-btn.on {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .quarter-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .filter-block { margin-bottom: 14px; }
+  .filter-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .filter-row { margin-bottom: 9px; }
+  .filter-row label { display: block; font-size: 12px; color: var(--text); margin-bottom: 4px; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+  input[type="text"] {
+    width: 100%;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+  .range-val { float: right; color: var(--accent); font-weight: 600; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .btn {
+    width: 100%;
+    margin-top: 6px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--btn-bg);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .btn:hover { background: var(--btn-hover); }
+  .toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  .count { color: var(--muted); font-size: 12px; font-weight: 600; }
+  .col-toggle button {
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--btn-bg);
+    color: var(--muted);
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .col-toggle button.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .table-wrap {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+  }
+  table { width: 100%; border-collapse: collapse; min-width: 1280px; }
+  th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--thead);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0.01em;
+    padding: 10px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+  th:hover { color: var(--accent); }
+  td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    vertical-align: middle;
+    color: var(--text);
+    font-size: 13px;
+  }
+  td.sym-td {
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: -0.02em;
+    color: var(--text);
+  }
+  td.sector-td {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 500;
+    max-width: 150px;
+    white-space: normal;
+    line-height: 1.35;
+    letter-spacing: -0.01em;
+  }
+  td.company-td {
+    white-space: normal;
+    min-width: 240px;
+    max-width: 400px;
+    vertical-align: middle;
+  }
+  tr:nth-child(even) td { background: var(--row-even); }
+  tr:hover td { background: var(--row-hover); }
+  .company-cell { min-width: 0; }
+  .company-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .company-name {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text);
+    line-height: 1.4;
+    letter-spacing: -0.01em;
+    white-space: normal;
+    word-break: break-word;
+    flex: 1;
+    min-width: 0;
+  }
+  .company-tags-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px 6px;
+    margin-top: 5px;
+    min-height: 0;
+  }
+  .company-tags-row:empty { display: none; margin: 0; }
+  .ss-holders { margin-top: 6px; font-size: 11px; color: var(--muted); line-height: 1.4; }
+  .ss-holders strong { color: var(--text); font-weight: 600; }
+  .ss-best-tag {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-right: 6px;
+    background: var(--green-bg);
+    color: var(--green-dk);
+  }
+  .ss-best-yes {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    font-weight: 700;
+    font-size: 13px;
+    background: var(--green-bg);
+    color: var(--green-dk);
+  }
+  .strat-signal-yes {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    font-weight: 700;
+    font-size: 11px;
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .strat-signal-yes.bb {
+    background: var(--amber-bg);
+    color: var(--amber);
+  }
+  .corp-tags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px 6px;
+    margin: 0;
+  }
+  .corp-tag {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    line-height: 1.25;
+    padding: 3px 8px;
+    border-radius: 5px;
+    white-space: nowrap;
+  }
+  .corp-tag-bg { color: #5b21b6; background: #ede9fe; }
+  .corp-tag-hold { color: #1d4ed8; background: #dbeafe; }
+  .corp-tag-dem { color: #92400e; background: #fef3c7; }
+  .corp-tag-spin { color: #0e7490; background: #cffafe; }
+  .corp-tag-tq { color: #1d4ed8; background: #dbeafe; }
+  .corp-tag-bb { color: #b45309; background: #fef3c7; }
+  [data-theme="dark"] .corp-tag-bg { color: #ddd6fe; background: #4c1d95; }
+  [data-theme="dark"] .corp-tag-hold { color: #bfdbfe; background: #1e3a8a; }
+  [data-theme="dark"] .corp-tag-dem { color: #fde68a; background: #78350f; }
+  [data-theme="dark"] .corp-tag-spin { color: #a5f3fc; background: #155e75; }
+  .bg-tag {
+    color: #a78bfa;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 3px;
+  }
+  .company-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .links-inline { display: inline-flex; gap: 4px; flex-shrink: 0; }
+  .links-inline a {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: var(--link-bg);
+    color: var(--link);
+    text-decoration: none;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.4;
+  }
+  .links-inline a:hover { text-decoration: underline; }
+  .sub { color: var(--muted); font-size: 11px; }
+  .num { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .g-high { color: var(--green); font-weight: 700; }
+  .g-mid { color: var(--amber); font-weight: 700; }
+  .g-low { color: var(--red); font-weight: 700; }
+  .g-pos { color: var(--green); font-weight: 600; }
+  .g-neg { color: var(--red); font-weight: 600; }
+  .g-fpe-good { color: var(--green); font-weight: 600; }
+  .g-fpe-mid { color: var(--amber); font-weight: 600; }
+  .g-fpe-bad { color: var(--red); font-weight: 600; }
+  .badge-score {
+    display: inline-block;
+    min-width: 42px;
+    text-align: center;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+  }
+  .badge-score.high {
+    background: var(--green-bg);
+    color: var(--green);
+    border: 1px solid rgba(74, 222, 128, 0.25);
+  }
+  .badge-score.mid {
+    background: var(--amber-bg);
+    color: var(--amber);
+    border: 1px solid rgba(251, 191, 36, 0.25);
+  }
+  .badge-score.low {
+    background: var(--red-bg);
+    color: var(--red);
+    border: 1px solid rgba(248, 113, 113, 0.2);
+  }
+  [data-theme="dark"] .badge-score.high {
+    background: #1a3328;
+    color: #4ade80;
+    border-color: #166534;
+  }
+  [data-theme="dark"] .badge-score.mid {
+    background: #2d2818;
+    color: #fbbf24;
+    border-color: #854d0e;
+  }
+  [data-theme="dark"] .badge-score.low {
+    background: #2d1a1a;
+    color: #f87171;
+    border-color: #991b1b;
+  }
+  .sort-hint {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 500;
+    margin-bottom: 6px;
+  }
+  .calc-dt { color: var(--muted); font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .sort-ind { color: var(--accent); margin-left: 4px; }
+  .show-sidebar-btn { display: none; margin-bottom: 8px; }
+  .dash.sidebar-hidden .show-sidebar-btn { display: inline-block; }
+  tr.pead-row { cursor: pointer; }
+  tr.pead-row.expanded td { background: var(--accent-soft) !important; }
+  tr.pead-expand td {
+    padding: 10px 14px 14px;
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--border);
+    white-space: normal;
+    vertical-align: top;
+  }
+  .q-panel { overflow-x: auto; padding: 10px 0 4px; }
+  .q-table { width: 100%; border-collapse: collapse; min-width: 640px; font-size: 11px; }
+  .q-table th, .q-table td {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    text-align: right;
+    white-space: nowrap;
+  }
+  .q-table th:first-child, .q-table td.q-label {
+    text-align: left;
+    font-weight: 600;
+    color: var(--text);
+    min-width: 120px;
+    position: sticky;
+    left: 0;
+    background: var(--panel);
+    z-index: 1;
+  }
+  .q-table th { color: var(--muted); font-size: 10px; text-transform: uppercase; background: var(--thead); }
+  .q-table th.q-recent, .q-table td.q-recent { background: rgba(37, 99, 235, 0.08); }
+  [data-theme="dark"] .q-table th.q-recent,
+  [data-theme="dark"] .q-table td.q-recent { background: rgba(88, 166, 255, 0.12); }
+  .q-table td.q-up { color: var(--green); font-weight: 700; }
+  .q-table td.q-down { color: var(--red); font-weight: 700; }
+  .q-table td.q-flat { color: var(--muted); }
+  .q-empty { color: var(--muted); font-size: 12px; padding: 8px 4px; }
+  .expand-hint { color: var(--muted); font-size: 10px; margin-left: 6px; }
+  tr.pead-row.expanded .expand-hint::after { content: "▴"; }
+  tr.pead-row:not(.expanded) .expand-hint::after { content: "▾"; }
+  .expand-body {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 20px;
+    align-items: start;
+    width: 100%;
+  }
+  @media (max-width: 960px) {
+    .expand-body { grid-template-columns: 1fr; }
+  }
+  .expand-wrap { display: flex; flex-direction: column; gap: 14px; width: 100%; }
+  .note-stack {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 10px;
+    width: 100%;
+  }
+  .note-card {
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    padding: 12px 14px;
+    line-height: 1.45;
+    font-size: 12px;
+    box-shadow: var(--shadow);
+  }
+  .note-card.business { border-left: 4px solid var(--accent); }
+  .note-card.market { border-left: 4px solid var(--green); }
+  .note-card.triggers { border-left: 4px solid var(--amber); }
+  .note-title {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .note-body { color: var(--text); white-space: pre-wrap; }
+  .note-list { margin: 0; padding-left: 18px; color: var(--text); }
+  .note-list li { margin-bottom: 4px; }
+  .note-list li:last-child { margin-bottom: 0; }
+  .note-source {
+    grid-column: 1 / -1;
+    margin-top: 2px;
+    font-size: 10px;
+    color: var(--muted);
+    font-style: italic;
+  }
+  .snap-panel {
+    min-width: 300px;
+    max-width: 340px;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .snap-metrics {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 16px 20px;
+    margin-bottom: 14px;
+  }
+  .snap-metric {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .snap-metric-label {
+    font-size: 12px;
+    color: var(--muted);
+    font-weight: 500;
+  }
+  .snap-metric-val {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .snap-metric-val.pos { color: var(--green); }
+  .snap-metric-val.neg { color: var(--red); }
+  .snap-class {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.35;
+    margin: -6px 0 12px;
+    word-break: break-word;
+  }
+  .snap-class-sep { margin: 0 5px; opacity: 0.5; }
+  .snap-section { margin-top: 14px; }
+  .snap-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .ma-pills {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .ma-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #f8fafc;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .ma-pill .ma-period {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+    min-width: 22px;
+    text-align: center;
+  }
+  .ma-pill .ma-val {
+    font-weight: 700;
+    font-size: 12px;
+    color: var(--text);
+    margin-left: auto;
+  }
+  .ma-pill.above {
+    border-color: rgba(5, 150, 105, 0.45);
+    background: rgba(5, 150, 105, 0.12);
+  }
+  .ma-pill.below {
+    border-color: rgba(220, 38, 38, 0.4);
+    background: rgba(220, 38, 38, 0.1);
+  }
+  .ma-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .ma-icon.up { color: var(--green); }
+  .ma-icon.down { color: var(--red); }
+  .range-wrap { margin-top: 2px; }
+  .range-ends {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    font-variant-numeric: tabular-nums;
+  }
+  .range-low { color: var(--red); }
+  .range-high { color: var(--green); }
+  .range-track {
+    position: relative;
+    height: 8px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--red) 0%, #fbbf24 50%, var(--green) 100%);
+  }
+  .range-thumb {
+    position: absolute;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    margin-top: -7px;
+    margin-left: -7px;
+    border-radius: 50%;
+    background: #4f46e5;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.3);
+  }
+</style>
+"""
+
+
+def format_generated_ist(dt: datetime | str | None = None) -> str:
+    """Format timestamp like FinanciallyFree: Generated YYYY-MM-DD HH:MM IST."""
+    if dt is None:
+        parsed = datetime.now(timezone.utc)
+    elif isinstance(dt, str):
+        parsed = pd.Timestamp(dt).to_pydatetime()
+    else:
+        parsed = dt
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(ZoneInfo("Asia/Kolkata")).strftime(
+        "Generated %Y-%m-%d %H:%M IST"
+    )
+
+
+def _scan_generated_ist(df: pd.DataFrame) -> str:
+    if df.empty or "calculation_date" not in df.columns:
+        return format_generated_ist()
+    series = df["calculation_date"].dropna()
+    if series.empty:
+        return format_generated_ist()
+    return format_generated_ist(str(series.iloc[0]))
+
+
+def _clean_json_scalar(val):
+    if val is None:
+        return None
+    if isinstance(val, float) and pd.isna(val):
+        return None
+    if isinstance(val, (np.floating,)) and pd.isna(val):
+        return None
+    return val
+
+
+def _strategy_meta_html(meta: dict | None) -> str:
+    if not meta:
+        return ""
+    tq_n = int(meta.get("tq_count") or 0)
+    bb_n = int(meta.get("bb_count") or 0)
+    if tq_n == 0 and bb_n == 0:
+        return (
+            ' · <span class="sub">TQ / BB: run <strong>Strategy</strong> scan to populate SQLite</span>'
+        )
+    parts: list[str] = []
+    if tq_n:
+        parts.append(f"TQ <strong>{tq_n}</strong>")
+    if bb_n:
+        tf = html.escape(str(meta.get("bb_timeframe") or "weekly"))
+        parts.append(f"BB <strong>{bb_n}</strong> ({tf})")
+    return f' · Strategy cache: {" · ".join(parts)}'
+
+
+def _rows_for_json(df: pd.DataFrame) -> list[dict]:
+    sync_stock_notes_from_file()
+    work = attach_strategy_breakout_signals(attach_stock_notes(df, sync_file=False))
+    ss_map = superstar_pead_map(
+        work["ticker"].astype(str).str.strip().str.upper().unique().tolist()
+        if not work.empty and "ticker" in work.columns
+        else []
+    )
+    rows: list[dict] = []
+    for _, row in enrich_pead_candidates(work).iterrows():
+        ticker = safe_str(row.get("ticker"))
+        market = safe_str(row.get("market")) or None
+        row_data = {
+                "ticker": ticker,
+                "name": safe_str(row.get("name")),
+                "market_cap_cr": _clean_json_scalar(row.get("market_cap_cr")),
+                "price": _clean_json_scalar(row.get("price")),
+                "pe_ratio": _clean_json_scalar(row.get("pe_ratio")),
+                "pead_score": _clean_json_scalar(row.get("pead_score")),
+                "comfortable_buy_price": _clean_json_scalar(row.get("comfortable_buy_price")),
+                "buy_headroom_pct": _clean_json_scalar(row.get("buy_headroom_pct")),
+                "valuation_pass": row.get("valuation_pass"),
+                "sector": safe_str(row.get("sector")) or None,
+                "industry": safe_str(row.get("industry")) or None,
+                "sub_sector": safe_str(row.get("sub_sector")) or None,
+                **corp_tags_dict_for_ticker(ticker),
+                **{k: v for k, v in (ss_map.get(ticker.upper()) or {}).items() if k != "ss_holders"},
+                "sales_yoy": _clean_json_scalar(row.get("sales_yoy")),
+                "np_yoy": _clean_json_scalar(row.get("np_yoy")),
+                "eps_yoy": _clean_json_scalar(row.get("eps_yoy")),
+                "calculation_date": safe_str(row.get("calculation_date")) or None,
+                "sc": row.get("screener_link") or screener_url(ticker, market),
+                "tv": row.get("tv_link") or tradingview_url(ticker, market),
+                "result_date": row.get("result_date"),
+                "forward_pe": _clean_json_scalar(row.get("forward_pe")),
+                "returns_pct": _clean_json_scalar(row.get("returns_pct")),
+                "daily_ret_pct": _clean_json_scalar(row.get("daily_ret_pct")),
+                "quarter_end": row.get("quarter_end"),
+                "sales_qoq": _clean_json_scalar(row.get("sales_qoq")),
+                "np_qoq": _clean_json_scalar(row.get("np_qoq")),
+                "ebidt_yoy": _clean_json_scalar(row.get("ebidt_yoy")),
+                "ebidt_qoq": _clean_json_scalar(row.get("ebidt_qoq")),
+                "cf_profit": _clean_json_scalar(row.get("cf_profit")),
+                "sales_bust": bool(row.get("sales_bust")),
+                "sales_streak": row.get("sales_streak"),
+                "has_tq": bool(row.get("has_tq")),
+                "tq_score": _clean_json_scalar(row.get("tq_score")),
+                "tq_crossover": safe_str(row.get("tq_crossover")) or None,
+                "has_bb": bool(row.get("has_bb")),
+                "bb_signal": safe_str(row.get("bb_signal")) or None,
+                "bb_timeframe": safe_str(row.get("bb_timeframe")) or None,
+            }
+        note = row.get("stock_note")
+        if isinstance(note, dict) and (
+            note.get("business") or note.get("market_position") or note.get("triggers")
+        ):
+            row_data["stock_note"] = {
+                "business": safe_str(note.get("business")) or None,
+                "market_position": safe_str(note.get("market_position")) or None,
+                "triggers": list(note.get("triggers") or []),
+                "source": safe_str(note.get("source")) or None,
+            }
+        quarters = row.get("quarters")
+        if isinstance(quarters, dict) and quarters.get("labels"):
+            row_data["quarters"] = quarters
+        snapshot = row.get("snapshot")
+        if isinstance(snapshot, dict) and snapshot.get("price") is not None:
+            snap = dict(snapshot)
+            mcap = row.get("market_cap_cr")
+            if mcap is not None and pd.notna(mcap) and snap.get("market_cap_cr") is None:
+                snap["market_cap_cr"] = round(float(mcap), 1)
+            row_data["snapshot"] = snap
+        elif row_data.get("price") is not None:
+            row_data["snapshot"] = {
+                "price": row_data["price"],
+                "market_cap_cr": row_data.get("market_cap_cr"),
+                "pe": row_data.get("pe_ratio"),
+                "pe_ratio": row_data.get("pe_ratio"),
+                "forward_pe": row_data.get("forward_pe"),
+                "cagr": None,
+                "w52_low": None,
+                "w52_high": None,
+                "moving_averages": [],
+            }
+        rows.append(row_data)
+    return rows
+
+
+def build_pead2_dashboard_html(
+    df: pd.DataFrame,
+    *,
+    df_previous: pd.DataFrame | None = None,
+    title: str = "Top PEAD Candidates",
+    standalone: bool = True,
+    strategy_meta: dict | None = None,
+) -> str:
+    updated = _scan_generated_ist(df)
+    strat_line = _strategy_meta_html(strategy_meta)
+    data_current = json.dumps(_rows_for_json(df), separators=(",", ":"))
+    prev_df = df_previous if df_previous is not None else pd.DataFrame()
+    data_previous = json.dumps(_rows_for_json(prev_df), separators=(",", ":"))
+    has_previous = len(prev_df) > 0
+
+    body = f"""
+<div class="dash" id="dash">
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h1 class="title">🏆 {html.escape(title)}</h1>
+        <div class="meta">
+          {html.escape(updated)} · percentile PEAD score · PE (TTM) + Fwd PE · TQ / BB from Strategy cache{strat_line} · click row for quarterly data
+          <span class="quarter-toggle">
+            <button type="button" class="quarter-btn on" id="btn-q-current">Current Quarter</button>
+            <button type="button" class="quarter-btn" id="btn-q-previous"{" disabled" if not has_previous else ""}>Previous Quarter</button>
+          </span>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button class="icon-btn" id="btn-theme" type="button" title="Toggle theme">Light</button>
+        <button class="icon-btn" id="btn-fs" type="button" title="Fullscreen">Fullscreen</button>
+      </div>
+    </div>
+    <div class="toolbar">
+      <div class="count" id="count-label">0 companies</div>
+      <div class="col-toggle">
+        <button type="button" id="btn-cols" title="Show growth / CF columns">Columns (<span id="col-visible">9</span>/<span id="col-total">16</span>)</button>
+      </div>
+    </div>
+    <div class="table-wrap" id="table-wrap">
+      <table>
+        <thead><tr id="thead"></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+<script>
+{EXPAND_PANEL_JS}
+const DATA_CURRENT = {data_current};
+const DATA_PREVIOUS = {data_previous};
+const HAS_PREVIOUS = {"true" if has_previous else "false"};
+let quarterMode = "current";
+const COLS = [
+  {{id:"company", label:"Company", fmt:"company", def:true}},
+  {{id:"pead_score", label:"PEAD Score", fmt:"score", def:true}},
+  {{id:"tq_score", label:"TQ", fmt:"tq", def:true, title:"TQ score from last Strategy scan (SQLite)"}},
+  {{id:"bb_signal", label:"BB", fmt:"bb", def:true, title:"Bollinger breakout from last Strategy scan (SQLite)"}},
+  {{id:"result_date", label:"Result Date", fmt:"date", def:true}},
+  {{id:"pe_ratio", label:"PE", fmt:"pe", def:true, title:"Option A: price ÷ sum of last 4 quarters EPS"}},
+  {{id:"forward_pe", label:"Fwd PE", fmt:"fpe", def:true, title:"Option B: price ÷ latest quarter EPS × 4"}},
+  {{id:"returns_pct", label:"Returns", fmt:"pct", def:true}},
+  {{id:"daily_ret_pct", label:"Daily Ret", fmt:"daily", def:true}},
+  {{id:"sales_yoy", label:"Sales YoY", fmt:"pct", def:false}},
+  {{id:"sales_qoq", label:"Sales QoQ", fmt:"pct", def:false}},
+  {{id:"np_yoy", label:"NP YoY", fmt:"pct", def:false}},
+  {{id:"np_qoq", label:"NP QoQ", fmt:"pct", def:false}},
+  {{id:"ebidt_yoy", label:"EBIDT YoY", fmt:"pct", def:false}},
+  {{id:"ebidt_qoq", label:"EBIDT QoQ", fmt:"pct", def:false}},
+  {{id:"cf_profit", label:"CF/Profit", fmt:"cf", def:false}},
+];
+let showAllCols = false;
+
+function visibleCols() {{
+  return COLS.filter(c => c.def || showAllCols);
+}}
+
+function updateColBtn() {{
+  const n = visibleCols().length;
+  document.getElementById("col-visible").textContent = String(n);
+  document.getElementById("col-total").textContent = String(COLS.length);
+  document.getElementById("btn-cols").classList.toggle("on", showAllCols);
+}}
+document.getElementById("btn-cols").onclick = () => {{
+  showAllCols = !showAllCols;
+  updateColBtn();
+  render();
+}};
+updateColBtn();
+let sortCol = "result_date";
+let sortDir = -1;
+let expandedTicker = null;
+
+const root = document.documentElement;
+const dash = document.getElementById("dash");
+const themeKey = "pead2-theme";
+
+function loadTheme() {{
+  const t = localStorage.getItem(themeKey) || "dark";
+  root.setAttribute("data-theme", t);
+  document.getElementById("btn-theme").textContent = t === "light" ? "Dark" : "Light";
+}}
+function toggleTheme() {{
+  const next = root.getAttribute("data-theme") === "light" ? "dark" : "light";
+  root.setAttribute("data-theme", next);
+  localStorage.setItem(themeKey, next);
+  document.getElementById("btn-theme").textContent = next === "light" ? "Dark" : "Light";
+}}
+function toggleFs() {{
+  const on = dash.classList.toggle("fs");
+  document.body.classList.toggle("fs-active", on);
+  document.getElementById("btn-fs").textContent = on ? "Exit fullscreen" : "Fullscreen";
+  document.getElementById("btn-fs").classList.toggle("on", on);
+}}
+
+document.getElementById("btn-theme").onclick = toggleTheme;
+document.getElementById("btn-fs").onclick = toggleFs;
+document.addEventListener("keydown", (e) => {{
+  if (e.key === "Escape" && dash.classList.contains("fs")) toggleFs();
+}});
+loadTheme();
+
+function activeData() {{
+  return quarterMode === "previous" ? DATA_PREVIOUS : DATA_CURRENT;
+}}
+
+function setQuarterMode(mode) {{
+  if (mode === "previous" && !HAS_PREVIOUS) return;
+  quarterMode = mode;
+  expandedTicker = null;
+  document.getElementById("btn-q-current").classList.toggle("on", mode === "current");
+  document.getElementById("btn-q-previous").classList.toggle("on", mode === "previous");
+  render();
+}}
+document.getElementById("btn-q-current").onclick = () => setQuarterMode("current");
+document.getElementById("btn-q-previous").onclick = () => setQuarterMode("previous");
+
+function num(v) {{ return v === null || v === undefined || v === "" ? null : Number(v); }}
+function fmtPct(v) {{
+  const n = num(v);
+  if (n === null || isNaN(n)) return "—";
+  const cls = n >= 0 ? "g-pos" : "g-neg";
+  const sign = n >= 0 ? "+" : "";
+  return `<span class="${{cls}}">${{sign}}${{n.toFixed(2)}}%</span>`;
+}}
+function fmtDaily(v) {{
+  const n = num(v);
+  if (n === null || isNaN(n)) return "—";
+  const cls = n >= 0 ? "g-pos" : "g-neg";
+  const sign = n >= 0 ? "+" : "";
+  return `<span class="${{cls}}">${{sign}}${{n.toFixed(3)}}%</span>`;
+}}
+function fmtScore(v) {{
+  const n = num(v);
+  if (n === null || isNaN(n)) return "—";
+  const tier = n > 40 ? "high" : (n > 30 ? "mid" : "low");
+  return `<span class="badge-score ${{tier}}">${{n.toFixed(1)}}</span>`;
+}}
+function fmtPe(v) {{
+  const n = num(v);
+  if (n === null || isNaN(n)) return "—";
+  const cls = n < 0 ? "g-neg" : "";
+  return `<span class="${{cls}}">${{n.toFixed(1)}}</span>`;
+}}
+function fmtFpe(v) {{
+  const n = num(v);
+  if (n === null || isNaN(n)) return "—";
+  let cls = "g-fpe-good";
+  if (n > 40) cls = "g-fpe-bad";
+  else if (n > 20) cls = "g-fpe-mid";
+  return `<span class="${{cls}}">${{n.toFixed(1)}}</span>`;
+}}
+function fmtCf(v) {{
+  const n = num(v);
+  if (n === null || isNaN(n)) return "—";
+  let cls = "g-fpe-good";
+  if (n < 0.5) cls = "g-fpe-bad";
+  else if (n < 1.2) cls = "g-fpe-mid";
+  return `<span class="${{cls}}">${{n.toFixed(2)}}</span>`;
+}}
+function fmtDateIso(v) {{
+  if (!v) return "—";
+  return String(v).slice(0, 10);
+}}
+function fmtRet(v) {{
+  const n = num(v);
+  if (n === null || isNaN(n)) return "—";
+  const cls = n >= 0 ? "g-pos" : "g-neg";
+  return `<span class="${{cls}}">${{n.toFixed(2)}}</span>`;
+}}
+function fmtNum(v) {{
+  const n = num(v);
+  if (n === null || isNaN(n)) return "—";
+  return `<span class="g-mid">${{n.toFixed(2)}}</span>`;
+}}
+function fmtDate(v) {{
+  if (!v) return "—";
+  const parts = String(v).split("-");
+  if (parts.length === 3) {{
+    const d = parseInt(parts[2], 10);
+    const m = parseInt(parts[1], 10);
+    return `${{d}}/${{m}}/${{parts[0]}}`;
+  }}
+  return String(v);
+}}
+function fmtPrice(v) {{
+  const n = num(v);
+  if (n === null || isNaN(n)) return "—";
+  return `<span class="num">₹${{n.toLocaleString("en-IN", {{ minimumFractionDigits: 2, maximumFractionDigits: 2 }})}}</span>`;
+}}
+function fmtCompany(r) {{
+  const name = r.name || r.ticker;
+  const esc = (s) => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  const tags = fmtCorpTags(r);
+  return (
+    `<div class="company-cell">` +
+    `<div class="company-top">` +
+    `<span class="company-name" title="${{esc(name)}}">${{esc(name)}}</span>` +
+    `<span class="company-actions">` +
+    `<span class="expand-hint" title="Click row for quarterly data"></span>` +
+    `<span class="links-inline">` +
+    `<a href="${{r.sc}}" target="_blank" rel="noopener noreferrer" title="screener.in">SC</a>` +
+    `<a href="${{r.tv}}" target="_blank" rel="noopener noreferrer" title="TradingView">TV</a>` +
+    `</span></span></div>` +
+    (tags ? `<div class="company-tags-row">${{tags}}</div>` : "") +
+    `</div>`
+  );
+}}
+function fmtTq(r) {{
+  if (!r.has_tq && (r.tq_score === null || r.tq_score === undefined)) return "—";
+  const sc = num(r.tq_score);
+  const tip = r.tq_crossover ? ` title="${{String(r.tq_crossover).replace(/"/g,"&quot;")}}"` : "";
+  if (sc === null || isNaN(sc)) return `<span class="strat-signal-yes"${{tip}}>TQ</span>`;
+  return `<span class="strat-signal-yes"${{tip}}>${{sc.toFixed(0)}}</span>`;
+}}
+function fmtBb(r) {{
+  if (!r.has_bb && !r.bb_signal) return "—";
+  const sig = r.bb_signal || "BB";
+  const tf = r.bb_timeframe ? ` · ${{r.bb_timeframe}}` : "";
+  const tip = `${{sig}}${{tf}}`.replace(/"/g,"&quot;");
+  return `<span class="strat-signal-yes bb" title="${{tip}}">BB</span>`;
+}}
+function cell(col, r) {{
+  switch(col.fmt) {{
+    case "company": return fmtCompany(r);
+    case "score": return fmtScore(r.pead_score);
+    case "tq": return fmtTq(r);
+    case "bb": return fmtBb(r);
+    case "date": return fmtDate(r.result_date);
+    case "date_iso": return fmtDateIso(r.result_date);
+    case "pe": return fmtPe(r.pe_ratio);
+    case "fpe": return fmtFpe(r.forward_pe);
+    case "cf": return fmtCf(r.cf_profit);
+    case "pct": return fmtPct(r[col.id]);
+    case "daily": return fmtDaily(r.daily_ret_pct);
+    default: return r[col.id] ?? "—";
+  }}
+}}
+
+function toggleExpand(ticker) {{
+  expandedTicker = expandedTicker === ticker ? null : ticker;
+  render();
+}}
+
+function renderHead() {{
+  const tr = document.getElementById("thead");
+  tr.innerHTML = "";
+  const cols = visibleCols();
+  cols.forEach(c => {{
+    const th = document.createElement("th");
+    const ind = sortCol === c.id ? `<span class="sort-ind">${{sortDir < 0 ? "↓" : "↑"}}</span>` : "";
+    th.innerHTML = c.label + ind;
+    if (c.title) th.title = c.title;
+    th.onclick = () => {{
+      if (sortCol === c.id) sortDir *= -1;
+      else {{ sortCol = c.id; sortDir = (c.id === "company") ? 1 : -1; }}
+      render();
+    }};
+    tr.appendChild(th);
+  }});
+}}
+
+function render() {{
+  const DATA = activeData();
+  let rows = DATA.slice();
+  rows.sort((a,b) => {{
+    if (sortCol === "company") {{
+      const av = String(a.name || a.ticker || "").toLowerCase();
+      const bv = String(b.name || b.ticker || "").toLowerCase();
+      return av < bv ? -sortDir : av > bv ? sortDir : 0;
+    }}
+    if (sortCol === "result_date") {{
+      const av = String(a.result_date || "");
+      const bv = String(b.result_date || "");
+      return av < bv ? -sortDir : av > bv ? sortDir : 0;
+    }}
+    const av = num(a[sortCol]), bv = num(b[sortCol]);
+    if (av === null && bv === null) return 0;
+    if (av === null) return 1;
+    if (bv === null) return -1;
+    return (av - bv) * sortDir;
+  }});
+  document.getElementById("count-label").textContent =
+    `PEAD Candidates (${{rows.length}} companies · ${{quarterMode === "previous" ? "Previous" : "Current"}} quarter)`;
+  renderHead();
+  const tb = document.getElementById("tbody");
+  tb.innerHTML = "";
+  rows.forEach(r => {{
+    const isOpen = expandedTicker === r.ticker;
+    const tr = document.createElement("tr");
+    tr.className = "pead-row"
+      + (isOpen ? " expanded" : "");
+    tr.onclick = (e) => {{
+      if (e.target.closest("a")) return;
+      toggleExpand(r.ticker);
+    }};
+    const cols = visibleCols();
+    cols.forEach(c => {{
+      const td = document.createElement("td");
+      if (c.id === "company") td.className = "company-td";
+      td.innerHTML = cell(c, r);
+      tr.appendChild(td);
+    }});
+    tb.appendChild(tr);
+    if (isOpen) {{
+      const tr2 = document.createElement("tr");
+      tr2.className = "pead-expand";
+      const td = document.createElement("td");
+      td.colSpan = cols.length;
+      td.className = "pead-expand-td";
+      td.innerHTML = renderExpandPanel(r);
+      tr2.appendChild(td);
+      tb.appendChild(tr2);
+    }}
+  }});
+}}
+
+render();
+</script>
+"""
+
+    html_open = (
+        '<!DOCTYPE html><html lang="en" data-theme="dark"><head>'
+        f'<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+        f"<title>{html.escape(title)}</title>"
+        f"{_PEAD2_FONT_LINKS}"
+        f"{_PEAD2_DASHBOARD_CSS}</head><body>"
+    )
+    if standalone:
+        return f"{html_open}{body}</body></html>"
+    return f"{_PEAD2_FONT_LINKS}{_PEAD2_DASHBOARD_CSS}{body}"
+
+
+def pead2_iframe_height(row_count: int, *, expanded: bool = False) -> int:
+    """Tall embed so dashboard fills the page; internal scroll in table."""
+    base = min(1500, max(960, 920 + min(row_count, 40) * 2))
+    return base + (360 if expanded else 0)
