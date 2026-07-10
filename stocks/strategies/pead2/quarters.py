@@ -5,8 +5,13 @@ from __future__ import annotations
 import pandas as pd
 
 from stocks.strategies.earnings.strategy import streak_up
+from stocks.strategies.pead2.strategy import trim_reported_quarters
 
 PEAD2_QUARTER_PANEL = 5
+
+VALUATION_QUARTER_ROW_LABELS = frozenset(
+    {"Current PE", "Forward PE", "Forward EPS"},
+)
 
 _MONTH_ORDER = {
     "jan": 1,
@@ -113,7 +118,7 @@ def build_quarter_panel(
     max_quarters: int = PEAD2_QUARTER_PANEL,
 ) -> dict | None:
     """Build screener-style quarterly rows for the PEAD expand panel."""
-    rev = revenue.dropna().sort_index().astype(float)
+    rev = trim_reported_quarters(revenue.dropna().sort_index().astype(float))
     if len(rev) < 2:
         return None
 
@@ -149,6 +154,23 @@ def build_quarter_panel(
     ]
 
     return {"labels": labels, "rows": rows}
+
+
+def sanitize_quarter_panel(panel: dict | None) -> dict | None:
+    """Drop valuation PE rows from legacy cached quarter panels."""
+    if not panel or not isinstance(panel, dict):
+        return panel
+    rows = panel.get("rows") or []
+    filtered = [
+        row
+        for row in rows
+        if str(row.get("label") or "").strip() not in VALUATION_QUARTER_ROW_LABELS
+    ]
+    if len(filtered) == len(rows):
+        return panel
+    out = dict(panel)
+    out["rows"] = filtered
+    return out
 
 
 def append_valuation_rows(

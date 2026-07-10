@@ -327,6 +327,22 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_business_group_members_ticker
                 ON business_group_members(ticker);
+
+            CREATE TABLE IF NOT EXISTS company_profile_cache (
+                ticker TEXT PRIMARY KEY,
+                market TEXT,
+                website TEXT,
+                long_description TEXT,
+                company_sector TEXT,
+                company_industry TEXT,
+                headquarters TEXT,
+                employees INTEGER,
+                source TEXT,
+                fetched_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_company_profile_cache_fetched
+                ON company_profile_cache(fetched_at);
             """
         )
         _ensure_stocks_columns(conn)
@@ -1092,6 +1108,102 @@ def save_pead2_cache(rows: list[dict]) -> None:
                     ticker,
                     row.get("market"),
                     json.dumps(row, default=str),
+                    now,
+                ),
+            )
+
+
+def load_company_profile_cache(
+    tickers: list[str],
+    *,
+    max_hours: int | None = None,
+) -> dict[str, dict]:
+    """Stored company website/about rows keyed by ticker (no expiry when max_hours is None)."""
+    if not tickers:
+        return {}
+    init_db()
+    keys = [str(t).strip().upper() for t in tickers if str(t).strip()]
+    if not keys:
+        return {}
+    placeholders = ",".join("?" * len(keys))
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT ticker, market, website, long_description, company_sector,
+                   company_industry, headquarters, employees, source, fetched_at
+            FROM company_profile_cache
+            WHERE ticker IN ({placeholders})
+            """,
+            keys,
+        ).fetchall()
+    out: dict[str, dict] = {}
+    for row in rows:
+        if max_hours is not None and not _is_fresh(row["fetched_at"], max_hours):
+            continue
+        ticker = str(row["ticker"]).upper()
+        out[ticker] = {
+            "ticker": ticker,
+            "market": row["market"],
+            "website": row["website"],
+            "long_description": row["long_description"],
+            "company_sector": row["company_sector"],
+            "company_industry": row["company_industry"],
+            "headquarters": row["headquarters"],
+            "employees": row["employees"],
+            "source": row["source"],
+            "fetched_at": row["fetched_at"],
+        }
+    return out
+
+
+def load_company_profiles_from_db(tickers: list[str]) -> dict[str, dict]:
+    """Load saved company profiles from SQLite (no time limit)."""
+    return load_company_profile_cache(tickers, max_hours=None)
+
+
+def save_company_profiles(rows: list[dict]) -> None:
+    """Persist company profile rows to SQLite."""
+    save_company_profile_cache(rows)
+
+
+def save_company_profile_cache(rows: list[dict]) -> None:
+    if not rows:
+        return
+    init_db()
+    now = _utc_now()
+    with get_connection() as conn:
+        for row in rows:
+            ticker = str(row.get("ticker", "")).strip().upper()
+            if not ticker:
+                continue
+            conn.execute(
+                """
+                INSERT INTO company_profile_cache (
+                    ticker, market, website, long_description, company_sector,
+                    company_industry, headquarters, employees, source, fetched_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(ticker) DO UPDATE SET
+                    market=excluded.market,
+                    website=excluded.website,
+                    long_description=excluded.long_description,
+                    company_sector=excluded.company_sector,
+                    company_industry=excluded.company_industry,
+                    headquarters=excluded.headquarters,
+                    employees=excluded.employees,
+                    source=excluded.source,
+                    fetched_at=excluded.fetched_at
+                """,
+                (
+                    ticker,
+                    row.get("market"),
+                    row.get("website"),
+                    row.get("long_description"),
+                    row.get("company_sector"),
+                    row.get("company_industry"),
+                    row.get("headquarters"),
+                    row.get("employees"),
+                    row.get("source"),
                     now,
                 ),
             )

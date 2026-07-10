@@ -14,8 +14,8 @@ NET_INCOME_FIELDS = (
 )
 
 REVENUE_FIELDS = ("Total Revenue", "Operating Revenue", "Revenue")
-# Screener-style operating profit ≈ EBITDA for Indian quarterly P&L.
-EBIDT_FIELDS = ("EBITDA", "Operating Income", "EBIT", "Operating Income Or Loss")
+# yfinance operating profit — prefer Operating Income over EBITDA.
+EBIDT_FIELDS = ("Operating Income", "EBIT", "EBITDA", "Operating Income Or Loss")
 OP_FIELDS = EBIDT_FIELDS
 EPS_FIELDS = (
     "Diluted EPS",

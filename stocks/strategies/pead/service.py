@@ -77,20 +77,54 @@ def _eps_row(quarterly_income: pd.DataFrame) -> pd.Series | None:
     return None
 
 
-def estimate_result_date(yt: yf.Ticker, quarter_end: pd.Timestamp) -> pd.Timestamp:
-    """Best-effort earnings announcement date (Yahoo calendar, else quarter_end + 35d)."""
-    result_date = quarter_end + timedelta(days=35)
+def _ts_naive(ts: pd.Timestamp | str) -> pd.Timestamp:
+    t = pd.Timestamp(ts)
+    if getattr(t, "tzinfo", None) is not None:
+        t = t.tz_convert(None)
+    return t.normalize()
+
+
+def estimate_result_date(
+    yt: yf.Ticker,
+    quarter_end: pd.Timestamp,
+    *,
+    result_lag_days: int | None = None,
+) -> pd.Timestamp:
+    """Earnings announcement date — Yahoo calendar in [q_end, today], else q_end + lag."""
+    from stocks.core.config import PEAD_RESULT_LAG_DAYS
+
+    lag = PEAD_RESULT_LAG_DAYS if result_lag_days is None else result_lag_days
+    q_end = _ts_naive(quarter_end)
+    today = _ts_naive(pd.Timestamp.now())
+    fallback = min(q_end + timedelta(days=lag), today)
     try:
-        earnings_dates = yt.get_earnings_dates(limit=12)
+        earnings_dates = yt.get_earnings_dates(limit=24)
     except Exception:
-        return result_date
+        return fallback
     if earnings_dates is None or earnings_dates.empty:
-        return result_date
+        return fallback
+
+    candidates: list[pd.Timestamp] = []
     for ed in earnings_dates.index:
-        ed_ts = pd.Timestamp(ed)
-        if abs((ed_ts.date() - quarter_end.date()).days) <= 60 and ed_ts >= quarter_end:
-            return ed_ts
-    return result_date
+        ed_ts = _ts_naive(ed)
+        if ed_ts > today:
+            continue
+        delta = (ed_ts.date() - q_end.date()).days
+        if 0 <= delta <= 90:
+            candidates.append(ed_ts)
+    if candidates:
+        return max(candidates)
+
+    # Wider match — announced after quarter end but outside 90d window.
+    wide = [
+        _ts_naive(ed)
+        for ed in earnings_dates.index
+        if q_end <= _ts_naive(ed) <= today
+    ]
+    if wide:
+        return max(wide)
+
+    return fallback
 
 
 def _estimate_result_date_legacy(quarter_end: pd.Timestamp) -> pd.Timestamp:

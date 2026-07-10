@@ -6,14 +6,40 @@ import pandas as pd
 
 from stocks.core.config import EARNINGS_MAX_EPS_YOY_PCT
 from stocks.strategies.earnings.quality import cap_growth_qoq_pct
-from stocks.strategies.pead2.quarters import append_valuation_rows, yoy_pair_from_panel
+from stocks.strategies.pead2.service import _pead2_row_for_lag
+from stocks.strategies.pead2.quarters import append_valuation_rows, sanitize_quarter_panel, yoy_pair_from_panel
 from stocks.strategies.pead2.strategy import (
     PEAD_HIGH_SCORE_MIN,
     compute_forward_pe,
     compute_trailing_pe,
     eps_yoy_from_quarters,
     score_pead2_candidates,
+    trim_reported_quarters,
+    result_quarter_end,
 )
+
+
+def test_trim_reported_quarters_drops_future_columns():
+    idx = pd.to_datetime(
+        ["2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31", "2026-03-31"]
+    )
+    s = pd.Series([1, 2, 3, 4, 5], index=idx)
+    out = trim_reported_quarters(s, as_of=pd.Timestamp("2025-07-10"))
+    assert list(out.index) == list(idx[:2])
+    assert out.iloc[-1] == 2
+
+
+def test_result_quarter_end_skips_phantom_leading_column():
+    import yfinance as yf
+    from stocks.strategies.pead2.strategy import result_quarter_end
+
+    idx = pd.to_datetime(
+        ["2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31", "2026-03-31"]
+    )
+    s = pd.Series([1, 2, 3, 4, 5], index=idx)
+    yt = yf.Ticker("TBZ.NS")
+    q_end = result_quarter_end(s, yt, as_of=pd.Timestamp("2026-07-10"))
+    assert pd.Timestamp(q_end).date() == pd.Timestamp("2025-03-31").date()
 
 
 def test_append_valuation_rows_option_a_b():
@@ -34,6 +60,22 @@ def test_append_valuation_rows_option_a_b():
     assert by_label["Forward EPS"][-1] == 53.52
     assert by_label["Forward PE"][-1] == 8.9
     assert by_label["Current PE"][-1] == 25.7
+
+
+def test_sanitize_quarter_panel_strips_pe_rows():
+    panel = {
+        "labels": ["Mar 2025", "Jun 2025"],
+        "rows": [
+            {"label": "Sales", "values": [100, 110]},
+            {"label": "Current PE", "values": [12, 14]},
+            {"label": "Forward PE", "values": [3, 4]},
+            {"label": "Forward EPS", "values": [1.0, 1.1]},
+        ],
+    }
+    out = sanitize_quarter_panel(panel)
+    labels = {row["label"] for row in out["rows"]}
+    assert labels == {"Sales"}
+    assert out is not panel
 
 
 def test_trailing_and_forward_pe_option_a_b():
@@ -94,6 +136,40 @@ def test_score_pead2_candidates_caps_extreme_np_qoq():
     low = scored.loc[scored["ticker"] == "LOW", "pead_score"].iloc[0]
     assert spike <= 100.0
     assert spike < 100.0 or low <= spike
+
+
+def test_pead2_row_for_lag_builds_without_name_error():
+    import yfinance as yf
+
+    idx = pd.to_datetime(
+        ["2024-03-31", "2024-06-30", "2024-09-30", "2024-12-31", "2025-03-31"]
+    )
+    revenue = pd.Series([100, 110, 120, 130, 140], index=idx)
+    ebidt = revenue * 0.2
+    net_profit = revenue * 0.1
+    eps = net_profit / 10
+    hist = pd.DataFrame(
+        {"Close": [100.0] * 200},
+        index=pd.date_range("2024-01-01", periods=200),
+    )
+    yt = yf.Ticker("TBZ.NS")
+    row = _pead2_row_for_lag(
+        ticker="TBZ",
+        market="NSE",
+        market_cap_cr=1.0,
+        price_val=100.0,
+        revenue=revenue,
+        ebidt=ebidt,
+        net_profit=net_profit,
+        eps=eps,
+        cfo=None,
+        yt=yt,
+        info={},
+        hist=hist,
+        lag=0,
+    )
+    assert row is not None
+    assert row.get("quarters", {}).get("labels")
 
 
 def test_demo_scan_result_uses_our_scores():

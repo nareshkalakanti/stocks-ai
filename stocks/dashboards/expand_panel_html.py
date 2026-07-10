@@ -15,18 +15,22 @@ EXPAND_PANEL_CSS = """
   tr.strat-row:not(.expanded) .expand-hint::after { content: "▾"; }
   .expand-body {
     display: grid;
-    grid-template-columns: 320px 1fr;
-    gap: 20px;
+    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+    gap: 12px;
     align-items: start;
+    width: 100%;
+  }
+  .expand-main {
+    min-width: 0;
     width: 100%;
   }
   @media (max-width: 960px) {
     .expand-body { grid-template-columns: 1fr; }
   }
-  .q-panel { overflow-x: auto; padding: 10px 0 4px; }
-  .q-table { width: 100%; border-collapse: collapse; min-width: 640px; font-size: 11px; }
+  .q-panel { overflow-x: auto; padding: 4px 0 2px; }
+  .q-table { width: 100%; border-collapse: collapse; min-width: 480px; font-size: 11px; }
   .q-table th, .q-table td {
-    padding: 6px 10px;
+    padding: 4px 8px;
     border: 1px solid #e5e7eb;
     text-align: right;
     white-space: nowrap;
@@ -46,13 +50,13 @@ EXPAND_PANEL_CSS = """
   .q-table td.q-down { color: #dc2626; font-weight: 700; }
   .q-table td.q-flat { color: #6b7280; }
   .q-empty { color: #6b7280; font-size: 12px; padding: 8px 4px; }
-  .snap-panel { min-width: 300px; max-width: 340px; font-size: 12px; line-height: 1.35; }
+  .snap-panel { min-width: 220px; max-width: 300px; font-size: 11px; line-height: 1.3; }
   .snap-metrics {
     display: flex;
     align-items: baseline;
     flex-wrap: wrap;
-    gap: 16px 20px;
-    margin-bottom: 14px;
+    gap: 8px 12px;
+    margin-bottom: 8px;
   }
   .snap-metric { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; }
   .snap-metric-label { font-size: 12px; color: #6b7280; font-weight: 500; }
@@ -67,6 +71,69 @@ EXPAND_PANEL_CSS = """
     word-break: break-word;
   }
   .snap-class-sep { margin: 0 5px; opacity: 0.5; }
+  .co-profile {
+    margin: 12px 0 0;
+    padding: 12px 0 0;
+    border-top: 1px solid #e5e7eb;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .co-profile-website { line-height: 1.35; }
+  .co-website {
+    color: #2563eb;
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+    word-break: break-word;
+  }
+  .co-website::after {
+    content: "↗";
+    font-size: 10px;
+    margin-left: 4px;
+    opacity: 0.7;
+  }
+  .co-website:hover { text-decoration: underline; }
+  .co-profile-meta {
+    font-size: 11px;
+    line-height: 1.45;
+    color: #64748b;
+    word-break: break-word;
+  }
+  .co-profile-meta-sep { margin: 0 5px; opacity: 0.4; }
+  .co-profile-about {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .co-profile-desc {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.55;
+    color: #475569;
+    white-space: pre-wrap;
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
+  }
+  .co-profile-desc.expanded {
+    display: block;
+    -webkit-line-clamp: unset;
+  }
+  .co-profile-more {
+    border: none;
+    background: none;
+    padding: 0;
+    font-size: 11px;
+    font-weight: 600;
+    color: #2563eb;
+    cursor: pointer;
+    line-height: 1.3;
+  }
+  .co-profile-more:hover { text-decoration: underline; }
   .snap-section { margin-top: 14px; }
   .snap-label {
     font-size: 10px;
@@ -258,28 +325,33 @@ function fmtCorpTags(r) {
     const ssShow = (r.ss_best ? "★ " : "") + ssLabel;
     parts.push(`<div class="corp-tag corp-tag-ss" title="${esc(ssLabel)}">${esc(ssShow)}</div>`);
   }
-  if (r.has_tq) {
-    const tqTip = r.tq_crossover ? esc(r.tq_crossover) : "TQ signal (Strategy scan)";
-    const tqLbl = r.tq_score != null && !isNaN(Number(r.tq_score))
-      ? `TQ ${Number(r.tq_score).toFixed(0)}` : "TQ";
-    parts.push(`<div class="corp-tag corp-tag-tq" title="${tqTip}">${tqLbl}</div>`);
-  }
-  if (r.has_bb) {
-    const bbTip = esc((r.bb_signal || "BB") + (r.bb_timeframe ? " · " + r.bb_timeframe : ""));
-    parts.push(`<div class="corp-tag corp-tag-bb" title="${bbTip}">BB</div>`);
-  }
   if (!parts.length) return "";
   return `<div class="corp-tags">${parts.join("")}</div>`;
 }
 """
 
 EXPAND_PANEL_JS = """
+function fmtPctNum(n) {
+  const v = Number(n);
+  if (!isFinite(v)) return "—";
+  const t = Math.trunc(v * 10) / 10;
+  return t.toLocaleString("en-IN", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  });
+}
 function fmtQVal(v, decimals, pct) {
   if (v === null || v === undefined) return "—";
   const n = Number(v);
   if (isNaN(n)) return "—";
   const suffix = pct ? "%" : "";
-  if (decimals === 2) return n.toFixed(2) + suffix;
+  if (pct) return fmtPctNum(n) + suffix;
+  if (decimals === 2) {
+    return n.toLocaleString("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }) + suffix;
+  }
   return n.toLocaleString("en-IN", { maximumFractionDigits: 0 }) + suffix;
 }
 function fmtSnapNum(n) {
@@ -300,11 +372,70 @@ function fmtSnapClass(s) {
   const esc = (x) => String(x).replace(/&/g,"&amp;").replace(/</g,"&lt;");
   return `<div class="snap-class">${parts.map(esc).join('<span class="snap-class-sep">·</span>')}</div>`;
 }
+function fmtWebsite(url) {
+  if (!url) return "";
+  const esc = (s) => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  let href = String(url).trim();
+  if (!/^https?:\\/\\//i.test(href)) href = "https://" + href;
+  let label = href;
+  try {
+    const host = new URL(href).hostname.replace(/^www\\./i, "");
+    if (host) label = host;
+  } catch (_) {}
+  return `<a class="co-website" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`;
+}
+function toggleCoAbout(btn) {
+  const block = btn.closest(".co-profile-about");
+  if (!block) return;
+  const desc = block.querySelector(".co-profile-desc");
+  if (!desc) return;
+  const open = desc.classList.toggle("expanded");
+  btn.textContent = open ? "Show less" : "Show more";
+  btn.setAttribute("aria-expanded", open ? "true" : "false");
+}
+function fmtCoMeta(s) {
+  if (!s) return "";
+  const esc = (x) => String(x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  const parts = [];
+  if (s.company_sector) parts.push(esc(s.company_sector));
+  if (s.company_industry && s.company_industry !== s.company_sector) {
+    parts.push(esc(s.company_industry));
+  }
+  if (s.headquarters) parts.push(esc(s.headquarters));
+  if (s.employees != null && !isNaN(Number(s.employees))) {
+    parts.push(esc(Number(s.employees).toLocaleString("en-IN")) + " employees");
+  }
+  if (!parts.length) return "";
+  return `<div class="co-profile-meta">${parts.join('<span class="co-profile-meta-sep">·</span>')}</div>`;
+}
+function renderCompanyProfile(s) {
+  const desc = s?.long_description;
+  const web = s?.website;
+  const meta = fmtCoMeta(s);
+  if (!desc && !web && !meta) return "";
+  const esc = (x) => String(x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  let html = '<div class="co-profile">';
+  if (meta) html += meta;
+  if (web) {
+    html += `<div class="co-profile-website">${fmtWebsite(web)}</div>`;
+  }
+  if (desc) {
+    const long = desc.length > 220;
+    html += `<div class="co-profile-about">` +
+      `<p class="co-profile-desc${long ? "" : " expanded"}">${esc(desc)}</p>` +
+      (long
+        ? `<button type="button" class="co-profile-more" aria-expanded="false" onclick="toggleCoAbout(this)">Show more</button>`
+        : "") +
+      `</div>`;
+  }
+  html += "</div>";
+  return html;
+}
 function renderSnapshotPanel(s) {
   if (!s || s.price == null) return "";
   const cagr = s.cagr == null || isNaN(s.cagr) ? null : Number(s.cagr);
   const cagrValCls = cagr === null ? "" : (cagr >= 0 ? "pos" : "neg");
-  const cagrTxt = cagr === null ? "—" : `${cagr >= 0 ? "+" : ""}${cagr.toFixed(1)}%`;
+  const cagrTxt = cagr === null ? "—" : `${cagr >= 0 ? "+" : ""}${fmtPctNum(cagr)}%`;
   let maHtml = "";
   (s.moving_averages || []).forEach(ma => {
     const cls = ma.above ? "above" : "below";
@@ -335,10 +466,6 @@ function renderSnapshotPanel(s) {
     `<span class="snap-metric-val">${fmtSnapNum(s.price)}</span></div>` +
     `<div class="snap-metric"><span class="snap-metric-label">Mkt cap</span>` +
     `<span class="snap-metric-val">${fmtMcapCr(s.market_cap_cr)}</span></div>` +
-    `<div class="snap-metric"><span class="snap-metric-label">PE</span>` +
-    `<span class="snap-metric-val">${s.pe_ratio != null ? Number(s.pe_ratio).toFixed(1) : (s.pe != null ? Number(s.pe).toFixed(1) : "—")}</span></div>` +
-    `<div class="snap-metric"><span class="snap-metric-label">Fwd PE</span>` +
-    `<span class="snap-metric-val">${s.forward_pe != null ? Number(s.forward_pe).toFixed(1) : "—"}</span></div>` +
     `<div class="snap-metric"><span class="snap-metric-label">CAGR</span>` +
     `<span class="snap-metric-val ${cagrValCls}">${cagrTxt}</span></div>` +
     `</div>` +
@@ -348,33 +475,47 @@ function renderSnapshotPanel(s) {
     `<div class="snap-section"><div class="snap-label">52-week range</div>${rangeHtml}</div>` +
     `</div>`;
 }
-function renderQuarterPanel(q) {
+function qNum(v) {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return isNaN(n) ? null : n;
+}
+function qCellClass(row, i) {
+  if (i <= 0) return "";
+  const cur = qNum(row.values[i]);
+  const prev = qNum(row.values[i - 1]);
+  if (cur === null || prev === null) return "";
+  const goodUp = row.good_up !== false;
+  if (cur > prev) return goodUp ? "q-up" : "q-down";
+  if (cur < prev) return goodUp ? "q-down" : "q-up";
+  return "q-flat";
+}
+function renderQuarterPanel(q, profile) {
   if (!q || !q.labels || !q.rows) {
     return '<div class="q-empty">No quarterly data.</div>';
   }
+  const skipRows = new Set(["Current PE", "Forward PE", "Forward EPS"]);
+  const rows = q.rows.filter(row => !skipRows.has(String(row.label || "")));
   const n = q.labels.length;
   let h = '<div class="q-panel"><table class="q-table"><thead><tr><th></th>';
   q.labels.forEach((lb, i) => {
-    const recent = i >= n - 3 ? " q-recent" : "";
+    const recent = i >= n - 3 ? "q-recent" : "";
     h += `<th class="${recent}">${lb}</th>`;
   });
   h += "</tr></thead><tbody>";
-  q.rows.forEach(row => {
+  rows.forEach(row => {
     h += `<tr><td class="q-label">${row.label}</td>`;
     row.values.forEach((v, i) => {
-      let cls = "";
-      if (i > 0 && v != null && row.values[i - 1] != null) {
-        const prev = row.values[i - 1];
-        if (v > prev) cls = row.good_up ? " q-up" : " q-down";
-        else if (v < prev) cls = row.good_up ? " q-down" : " q-up";
-        else cls = " q-flat";
-      }
-      const recent = i >= n - 3 ? " q-recent" : "";
-      h += `<td class="${cls}${recent}">${fmtQVal(v, row.decimals, row.pct)}</td>`;
+      const tone = qCellClass(row, i);
+      const recent = i >= n - 3 ? "q-recent" : "";
+      const cls = [tone, recent].filter(Boolean).join(" ");
+      h += `<td${cls ? ` class="${cls}"` : ""}>${fmtQVal(v, row.decimals, row.pct)}</td>`;
     });
     h += "</tr>";
   });
-  h += "</tbody></table></div>";
+  h += "</tbody></table>";
+  h += renderCompanyProfile(profile);
+  h += "</div>";
   return h;
 }
 function rowSnapshot(r) {
@@ -403,6 +544,15 @@ function rowSnapshot(r) {
     if (r.industry) snap.industry = r.industry;
     if (r.sub_sector) snap.sub_sector = r.sub_sector;
     if (r.buy_headroom_pct != null) snap.buy_headroom_pct = r.buy_headroom_pct;
+    if (!snap.company_sector && r.sector) snap.company_sector = r.sector;
+    if (!snap.company_industry && r.industry) snap.company_industry = r.industry;
+    if (!snap.company_industry && r.sub_sector) snap.company_industry = r.sub_sector;
+    if (!snap.long_description && r.long_description) snap.long_description = r.long_description;
+    if (!snap.website && r.website) snap.website = r.website;
+    if (!snap.company_sector && r.company_sector) snap.company_sector = r.company_sector;
+    if (!snap.company_industry && r.company_industry) snap.company_industry = r.company_industry;
+    if (!snap.headquarters && r.headquarters) snap.headquarters = r.headquarters;
+    if (snap.employees == null && r.employees != null) snap.employees = r.employees;
   }
   return snap;
 }
@@ -437,39 +587,18 @@ function renderStockNotes(r) {
   const src = n.source ? `<div class="note-source">${esc(n.source)}</div>` : "";
   return `<div class="note-stack">${parts.join("")}${src}</div>`;
 }
-function renderStrategyBreakout(r) {
-  if (!r.has_tq && !r.has_bb) return "";
-  const esc = (s) => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
-  let inner = "";
-  if (r.has_tq) {
-    const sc = r.tq_score != null && !isNaN(Number(r.tq_score))
-      ? Number(r.tq_score).toFixed(1) : "—";
-    inner += `<div class="snap-metric"><span class="snap-metric-label">TQ score</span>` +
-      `<span class="snap-metric-val">${sc}</span></div>`;
-    if (r.tq_crossover) {
-      inner += `<div class="snap-class">${esc(r.tq_crossover)}</div>`;
-    }
-  }
-  if (r.has_bb) {
-    const bb = (r.bb_signal || "ABOVE_BAND") + (r.bb_timeframe ? " · " + r.bb_timeframe : "");
-    inner += `<div class="snap-metric"><span class="snap-metric-label">BB</span>` +
-      `<span class="snap-metric-val">${esc(bb)}</span></div>`;
-  }
-  return `<div class="snap-section"><div class="snap-label">Strategy (SQLite)</div>` +
-    `<div class="snap-metrics">${inner}</div></div>`;
-}
 function renderExpandPanel(r) {
   const notesHtml = renderStockNotes(r);
-  const snapHtml = renderSnapshotPanel(rowSnapshot(r));
-  const stratHtml = renderStrategyBreakout(r);
-  const q = renderQuarterPanel(r.quarters);
-  const bodyParts = [];
-  if (snapHtml) bodyParts.push(snapHtml);
-  if (stratHtml) bodyParts.push(`<div>${stratHtml}</div>`);
-  if (q) bodyParts.push(`<div>${q}</div>`);
-  const body = bodyParts.length
-    ? `<div class="expand-body">${bodyParts.join("")}</div>`
-    : "";
+  const snap = rowSnapshot(r);
+  const snapHtml = renderSnapshotPanel(snap);
+  const qHtml = renderQuarterPanel(r.quarters, snap);
+  let body = "";
+  if (snapHtml || qHtml) {
+    body = `<div class="expand-body">`;
+    if (snapHtml) body += snapHtml;
+    if (qHtml) body += `<div class="expand-main">${qHtml}</div>`;
+    body += `</div>`;
+  }
   if (notesHtml && body) return `<div class="expand-wrap">${notesHtml}${body}</div>`;
   if (notesHtml) return `<div class="expand-wrap">${notesHtml}</div>`;
   if (body) return body;

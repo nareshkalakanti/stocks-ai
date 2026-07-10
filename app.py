@@ -6,11 +6,10 @@ install_yfinance_noise_filters()
 from stocks.core.database import init_db
 from stocks.pages.headwind_tailwind import render_headwind_tailwind
 from stocks.pages.holdings import render_holdings
-from stocks.pages.pead2 import render_pead2
 from stocks.pages.sector_landscape import render_sector_landscape
+from stocks.pages.strategy import render_strategy
 from stocks.pages.superstars import render_superstars
 from stocks.pages.valuepickr import render_valuepickr
-from stocks.pages.strategy import render_strategy
 
 st.set_page_config(
     page_title="AI",
@@ -25,7 +24,6 @@ with st.sidebar:
         "Menu",
         [
             "Strategy",
-            "PEAD",
             "H&T",
             "Sector Landscape",
             "SuperStars",
@@ -37,8 +35,6 @@ with st.sidebar:
 
 if page == "Strategy":
     render_strategy()
-elif page == "PEAD":
-    render_pead2()
 elif page == "H&T":
     render_headwind_tailwind()
 elif page == "Sector Landscape":

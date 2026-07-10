@@ -14,7 +14,8 @@ from stocks.shared.corp_tags import corp_tags_dict_for_ticker
 from stocks.shared.superstars.holdings import superstar_pead_map
 from stocks.shared.stock_notes import attach_stock_notes, sync_stock_notes_from_file
 from stocks.dashboards.expand_panel_html import EXPAND_PANEL_JS
-from stocks.strategies.pead2.strategy import enrich_pead_candidates, attach_strategy_breakout_signals
+from stocks.strategies.pead2.strategy import enrich_pead_candidates
+from stocks.strategies.pead2.quarters import sanitize_quarter_panel
 from stocks.shared.links import screener_url, tradingview_url
 from stocks.core.text_utils import safe_str
 
@@ -134,7 +135,7 @@ _PEAD2_DASHBOARD_CSS = """
     flex-direction: column;
     min-width: 0;
     min-height: 0;
-    padding: 12px 14px;
+    padding: 8px 10px;
     overflow: hidden;
   }
   .topbar {
@@ -145,8 +146,8 @@ _PEAD2_DASHBOARD_CSS = """
     margin-bottom: 10px;
     flex-wrap: wrap;
   }
-  .title { font-size: 19px; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
-  .meta { color: var(--muted); font-size: 12px; margin-top: 2px; font-weight: 500; }
+  .title { font-size: 17px; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
+  .meta { color: var(--muted); font-size: 11px; margin-top: 2px; font-weight: 500; }
   .top-actions { display: flex; gap: 6px; flex-wrap: wrap; }
   .icon-btn {
     padding: 6px 10px;
@@ -242,7 +243,59 @@ _PEAD2_DASHBOARD_CSS = """
     background: var(--panel);
     box-shadow: var(--shadow);
   }
-  table { width: 100%; border-collapse: collapse; min-width: 1280px; }
+  table#pead-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    min-width: 620px;
+  }
+  #pead-table th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--thead);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0.01em;
+    padding: 6px 8px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+  #pead-table th.col-num { text-align: right; }
+  #pead-table th .th-inner {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+  }
+  #pead-table th.col-num .th-inner { justify-content: flex-end; }
+  #pead-table th:hover { color: var(--accent); }
+  #pead-table tr.pead-row > td {
+    padding: 5px 8px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    vertical-align: middle;
+    color: var(--text);
+    font-size: 12px;
+  }
+  #pead-table td.pead-expand-td {
+    padding: 12px 16px 16px;
+    border-bottom: 1px solid var(--border);
+    white-space: normal;
+    vertical-align: top;
+    width: 100%;
+  }
+  #pead-table td.col-num { text-align: right; }
+  #pead-table th.col-company,
+  #pead-table td.company-td { width: 34%; }
+  #pead-table th.col-num,
+  #pead-table td.col-num { width: 11%; }
   th {
     position: sticky;
     top: 0;
@@ -253,7 +306,7 @@ _PEAD2_DASHBOARD_CSS = """
     font-weight: 600;
     text-transform: none;
     letter-spacing: 0.01em;
-    padding: 10px 12px;
+    padding: 6px 8px;
     text-align: left;
     border-bottom: 1px solid var(--border);
     cursor: pointer;
@@ -262,13 +315,13 @@ _PEAD2_DASHBOARD_CSS = """
   }
   th:hover { color: var(--accent); }
   td {
-    padding: 10px 12px;
+    padding: 5px 8px;
     border-bottom: 1px solid var(--border);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
     vertical-align: middle;
     color: var(--text);
-    font-size: 13px;
+    font-size: 12px;
   }
   td.sym-td {
     font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -288,8 +341,8 @@ _PEAD2_DASHBOARD_CSS = """
   }
   td.company-td {
     white-space: normal;
-    min-width: 240px;
-    max-width: 400px;
+    min-width: 160px;
+    max-width: 280px;
     vertical-align: middle;
   }
   tr:nth-child(even) td { background: var(--row-even); }
@@ -428,6 +481,9 @@ _PEAD2_DASHBOARD_CSS = """
   .g-fpe-good { color: var(--green); font-weight: 600; }
   .g-fpe-mid { color: var(--amber); font-weight: 600; }
   .g-fpe-bad { color: var(--red); font-weight: 600; }
+  #pead-table tr.pead-row > td .g-fpe-good { color: var(--green); font-weight: 600; }
+  #pead-table tr.pead-row > td .g-fpe-mid { color: var(--amber); font-weight: 600; }
+  #pead-table tr.pead-row > td .g-fpe-bad { color: var(--red); font-weight: 600; }
   .badge-score {
     display: inline-block;
     min-width: 42px;
@@ -476,22 +532,30 @@ _PEAD2_DASHBOARD_CSS = """
     margin-bottom: 6px;
   }
   .calc-dt { color: var(--muted); font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; }
-  .sort-ind { color: var(--accent); margin-left: 4px; }
+  .sort-ind {
+    color: var(--muted);
+    font-size: 10px;
+    opacity: 0.55;
+    flex-shrink: 0;
+  }
+  .sort-ind.active { color: var(--accent); opacity: 1; font-weight: 700; }
   .show-sidebar-btn { display: none; margin-bottom: 8px; }
   .dash.sidebar-hidden .show-sidebar-btn { display: inline-block; }
   tr.pead-row { cursor: pointer; }
   tr.pead-row.expanded td { background: var(--accent-soft) !important; }
   tr.pead-expand td {
-    padding: 10px 14px 14px;
+    padding: 8px 10px 10px;
     background: var(--panel-2);
     border-bottom: 1px solid var(--border);
     white-space: normal;
     vertical-align: top;
+    width: 100%;
   }
-  .q-panel { overflow-x: auto; padding: 10px 0 4px; }
-  .q-table { width: 100%; border-collapse: collapse; min-width: 640px; font-size: 11px; }
+  .pead-expand-td { padding: 12px 16px 16px; }
+  .q-panel { overflow-x: auto; padding: 4px 0 2px; }
+  .q-table { width: 100%; border-collapse: collapse; min-width: 480px; font-size: 11px; }
   .q-table th, .q-table td {
-    padding: 6px 10px;
+    padding: 4px 8px;
     border: 1px solid var(--border);
     text-align: right;
     white-space: nowrap;
@@ -510,18 +574,25 @@ _PEAD2_DASHBOARD_CSS = """
   .q-table th.q-recent, .q-table td.q-recent { background: rgba(37, 99, 235, 0.08); }
   [data-theme="dark"] .q-table th.q-recent,
   [data-theme="dark"] .q-table td.q-recent { background: rgba(88, 166, 255, 0.12); }
-  .q-table td.q-up { color: var(--green); font-weight: 700; }
-  .q-table td.q-down { color: var(--red); font-weight: 700; }
-  .q-table td.q-flat { color: var(--muted); }
+  .q-table td.q-up,
+  #pead-table .q-table td.q-up { color: var(--green); font-weight: 700; }
+  .q-table td.q-down,
+  #pead-table .q-table td.q-down { color: var(--red); font-weight: 700; }
+  .q-table td.q-flat,
+  #pead-table .q-table td.q-flat { color: var(--muted); }
   .q-empty { color: var(--muted); font-size: 12px; padding: 8px 4px; }
   .expand-hint { color: var(--muted); font-size: 10px; margin-left: 6px; }
   tr.pead-row.expanded .expand-hint::after { content: "▴"; }
   tr.pead-row:not(.expanded) .expand-hint::after { content: "▾"; }
   .expand-body {
     display: grid;
-    grid-template-columns: 320px 1fr;
-    gap: 20px;
+    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+    gap: 12px;
     align-items: start;
+    width: 100%;
+  }
+  .expand-main {
+    min-width: 0;
     width: 100%;
   }
   @media (max-width: 960px) {
@@ -566,17 +637,17 @@ _PEAD2_DASHBOARD_CSS = """
     font-style: italic;
   }
   .snap-panel {
-    min-width: 300px;
-    max-width: 340px;
-    font-size: 12px;
-    line-height: 1.35;
+    min-width: 220px;
+    max-width: 300px;
+    font-size: 11px;
+    line-height: 1.3;
   }
   .snap-metrics {
     display: flex;
     align-items: baseline;
     flex-wrap: wrap;
-    gap: 16px 20px;
-    margin-bottom: 14px;
+    gap: 8px 12px;
+    margin-bottom: 8px;
   }
   .snap-metric {
     display: inline-flex;
@@ -605,6 +676,70 @@ _PEAD2_DASHBOARD_CSS = """
     word-break: break-word;
   }
   .snap-class-sep { margin: 0 5px; opacity: 0.5; }
+  .co-profile {
+    margin: 12px 0 0;
+    padding: 12px 0 0;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .co-profile-website { line-height: 1.35; }
+  .co-website {
+    color: var(--link);
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+    word-break: break-word;
+  }
+  .co-website::after {
+    content: "↗";
+    font-size: 10px;
+    margin-left: 4px;
+    opacity: 0.7;
+  }
+  .co-website:hover { text-decoration: underline; }
+  .co-profile-meta {
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--muted);
+    word-break: break-word;
+  }
+  .co-profile-meta-sep { margin: 0 5px; opacity: 0.4; }
+  .co-profile-about {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .co-profile-desc {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--text);
+    opacity: 0.88;
+    white-space: pre-wrap;
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
+  }
+  .co-profile-desc.expanded {
+    display: block;
+    -webkit-line-clamp: unset;
+  }
+  .co-profile-more {
+    border: none;
+    background: none;
+    padding: 0;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--link);
+    cursor: pointer;
+    line-height: 1.3;
+  }
+  .co-profile-more:hover { text-decoration: underline; }
   .snap-section { margin-top: 14px; }
   .snap-label {
     font-size: 10px;
@@ -722,37 +857,12 @@ def _scan_generated_ist(df: pd.DataFrame) -> str:
     return format_generated_ist(str(series.iloc[0]))
 
 
-def _clean_json_scalar(val):
-    if val is None:
-        return None
-    if isinstance(val, float) and pd.isna(val):
-        return None
-    if isinstance(val, (np.floating,)) and pd.isna(val):
-        return None
-    return val
-
-
-def _strategy_meta_html(meta: dict | None) -> str:
-    if not meta:
-        return ""
-    tq_n = int(meta.get("tq_count") or 0)
-    bb_n = int(meta.get("bb_count") or 0)
-    if tq_n == 0 and bb_n == 0:
-        return (
-            ' · <span class="sub">TQ / BB: run <strong>Strategy</strong> scan to populate SQLite</span>'
-        )
-    parts: list[str] = []
-    if tq_n:
-        parts.append(f"TQ <strong>{tq_n}</strong>")
-    if bb_n:
-        tf = html.escape(str(meta.get("bb_timeframe") or "weekly"))
-        parts.append(f"BB <strong>{bb_n}</strong> ({tf})")
-    return f' · Strategy cache: {" · ".join(parts)}'
+from stocks.core.json_utils import json_dumps, json_safe_obj, json_safe_scalar
 
 
 def _rows_for_json(df: pd.DataFrame) -> list[dict]:
     sync_stock_notes_from_file()
-    work = attach_strategy_breakout_signals(attach_stock_notes(df, sync_file=False))
+    work = attach_stock_notes(df, sync_file=False)
     ss_map = superstar_pead_map(
         work["ticker"].astype(str).str.strip().str.upper().unique().tolist()
         if not work.empty and "ticker" in work.columns
@@ -765,42 +875,36 @@ def _rows_for_json(df: pd.DataFrame) -> list[dict]:
         row_data = {
                 "ticker": ticker,
                 "name": safe_str(row.get("name")),
-                "market_cap_cr": _clean_json_scalar(row.get("market_cap_cr")),
-                "price": _clean_json_scalar(row.get("price")),
-                "pe_ratio": _clean_json_scalar(row.get("pe_ratio")),
-                "pead_score": _clean_json_scalar(row.get("pead_score")),
-                "comfortable_buy_price": _clean_json_scalar(row.get("comfortable_buy_price")),
-                "buy_headroom_pct": _clean_json_scalar(row.get("buy_headroom_pct")),
-                "valuation_pass": row.get("valuation_pass"),
+                "market_cap_cr": json_safe_scalar(row.get("market_cap_cr")),
+                "price": json_safe_scalar(row.get("price")),
+                "pe_ratio": json_safe_scalar(row.get("pe_ratio")),
+                "pead_score": json_safe_scalar(row.get("pead_score")),
+                "comfortable_buy_price": json_safe_scalar(row.get("comfortable_buy_price")),
+                "buy_headroom_pct": json_safe_scalar(row.get("buy_headroom_pct")),
+                "valuation_pass": json_safe_scalar(row.get("valuation_pass")),
                 "sector": safe_str(row.get("sector")) or None,
                 "industry": safe_str(row.get("industry")) or None,
                 "sub_sector": safe_str(row.get("sub_sector")) or None,
                 **corp_tags_dict_for_ticker(ticker),
                 **{k: v for k, v in (ss_map.get(ticker.upper()) or {}).items() if k != "ss_holders"},
-                "sales_yoy": _clean_json_scalar(row.get("sales_yoy")),
-                "np_yoy": _clean_json_scalar(row.get("np_yoy")),
-                "eps_yoy": _clean_json_scalar(row.get("eps_yoy")),
+                "sales_yoy": json_safe_scalar(row.get("sales_yoy")),
+                "np_yoy": json_safe_scalar(row.get("np_yoy")),
+                "eps_yoy": json_safe_scalar(row.get("eps_yoy")),
                 "calculation_date": safe_str(row.get("calculation_date")) or None,
                 "sc": row.get("screener_link") or screener_url(ticker, market),
                 "tv": row.get("tv_link") or tradingview_url(ticker, market),
-                "result_date": row.get("result_date"),
-                "forward_pe": _clean_json_scalar(row.get("forward_pe")),
-                "returns_pct": _clean_json_scalar(row.get("returns_pct")),
-                "daily_ret_pct": _clean_json_scalar(row.get("daily_ret_pct")),
-                "quarter_end": row.get("quarter_end"),
-                "sales_qoq": _clean_json_scalar(row.get("sales_qoq")),
-                "np_qoq": _clean_json_scalar(row.get("np_qoq")),
-                "ebidt_yoy": _clean_json_scalar(row.get("ebidt_yoy")),
-                "ebidt_qoq": _clean_json_scalar(row.get("ebidt_qoq")),
-                "cf_profit": _clean_json_scalar(row.get("cf_profit")),
+                "result_date": json_safe_scalar(row.get("result_date")),
+                "forward_pe": json_safe_scalar(row.get("forward_pe")),
+                "returns_pct": json_safe_scalar(row.get("returns_pct")),
+                "daily_ret_pct": json_safe_scalar(row.get("daily_ret_pct")),
+                "quarter_end": json_safe_scalar(row.get("quarter_end")),
+                "sales_qoq": json_safe_scalar(row.get("sales_qoq")),
+                "np_qoq": json_safe_scalar(row.get("np_qoq")),
+                "ebidt_yoy": json_safe_scalar(row.get("ebidt_yoy")),
+                "ebidt_qoq": json_safe_scalar(row.get("ebidt_qoq")),
+                "cf_profit": json_safe_scalar(row.get("cf_profit")),
                 "sales_bust": bool(row.get("sales_bust")),
-                "sales_streak": row.get("sales_streak"),
-                "has_tq": bool(row.get("has_tq")),
-                "tq_score": _clean_json_scalar(row.get("tq_score")),
-                "tq_crossover": safe_str(row.get("tq_crossover")) or None,
-                "has_bb": bool(row.get("has_bb")),
-                "bb_signal": safe_str(row.get("bb_signal")) or None,
-                "bb_timeframe": safe_str(row.get("bb_timeframe")) or None,
+                "sales_streak": json_safe_scalar(row.get("sales_streak")),
             }
         note = row.get("stock_note")
         if isinstance(note, dict) and (
@@ -814,15 +918,28 @@ def _rows_for_json(df: pd.DataFrame) -> list[dict]:
             }
         quarters = row.get("quarters")
         if isinstance(quarters, dict) and quarters.get("labels"):
-            row_data["quarters"] = quarters
+            row_data["quarters"] = sanitize_quarter_panel(quarters)
         snapshot = row.get("snapshot")
-        if isinstance(snapshot, dict) and snapshot.get("price") is not None:
+        snap_price = json_safe_scalar(snapshot.get("price") if isinstance(snapshot, dict) else None)
+        if isinstance(snapshot, dict) and snap_price is not None:
             snap = dict(snapshot)
             mcap = row.get("market_cap_cr")
             if mcap is not None and pd.notna(mcap) and snap.get("market_cap_cr") is None:
                 snap["market_cap_cr"] = round(float(mcap), 1)
             row_data["snapshot"] = snap
-        elif row_data.get("price") is not None:
+            if snap.get("long_description"):
+                row_data["long_description"] = snap["long_description"]
+            if snap.get("website"):
+                row_data["website"] = snap["website"]
+            for key in (
+                "company_sector",
+                "company_industry",
+                "headquarters",
+                "employees",
+            ):
+                if snap.get(key) is not None:
+                    row_data[key] = json_safe_scalar(snap.get(key))
+        elif json_safe_scalar(row.get("price")) is not None:
             row_data["snapshot"] = {
                 "price": row_data["price"],
                 "market_cap_cr": row_data.get("market_cap_cr"),
@@ -834,7 +951,7 @@ def _rows_for_json(df: pd.DataFrame) -> list[dict]:
                 "w52_high": None,
                 "moving_averages": [],
             }
-        rows.append(row_data)
+        rows.append(json_safe_obj(row_data))
     return rows
 
 
@@ -844,13 +961,14 @@ def build_pead2_dashboard_html(
     df_previous: pd.DataFrame | None = None,
     title: str = "Top PEAD Candidates",
     standalone: bool = True,
-    strategy_meta: dict | None = None,
+    default_sort_col: str = "returns_pct",
+    default_sort_dir: int = -1,
+    recent_filter_days: int | None = None,
 ) -> str:
     updated = _scan_generated_ist(df)
-    strat_line = _strategy_meta_html(strategy_meta)
-    data_current = json.dumps(_rows_for_json(df), separators=(",", ":"))
+    data_current = json_dumps(_rows_for_json(df), separators=(",", ":"))
     prev_df = df_previous if df_previous is not None else pd.DataFrame()
-    data_previous = json.dumps(_rows_for_json(prev_df), separators=(",", ":"))
+    data_previous = json_dumps(_rows_for_json(prev_df), separators=(",", ":"))
     has_previous = len(prev_df) > 0
 
     body = f"""
@@ -860,7 +978,7 @@ def build_pead2_dashboard_html(
       <div>
         <h1 class="title">🏆 {html.escape(title)}</h1>
         <div class="meta">
-          {html.escape(updated)} · percentile PEAD score · PE (TTM) + Fwd PE · TQ / BB from Strategy cache{strat_line} · click row for quarterly data
+          {html.escape(updated)} · FF-style PEAD score · click row for quarterly data
           <span class="quarter-toggle">
             <button type="button" class="quarter-btn on" id="btn-q-current">Current Quarter</button>
             <button type="button" class="quarter-btn" id="btn-q-previous"{" disabled" if not has_previous else ""}>Previous Quarter</button>
@@ -875,11 +993,12 @@ def build_pead2_dashboard_html(
     <div class="toolbar">
       <div class="count" id="count-label">0 companies</div>
       <div class="col-toggle">
-        <button type="button" id="btn-cols" title="Show growth / CF columns">Columns (<span id="col-visible">9</span>/<span id="col-total">16</span>)</button>
+        <button type="button" class="quarter-btn" id="btn-recent" title="Show only stocks with a recent result date">Latest results</button>
+        <button type="button" id="btn-cols" title="Show growth / CF columns">Columns (<span id="col-visible">6</span>/<span id="col-total">13</span>)</button>
       </div>
     </div>
     <div class="table-wrap" id="table-wrap">
-      <table>
+      <table id="pead-table">
         <thead><tr id="thead"></tr></thead>
         <tbody id="tbody"></tbody>
       </table>
@@ -895,11 +1014,8 @@ let quarterMode = "current";
 const COLS = [
   {{id:"company", label:"Company", fmt:"company", def:true}},
   {{id:"pead_score", label:"PEAD Score", fmt:"score", def:true}},
-  {{id:"tq_score", label:"TQ", fmt:"tq", def:true, title:"TQ score from last Strategy scan (SQLite)"}},
-  {{id:"bb_signal", label:"BB", fmt:"bb", def:true, title:"Bollinger breakout from last Strategy scan (SQLite)"}},
   {{id:"result_date", label:"Result Date", fmt:"date", def:true}},
-  {{id:"pe_ratio", label:"PE", fmt:"pe", def:true, title:"Option A: price ÷ sum of last 4 quarters EPS"}},
-  {{id:"forward_pe", label:"Fwd PE", fmt:"fpe", def:true, title:"Option B: price ÷ latest quarter EPS × 4"}},
+  {{id:"forward_pe", label:"Forward PE", fmt:"fpe", def:true, title:"Price ÷ latest quarter EPS × 4"}},
   {{id:"returns_pct", label:"Returns", fmt:"pct", def:true}},
   {{id:"daily_ret_pct", label:"Daily Ret", fmt:"daily", def:true}},
   {{id:"sales_yoy", label:"Sales YoY", fmt:"pct", def:false}},
@@ -928,9 +1044,73 @@ document.getElementById("btn-cols").onclick = () => {{
   render();
 }};
 updateColBtn();
-let sortCol = "result_date";
-let sortDir = -1;
+let sortCol = {json.dumps(default_sort_col)};
+let sortDir = {default_sort_dir};
+let recentOnlyDays = {json.dumps(recent_filter_days)};
+let recentFilterOn = {json.dumps(recent_filter_days is not None and default_sort_col == "result_date")};
 let expandedTicker = null;
+
+function recentCutoffIso() {{
+  if (!recentOnlyDays) return null;
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - Number(recentOnlyDays));
+  return d.toISOString().slice(0, 10);
+}}
+
+function passesRecentFilter(r) {{
+  if (!recentFilterOn || !recentOnlyDays) return true;
+  const rd = String(r.result_date || "");
+  const cutoff = recentCutoffIso();
+  return cutoff && rd && rd >= cutoff;
+}}
+
+function updateRecentBtn() {{
+  const btn = document.getElementById("btn-recent");
+  if (!btn) return;
+  if (!recentOnlyDays) {{
+    btn.style.display = "none";
+    return;
+  }}
+  btn.classList.toggle("on", recentFilterOn);
+  btn.textContent = recentFilterOn
+    ? `Latest ${{recentOnlyDays}}d`
+    : "Latest results";
+}}
+document.getElementById("btn-recent").onclick = () => {{
+  if (!recentOnlyDays) return;
+  recentFilterOn = !recentFilterOn;
+  if (recentFilterOn) {{
+    sortCol = "result_date";
+    sortDir = -1;
+  }}
+  updateRecentBtn();
+  render();
+}};
+updateRecentBtn();
+
+function colById(id) {{
+  return COLS.find(c => c.id === id) || COLS[0];
+}}
+
+function compareRows(a, b, col) {{
+  if (col.fmt === "company") {{
+    const av = String(a.name || a.ticker || "").toLowerCase();
+    const bv = String(b.name || b.ticker || "").toLowerCase();
+    return av.localeCompare(bv) * sortDir;
+  }}
+  if (col.fmt === "date" || col.id === "result_date") {{
+    const av = String(a.result_date || "");
+    const bv = String(b.result_date || "");
+    return av.localeCompare(bv) * sortDir;
+  }}
+  const av = num(a[col.id]);
+  const bv = num(b[col.id]);
+  if (av === null && bv === null) return 0;
+  if (av === null) return 1;
+  if (bv === null) return -1;
+  return (av - bv) * sortDir;
+}}
 
 const root = document.documentElement;
 const dash = document.getElementById("dash");
@@ -977,24 +1157,36 @@ document.getElementById("btn-q-current").onclick = () => setQuarterMode("current
 document.getElementById("btn-q-previous").onclick = () => setQuarterMode("previous");
 
 function num(v) {{ return v === null || v === undefined || v === "" ? null : Number(v); }}
+function fmtPctNum(n) {{
+  const v = Number(n);
+  if (!isFinite(v)) return "—";
+  const t = Math.trunc(v * 10) / 10;
+  return t.toLocaleString("en-IN", {{
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  }});
+}}
 function fmtPct(v) {{
   const n = num(v);
   if (n === null || isNaN(n)) return "—";
   const cls = n >= 0 ? "g-pos" : "g-neg";
   const sign = n >= 0 ? "+" : "";
-  return `<span class="${{cls}}">${{sign}}${{n.toFixed(2)}}%</span>`;
+  return `<span class="${{cls}}">${{sign}}${{fmtPctNum(n)}}%</span>`;
 }}
 function fmtDaily(v) {{
   const n = num(v);
   if (n === null || isNaN(n)) return "—";
   const cls = n >= 0 ? "g-pos" : "g-neg";
   const sign = n >= 0 ? "+" : "";
-  return `<span class="${{cls}}">${{sign}}${{n.toFixed(3)}}%</span>`;
+  return `<span class="${{cls}}">${{sign}}${{fmtPctNum(n)}}%</span>`;
 }}
 function fmtScore(v) {{
   const n = num(v);
   if (n === null || isNaN(n)) return "—";
-  const tier = n > 40 ? "high" : (n > 30 ? "mid" : "low");
+  let tier = "mid";
+  if (n > 40) tier = "high";
+  else if (n < 0) tier = "low";
+  else if (n <= 15) tier = "low";
   return `<span class="badge-score ${{tier}}">${{n.toFixed(1)}}</span>`;
 }}
 function fmtPe(v) {{
@@ -1006,6 +1198,7 @@ function fmtPe(v) {{
 function fmtFpe(v) {{
   const n = num(v);
   if (n === null || isNaN(n)) return "—";
+  if (n >= 500) return `<span class="g-fpe-bad">${{n.toFixed(1)}}</span>`;
   let cls = "g-fpe-good";
   if (n > 40) cls = "g-fpe-bad";
   else if (n > 20) cls = "g-fpe-mid";
@@ -1027,7 +1220,8 @@ function fmtRet(v) {{
   const n = num(v);
   if (n === null || isNaN(n)) return "—";
   const cls = n >= 0 ? "g-pos" : "g-neg";
-  return `<span class="${{cls}}">${{n.toFixed(2)}}</span>`;
+  const sign = n >= 0 ? "+" : "";
+  return `<span class="${{cls}}">${{sign}}${{fmtPctNum(n)}}%</span>`;
 }}
 function fmtNum(v) {{
   const n = num(v);
@@ -1067,29 +1261,12 @@ function fmtCompany(r) {{
     `</div>`
   );
 }}
-function fmtTq(r) {{
-  if (!r.has_tq && (r.tq_score === null || r.tq_score === undefined)) return "—";
-  const sc = num(r.tq_score);
-  const tip = r.tq_crossover ? ` title="${{String(r.tq_crossover).replace(/"/g,"&quot;")}}"` : "";
-  if (sc === null || isNaN(sc)) return `<span class="strat-signal-yes"${{tip}}>TQ</span>`;
-  return `<span class="strat-signal-yes"${{tip}}>${{sc.toFixed(0)}}</span>`;
-}}
-function fmtBb(r) {{
-  if (!r.has_bb && !r.bb_signal) return "—";
-  const sig = r.bb_signal || "BB";
-  const tf = r.bb_timeframe ? ` · ${{r.bb_timeframe}}` : "";
-  const tip = `${{sig}}${{tf}}`.replace(/"/g,"&quot;");
-  return `<span class="strat-signal-yes bb" title="${{tip}}">BB</span>`;
-}}
 function cell(col, r) {{
   switch(col.fmt) {{
     case "company": return fmtCompany(r);
     case "score": return fmtScore(r.pead_score);
-    case "tq": return fmtTq(r);
-    case "bb": return fmtBb(r);
     case "date": return fmtDate(r.result_date);
     case "date_iso": return fmtDateIso(r.result_date);
-    case "pe": return fmtPe(r.pe_ratio);
     case "fpe": return fmtFpe(r.forward_pe);
     case "cf": return fmtCf(r.cf_profit);
     case "pct": return fmtPct(r[col.id]);
@@ -1103,18 +1280,29 @@ function toggleExpand(ticker) {{
   render();
 }}
 
+function colClass(c) {{
+  return c.id === "company" ? "col-company" : "col-num";
+}}
+
 function renderHead() {{
   const tr = document.getElementById("thead");
   tr.innerHTML = "";
   const cols = visibleCols();
   cols.forEach(c => {{
     const th = document.createElement("th");
-    const ind = sortCol === c.id ? `<span class="sort-ind">${{sortDir < 0 ? "↓" : "↑"}}</span>` : "";
-    th.innerHTML = c.label + ind;
+    th.className = colClass(c);
+    const active = sortCol === c.id;
+    const arrow = active ? (sortDir < 0 ? "↓" : "↑") : "↕";
+    th.innerHTML =
+      `<span class="th-inner"><span class="th-label">${{c.label}}</span>` +
+      `<span class="sort-ind${{active ? " active" : ""}}">${{arrow}}</span></span>`;
     if (c.title) th.title = c.title;
     th.onclick = () => {{
       if (sortCol === c.id) sortDir *= -1;
-      else {{ sortCol = c.id; sortDir = (c.id === "company") ? 1 : -1; }}
+      else {{
+        sortCol = c.id;
+        sortDir = (c.id === "company") ? 1 : -1;
+      }}
       render();
     }};
     tr.appendChild(th);
@@ -1123,26 +1311,12 @@ function renderHead() {{
 
 function render() {{
   const DATA = activeData();
-  let rows = DATA.slice();
-  rows.sort((a,b) => {{
-    if (sortCol === "company") {{
-      const av = String(a.name || a.ticker || "").toLowerCase();
-      const bv = String(b.name || b.ticker || "").toLowerCase();
-      return av < bv ? -sortDir : av > bv ? sortDir : 0;
-    }}
-    if (sortCol === "result_date") {{
-      const av = String(a.result_date || "");
-      const bv = String(b.result_date || "");
-      return av < bv ? -sortDir : av > bv ? sortDir : 0;
-    }}
-    const av = num(a[sortCol]), bv = num(b[sortCol]);
-    if (av === null && bv === null) return 0;
-    if (av === null) return 1;
-    if (bv === null) return -1;
-    return (av - bv) * sortDir;
-  }});
+  let rows = DATA.filter(passesRecentFilter);
+  const sortColumn = colById(sortCol);
+  rows.sort((a, b) => compareRows(a, b, sortColumn));
+  const recentNote = recentFilterOn && recentOnlyDays ? ` · latest ${{recentOnlyDays}}d` : "";
   document.getElementById("count-label").textContent =
-    `PEAD Candidates (${{rows.length}} companies · ${{quarterMode === "previous" ? "Previous" : "Current"}} quarter)`;
+    `PEAD Candidates (${{rows.length}} companies · ${{quarterMode === "previous" ? "Previous" : "Current"}} quarter${{recentNote}})`;
   renderHead();
   const tb = document.getElementById("tbody");
   tb.innerHTML = "";
@@ -1158,7 +1332,7 @@ function render() {{
     const cols = visibleCols();
     cols.forEach(c => {{
       const td = document.createElement("td");
-      if (c.id === "company") td.className = "company-td";
+      td.className = c.id === "company" ? "company-td" : "col-num";
       td.innerHTML = cell(c, r);
       tr.appendChild(td);
     }});

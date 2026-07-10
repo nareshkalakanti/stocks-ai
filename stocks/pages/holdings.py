@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 
+from stocks.core.json_utils import json_safe_obj
 from stocks.shared.portfolio import enrich_holdings, load_holdings, seed_default_holdings
 
 _CACHE_KEY = "holdings_priced_v4"
@@ -8,10 +9,7 @@ _CACHE_KEY = "holdings_priced_v4"
 
 def _session_safe_df(df: pd.DataFrame) -> pd.DataFrame:
     """Convert nullable pandas values so Streamlit can JSON-serialize session state."""
-    out = df.copy()
-    for col in out.columns:
-        out[col] = out[col].map(lambda v: None if pd.isna(v) else v)
-    return out
+    return pd.DataFrame(json_safe_obj(df.to_dict(orient="records")))
 
 
 def _holdings_display_df(priced: pd.DataFrame) -> pd.DataFrame:

@@ -30,17 +30,29 @@ from stocks.strategies.pead2.strategy import (
     NET_INCOME_FIELDS,
     Pead2AbsoluteWeights,
     compute_cf_profit,
+    compute_daily_ret_ff,
     compute_daily_ret_pct,
     compute_forward_pe,
     compute_growth_metrics,
     compute_returns_pct,
+    compute_return_since_result,
     compute_trailing_pe,
     score_pead2_candidates,
     series_through_lag,
+    trim_reported_quarters,
+    unannounced_latest_offset,
+    result_quarter_end,
 )
-from stocks.strategies.pead2.quarters import append_valuation_rows, build_quarter_panel, is_sales_bust
+from stocks.core.text_utils import safe_str
+from stocks.strategies.pead2.quarters import (
+    PEAD2_QUARTER_PANEL,
+    build_quarter_panel,
+    is_sales_bust,
+    sanitize_quarter_panel,
+)
 from stocks.strategies.pead2.technicals import build_price_snapshot
 from stocks.strategies.pead.service import estimate_result_date, prepare_pead_universe
+from stocks.market.company_profile import hydrate_blob_profile, merge_company_profile
 from stocks.market.price_service import to_yfinance_symbol
 from stocks.shared.links import attach_research_links
 from stocks.core.text_utils import safe_str
@@ -191,6 +203,15 @@ def _has_usable_revenue(revenue: pd.Series) -> bool:
     return int((recent > 0).sum()) >= max(2, len(recent) // 2)
 
 
+def _enrich_snapshot_profile(
+    snapshot: dict,
+    *,
+    ticker: str,
+    market: str | None,
+) -> dict:
+    return merge_company_profile(snapshot, ticker, market)
+
+
 def _pead2_row_for_lag(
     *,
     ticker: str,
@@ -221,13 +242,19 @@ def _pead2_row_for_lag(
         return None
 
     quarter_end = pd.Timestamp(rev.index[-1])
-    result_date = estimate_result_date(yt, quarter_end)
-    returns_pct = compute_returns_pct(
-        hist,
-        result_date,
-        drift_days=PEAD2_DRIFT_DAYS,
-    )
-    daily_ret_pct = compute_daily_ret_pct(returns_pct, hist, result_date)
+    result_q_end = result_quarter_end(revenue, yt) if lag == 0 else quarter_end
+    result_date = estimate_result_date(yt, result_q_end)
+    if price_val is not None:
+        returns_pct = compute_return_since_result(
+            hist, result_date, current_price=price_val
+        )
+    else:
+        returns_pct = compute_returns_pct(
+            hist,
+            result_date,
+            drift_days=PEAD2_DRIFT_DAYS,
+        )
+    daily_ret_pct = compute_daily_ret_ff(hist, result_date)
     growth = compute_growth_metrics(rev, np_s, eb, ep)
     if growth.get("eps_yoy") is not None:
         growth["eps_yoy"] = cap_eps_yoy_pct(growth["eps_yoy"])
@@ -236,9 +263,26 @@ def _pead2_row_for_lag(
     for qoq_key in ("sales_qoq", "np_qoq", "eps_qoq", "ebidt_qoq"):
         if growth.get(qoq_key) is not None:
             growth[qoq_key] = cap_growth_qoq_pct(growth[qoq_key])
-    quarters = build_quarter_panel(rev, eb, np_s, ep)
-    if quarters:
-        quarters = append_valuation_rows(quarters, price_val)
+    panel_lag = unannounced_latest_offset(revenue, yt) if lag == 0 else 0
+    min_panel_quarters = min(4, PEAD2_QUARTER_PANEL)
+    while panel_lag > 0:
+        probe = series_through_lag(revenue, panel_lag)
+        if probe is not None and len(probe) >= min_panel_quarters:
+            break
+        panel_lag -= 1
+    rev_p = series_through_lag(revenue, panel_lag)
+    eb_p = series_through_lag(ebidt, panel_lag)
+    np_p = series_through_lag(net_profit, panel_lag)
+    ep_p = series_through_lag(eps, panel_lag)
+    if rev_p is None:
+        rev_p = rev
+    if eb_p is None:
+        eb_p = eb
+    if np_p is None:
+        np_p = np_s
+    if ep_p is None:
+        ep_p = ep
+    quarters = sanitize_quarter_panel(build_quarter_panel(rev_p, eb_p, np_p, ep_p))
     sales_bust, sales_streak = is_sales_bust(
         rev,
         growth.get("sales_qoq"),
@@ -274,6 +318,11 @@ def _pead2_row_for_lag(
             forward_pe=row.get("forward_pe"),
         )
         if snapshot:
+            snapshot = _enrich_snapshot_profile(
+                snapshot,
+                ticker=ticker,
+                market=market,
+            )
             row["snapshot"] = snapshot
     return row
 
@@ -346,7 +395,19 @@ def analyze_pead2_ticker(
         eps = _series_from_income(income, EPS_FIELDS)
         cfo = _series_from_income(cashflow, CFO_FIELDS) if cashflow is not None else None
 
-        if revenue is None or ebidt is None or net_profit is None or eps is None:
+        revenue = trim_reported_quarters(revenue)
+        ebidt = trim_reported_quarters(ebidt)
+        net_profit = trim_reported_quarters(net_profit)
+        eps = trim_reported_quarters(eps)
+        if cfo is not None:
+            cfo = trim_reported_quarters(cfo)
+
+        if (
+            revenue.empty
+            or ebidt.empty
+            or net_profit.empty
+            or eps.empty
+        ):
             return None
         if len(revenue) < PEAD2_MIN_QUARTERS:
             return None
@@ -411,6 +472,144 @@ def analyze_pead2_ticker(
     return call_fast(_fetch, on_error=_log)
 
 
+def _filter_df_by_recent_result(df: pd.DataFrame, recent_days: int) -> pd.DataFrame:
+    """Keep rows whose result_date falls within the last ``recent_days`` calendar days."""
+    if df is None or df.empty or "result_date" not in df.columns:
+        return pd.DataFrame()
+    cutoff = pd.Timestamp.now().tz_localize(None).normalize() - pd.Timedelta(days=recent_days)
+    rd = pd.to_datetime(df["result_date"], errors="coerce")
+    mask = rd.notna() & (rd >= cutoff)
+    out = df.loc[mask].copy()
+    if out.empty:
+        return out
+    return out.sort_values("result_date", ascending=False).reset_index(drop=True)
+
+
+def run_pead2_recent_scan(
+    universe: pd.DataFrame,
+    *,
+    recent_days: int,
+    weights: Pead2AbsoluteWeights | None = None,
+    max_workers: int | None = None,
+    progress_callback: Callable[[int, int], None] | None = None,
+    min_mcap_cr: float | None = None,
+    max_fetch: int | None = None,
+) -> dict:
+    """
+    PEAD scan focused on recent result dates — uses SQLite cache first and only
+    fetches tickers missing from cache (up to ``max_fetch``).
+    """
+    from stocks.core.config import PEAD2_RECENT_MAX_FETCH
+
+    if universe.empty:
+        return {
+            "candidates": pd.DataFrame(),
+            "candidates_previous": pd.DataFrame(),
+            "scanned": 0,
+            "hits": 0,
+            "hits_previous": 0,
+            "cache_hits": 0,
+            "recent_days": recent_days,
+        }
+
+    fetch_cap = PEAD2_RECENT_MAX_FETCH if max_fetch is None else max(0, max_fetch)
+    tickers = universe["ticker"].tolist()
+    markets = universe["market"].tolist() if "market" in universe.columns else [None] * len(tickers)
+    workers = yfinance_worker_count(
+        len(tickers),
+        min(max_workers or PEAD2_MAX_WORKERS, STRATEGY_YFINANCE_MAX_INFLIGHT),
+    )
+    meta_cols = ["ticker", "name", "market", "sector"]
+    for col in ("industry", "sub_sector"):
+        if col in universe.columns:
+            meta_cols.append(col)
+    meta = universe[meta_cols].drop_duplicates("ticker")
+    universe_keys = {safe_str(t).upper() for t in tickers if safe_str(t)}
+
+    all_cached = load_pead2_cache(tickers, max_hours=999999)
+    legacy_by_ticker = _newest_legacy_cache(all_cached)
+    cached = {
+        k: hydrate_blob_profile(
+            _backfill_blob_from_legacy(v, legacy_by_ticker.get(k))
+        )
+        for k, v in all_cached.items()
+        if v.get("calc_version") == PEAD2_CALC_VERSION
+    }
+    rows: list[dict] = [blob for blob in cached.values() if safe_str(blob.get("ticker")).upper() in universe_keys]
+    cache_hits = len(rows)
+
+    pending: list[tuple[str, str | None]] = []
+    for t, m in zip(tickers, markets):
+        key = safe_str(t).upper()
+        if key and key not in cached:
+            pending.append((t, m))
+    pending = pending[:fetch_cap]
+
+    total = len(tickers)
+    fetch_total = len(pending)
+    done = 0
+    if progress_callback and fetch_total == 0:
+        progress_callback(1, 1)
+
+    fresh_rows: list[dict] = []
+    if pending:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(analyze_pead2_ticker, t, m, min_mcap_cr=min_mcap_cr): t
+                for t, m in pending
+            }
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    ticker_key = safe_str(result.get("ticker")).upper()
+                    result = _backfill_blob_from_legacy(
+                        result,
+                        legacy_by_ticker.get(ticker_key),
+                    )
+                    if ticker_key in universe_keys:
+                        fresh_rows.append(result)
+                        rows.append(result)
+                done += 1
+                if progress_callback:
+                    progress_callback(done, fetch_total)
+        if fresh_rows:
+            save_pead2_cache(fresh_rows)
+
+    if not rows:
+        return {
+            "candidates": pd.DataFrame(),
+            "candidates_previous": pd.DataFrame(),
+            "scanned": total,
+            "hits": 0,
+            "hits_previous": 0,
+            "cache_hits": cache_hits,
+            "recent_days": recent_days,
+            "fetched": len(pending),
+        }
+
+    current_rows = _expand_lag_rows(rows, quarter_lag=0)
+    previous_rows = _expand_lag_rows(rows, quarter_lag=1)
+    df = _filter_df_by_recent_result(
+        _score_pead_frame(current_rows, meta, weights=weights),
+        recent_days,
+    )
+    df_prev = _filter_df_by_recent_result(
+        _score_pead_frame(previous_rows, meta, weights=weights),
+        recent_days,
+    )
+
+    return {
+        "candidates": df,
+        "candidates_previous": df_prev,
+        "scanned": total,
+        "hits": len(df),
+        "hits_previous": len(df_prev),
+        "cache_hits": cache_hits,
+        "recent_days": recent_days,
+        "fetched": len(pending),
+    }
+
+
 def run_pead2_scan(
     universe: pd.DataFrame,
     *,
@@ -441,10 +640,12 @@ def run_pead2_scan(
             meta_cols.append(col)
     meta = universe[meta_cols].drop_duplicates("ticker")
 
-    all_cached = load_pead2_cache(tickers, max_hours=PEAD2_CACHE_HOURS)
+    all_cached = load_pead2_cache(tickers, max_hours=999999)
     legacy_by_ticker = _newest_legacy_cache(all_cached)
     cached = {
-        k: _backfill_blob_from_legacy(v, legacy_by_ticker.get(k))
+        k: hydrate_blob_profile(
+            _backfill_blob_from_legacy(v, legacy_by_ticker.get(k))
+        )
         for k, v in all_cached.items()
         if v.get("calc_version") == PEAD2_CALC_VERSION
     }
@@ -507,4 +708,9 @@ def run_pead2_scan(
     }
 
 
-__all__ = ["prepare_pead_universe", "run_pead2_scan", "Pead2AbsoluteWeights"]
+__all__ = [
+    "prepare_pead_universe",
+    "run_pead2_scan",
+    "run_pead2_recent_scan",
+    "Pead2AbsoluteWeights",
+]

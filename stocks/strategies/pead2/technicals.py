@@ -4,6 +4,49 @@ from __future__ import annotations
 
 import pandas as pd
 
+from stocks.core.text_utils import safe_str
+
+
+def _normalize_website(url: str | None) -> str | None:
+    site = safe_str(url).strip()
+    if not site:
+        return None
+    if site.startswith(("http://", "https://")):
+        return site
+    return f"https://{site}"
+
+
+def _profile_from_info(info: dict) -> dict[str, str | int]:
+    out: dict[str, str | int] = {}
+    desc = safe_str(info.get("longBusinessSummary")).strip()
+    if desc:
+        out["long_description"] = desc
+    website = _normalize_website(info.get("website"))
+    if website:
+        out["website"] = website
+    sector = safe_str(info.get("sector")).strip()
+    if sector:
+        out["company_sector"] = sector
+    industry = safe_str(info.get("industry")).strip()
+    if industry:
+        out["company_industry"] = industry
+    employees = info.get("fullTimeEmployees")
+    if employees is not None:
+        try:
+            if not pd.isna(employees):
+                out["employees"] = int(employees)
+        except (TypeError, ValueError):
+            pass
+    hq_parts = [
+        safe_str(info.get("city")).strip(),
+        safe_str(info.get("state")).strip(),
+        safe_str(info.get("country")).strip(),
+    ]
+    hq = ", ".join(part for part in hq_parts if part)
+    if hq:
+        out["headquarters"] = hq
+    return out
+
 
 def _sales_cagr_years(revenue: pd.Series, years: int = 3) -> float | None:
     rev = revenue.dropna().sort_index().astype(float)
@@ -14,7 +57,7 @@ def _sales_cagr_years(revenue: pd.Series, years: int = 3) -> float | None:
     start = float(rev.iloc[-1 - quarters_needed])
     if start <= 0 or end <= 0:
         return None
-    return round(((end / start) ** (1 / years) - 1) * 100, 1)
+    return round(((end / start) ** (1 / years) - 1) * 100, 2)
 
 
 def build_price_snapshot(
@@ -55,7 +98,7 @@ def build_price_snapshot(
     if cagr is None:
         growth = info.get("revenueGrowth") or info.get("earningsGrowth")
         if growth is not None and not pd.isna(growth):
-            cagr = round(float(growth) * 100, 1)
+            cagr = round(float(growth) * 100, 2)
 
     w52_low = info.get("fiftyTwoWeekLow")
     w52_high = info.get("fiftyTwoWeekHigh")
@@ -95,4 +138,5 @@ def build_price_snapshot(
         "w52_low": round(low, 2) if low is not None else None,
         "w52_high": round(high, 2) if high is not None else None,
         "moving_averages": moving_averages,
+        **_profile_from_info(info),
     }

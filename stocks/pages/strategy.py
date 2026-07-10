@@ -38,13 +38,19 @@ STRATEGY_OPTIONS = ("Both", "TQ", "Bollinger Bands")
 
 
 def render_strategy() -> None:
-    tab_scan, tab_recovery = st.tabs(["TQ / Bollinger Bands", "TQ W52 Recovery"])
+    tab_scan, tab_recovery, tab_pead = st.tabs(
+        ["TQ / Bollinger Bands", "TQ W52 Recovery", "PEAD"]
+    )
     with tab_scan:
         render_strategy_scan()
     with tab_recovery:
         from stocks.pages.tq_recovery import render_tq_recovery
 
         render_tq_recovery()
+    with tab_pead:
+        from stocks.pages.pead2 import render_pead2
+
+        render_pead2(show_title=False)
 
 
 def render_strategy_scan() -> None:
@@ -231,7 +237,7 @@ def render_strategy_scan() -> None:
             parts.append(f"**{saved_tq}** TQ")
         if saved_bb:
             parts.append(f"**{saved_bb}** BB ({bb_timeframe})")
-        st.success(f"Saved {' + '.join(parts)} signals to SQLite — shown on **PEAD** report.")
+        st.success(f"Saved {' + '.join(parts)} signals to SQLite — available on the **PEAD** tab.")
     embed_html = build_strategy_dashboard_html(
         tq_df=tq_result,
         bb_df=bb_result,

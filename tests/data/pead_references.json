@@ -1,0 +1,773 @@
+{
+  "meta": {
+    "captured_at": "2026-06-18T14:45:48",
+    "source": "yfinance via make_yf_ticker_with_bse_fallback",
+    "notes": [
+      "Raw lakhs/percent values captured by scripts on capture date.",
+      "Re-capture with: python -m tests.capture_pead_references",
+      "FinanciallyFree screenshot values are reference-only; PEAD scores use a different formula."
+    ],
+    "symbols": [
+      "KPL",
+      "BLACKBUCK",
+      "WPIL",
+      "JAYBARMARU",
+      "SOUTHWEST",
+      "MODIS",
+      "TSFINV"
+    ]
+  },
+  "yfinance_raw": {
+    "KPL": {
+      "symbol": "KPL",
+      "q0_end": "2026-03-31",
+      "revenue_q0_lakhs": 15711.36,
+      "revenue_q1_lakhs": 12343.97,
+      "revenue_yoy_lakhs": 11567.64,
+      "np_q0_lakhs": 2530.1,
+      "np_q1_lakhs": 1600.96,
+      "np_yoy_lakhs": 1448.89,
+      "ebitda_pct_q0": 25.34,
+      "ebitda_pct_q1": 24.02,
+      "ebitda_pct_yoy": 23.04,
+      "sales_yoy_pct": 35.8,
+      "sales_qoq_pct": 27.3,
+      "np_yoy_pct": 74.6,
+      "pead_score": 64.5,
+      "forward_pe": 36.2
+    },
+    "BLACKBUCK": {
+      "symbol": "BLACKBUCK",
+      "q0_end": "2026-03-31",
+      "revenue_q0_lakhs": 18543.3,
+      "revenue_q1_lakhs": 17178.4,
+      "revenue_yoy_lakhs": 12181.0,
+      "np_q0_lakhs": 6573.2,
+      "np_q1_lakhs": 3172.0,
+      "np_yoy_lakhs": 28017.0,
+      "ebitda_pct_q0": 31.93,
+      "ebitda_pct_q1": 33.43,
+      "ebitda_pct_yoy": 44.25,
+      "sales_yoy_pct": 52.2,
+      "sales_qoq_pct": 7.9,
+      "np_yoy_pct": -76.5,
+      "pead_score": 45.6,
+      "forward_pe": 32.4
+    },
+    "WPIL": {
+      "symbol": "WPIL",
+      "q0_end": "2026-03-31",
+      "revenue_q0_lakhs": 51124.48,
+      "revenue_q1_lakhs": 53871.75,
+      "revenue_yoy_lakhs": 57187.36,
+      "np_q0_lakhs": 4038.97,
+      "np_q1_lakhs": 5433.32,
+      "np_yoy_lakhs": 175.44,
+      "ebitda_pct_q0": 17.63,
+      "ebitda_pct_q1": 24.29,
+      "ebitda_pct_yoy": 14.99,
+      "sales_yoy_pct": -10.6,
+      "sales_qoq_pct": -5.1,
+      "np_yoy_pct": 2202.2,
+      "pead_score": 4.2,
+      "forward_pe": 14.5
+    },
+    "JAYBARMARU": {
+      "symbol": "JAYBARMARU",
+      "q0_end": "2026-03-31",
+      "revenue_q0_lakhs": 76601.47,
+      "revenue_q1_lakhs": 64549.43,
+      "revenue_yoy_lakhs": 61065.92,
+      "np_q0_lakhs": 7959.11,
+      "np_q1_lakhs": 1836.74,
+      "np_yoy_lakhs": 2056.17,
+      "ebitda_pct_q0": 12.12,
+      "ebitda_pct_q1": 10.22,
+      "ebitda_pct_yoy": 9.77,
+      "sales_yoy_pct": 25.4,
+      "sales_qoq_pct": 18.7,
+      "np_yoy_pct": 287.1,
+      "pead_score": 79.9,
+      "forward_pe": 13.4
+    },
+    "SOUTHWEST": {
+      "symbol": "SOUTHWEST",
+      "q0_end": "2026-03-31",
+      "revenue_q0_lakhs": 7769.51,
+      "revenue_q1_lakhs": 6266.57,
+      "revenue_yoy_lakhs": 7384.15,
+      "np_q0_lakhs": 1304.89,
+      "np_q1_lakhs": 921.92,
+      "np_yoy_lakhs": 999.39,
+      "ebitda_pct_q0": 24.33,
+      "ebitda_pct_q1": 23.51,
+      "ebitda_pct_yoy": 20.29,
+      "sales_yoy_pct": 5.2,
+      "sales_qoq_pct": 24.0,
+      "np_yoy_pct": 30.6,
+      "pead_score": 38.1,
+      "forward_pe": 23.0
+    },
+    "MODIS": {
+      "symbol": "MODIS",
+      "q0_end": "2026-03-31",
+      "revenue_q0_lakhs": 5149.01,
+      "revenue_q1_lakhs": 5443.45,
+      "revenue_yoy_lakhs": 1993.92,
+      "np_q0_lakhs": 440.59,
+      "np_q1_lakhs": 1276.8,
+      "np_yoy_lakhs": 151.39,
+      "ebitda_pct_q0": 14.68,
+      "ebitda_pct_q1": 27.27,
+      "ebitda_pct_yoy": 19.65,
+      "sales_yoy_pct": 158.2,
+      "sales_qoq_pct": -5.4,
+      "np_yoy_pct": 191.0,
+      "pead_score": 26.0,
+      "forward_pe": 23.2
+    },
+    "TSFINV": {
+      "symbol": "TSFINV",
+      "q0_end": "2026-03-31",
+      "revenue_q0_lakhs": 26662.42,
+      "revenue_q1_lakhs": 22707.0,
+      "revenue_yoy_lakhs": 3114.35,
+      "np_q0_lakhs": 16107.15,
+      "np_q1_lakhs": 10304.55,
+      "np_yoy_lakhs": 10714.07,
+      "ebitda_pct_q0": 25.04,
+      "ebitda_pct_q1": 22.43,
+      "ebitda_pct_yoy": 125.64,
+      "sales_yoy_pct": 756.1,
+      "sales_qoq_pct": 17.4,
+      "np_yoy_pct": 50.3,
+      "pead_score": 55.6,
+      "forward_pe": 16.8
+    }
+  },
+  "financiallyfree_screenshot": {
+    "notes": [
+      "From user-provided FinanciallyFree bot screenshots (2026-06-18).",
+      "BLACKBUCK table uses display units = yfinance_lakhs / 10.",
+      "PEAD scores are NOT expected to match our formula."
+    ],
+    "KPL": {
+      "pead_score": 44.0,
+      "forward_pe": 35.8,
+      "sales_yoy_pct": 45.7,
+      "np_yoy_pct": 87.8,
+      "revenue_q0_lakhs": 15711,
+      "revenue_q1_lakhs": 12344,
+      "revenue_yoy_lakhs": 11568,
+      "np_q0_lakhs": 2531.05,
+      "np_q1_lakhs": 1600.0,
+      "np_yoy_lakhs": 1447.99
+    },
+    "BLACKBUCK": {
+      "pead_score": 45.7,
+      "display_unit_factor": 10,
+      "revenue_q0": 1854.33,
+      "revenue_q1": 1717.84,
+      "revenue_yoy": 1218.1,
+      "np_q0": 657.32,
+      "np_q1": 317.2,
+      "np_yoy": 2801.7,
+      "ebitda_pct_q0": 31.9,
+      "ebitda_pct_q1": 33.4,
+      "ebitda_pct_yoy": 44.3
+    },
+    "WPIL": {
+      "pead_score": 40.4,
+      "revenue_q0_lakhs": 51124,
+      "revenue_q1_lakhs": 53872,
+      "revenue_yoy_lakhs": 57187,
+      "ebitda_pct_q0": 17.6,
+      "ebitda_pct_q1": 24.3,
+      "ebitda_pct_yoy": 15.0,
+      "pbt_q0_lakhs": 6685.71
+    },
+    "JAYBARMARU": {
+      "pead_score": 39.6,
+      "revenue_q0_lakhs": 76601,
+      "revenue_q1_lakhs": 64549,
+      "revenue_yoy_lakhs": 61066,
+      "np_q0_lakhs": 7959.11,
+      "np_q1_lakhs": 1836.74,
+      "np_yoy_lakhs": 2056.17,
+      "ebitda_pct_q0": 12.1,
+      "ebitda_pct_q1": 10.2,
+      "ebitda_pct_yoy": 9.8
+    }
+  },
+  "external_api_reference": {
+    "notes": [
+      "From user-provided PEAD API JSON screenshot (2026-06-18).",
+      "stock_symbol is an internal API id (not NSE/BSE ticker).",
+      "nse_symbol is our yfinance mapping for cross-check.",
+      "API rows are point-in-time (calculation_date Nov 2025); live yfinance may differ."
+    ],
+    "SOUTHWEST": {
+      "api_stock_symbol": "583279",
+      "stock_name": "South West Pinn.",
+      "nse_symbol": "SOUTHWEST",
+      "pead_score": 97.52,
+      "pead_category": "HIGH",
+      "pe_ratio": 21.9,
+      "last_price": 183.0,
+      "market_cap_cr": 545.0,
+      "sales_growth_yoy": 127.74,
+      "net_profit_growth_yoy": 1990.0,
+      "eps_growth_yoy": 1900.0,
+      "calculation_date": "2025-11-03T07:35:54.369Z"
+    },
+    "MODIS": {
+      "api_stock_symbol": "671591",
+      "stock_name": "Modi's Navnirman",
+      "nse_symbol": "MODIS",
+      "pead_score": 57.8,
+      "pead_category": "HIGH",
+      "pe_ratio": 32.9,
+      "last_price": 332.0,
+      "market_cap_cr": 650.0,
+      "sales_growth_yoy": 127.87,
+      "net_profit_growth_yoy": 164.32,
+      "eps_growth_yoy": 164.22,
+      "calculation_date": "2025-11-04T21:35:44.312Z"
+    },
+    "TSFINV": {
+      "api_stock_symbol": "573799",
+      "stock_name": "Tsf Investments",
+      "nse_symbol": "TSFINV",
+      "pead_score": 55.82,
+      "pead_category": "HIGH",
+      "pe_ratio": 28.4,
+      "last_price": 603.0,
+      "market_cap_cr": 13386.0,
+      "sales_growth_yoy": 736.12,
+      "net_profit_growth_yoy": 15.86,
+      "eps_growth_yoy": 13.0,
+      "calculation_date": null
+    }
+  },
+  "ff_returns_dashboard_2026_07_10": {
+    "notes": [
+      "FinanciallyFree PEAD Candidates dashboard screenshot (2026-07-10).",
+      "Sorted by Returns descending. PEAD scores can be negative (FF formula).",
+      "Our PEAD2 uses universe percentile scoring (0-100) \u2014 scores will not match.",
+      "Returns should match compute_return_since_result when result_date is supplied.",
+      "Daily Ret uses a different FF definition than our returns/trading_days metric.",
+      "Extended with additional FF screenshot rows (2026-07-10 batch 2).",
+      "Extended with FF screenshot batch 3 (2026-07-10).",
+      "Daily-ret sorted view captured in ff_daily_ret_dashboard_2026_07_10."
+    ],
+    "rows": [
+      {
+        "ticker": "SAKAR",
+        "company": "Sakar Healthcare",
+        "pead_score": 43,
+        "result_date": "2026-05-12",
+        "forward_pe": 43.9,
+        "returns_pct": 49.52,
+        "daily_ret_pct": -2.23
+      },
+      {
+        "ticker": "ELPROINTL",
+        "company": "Elpro Internatio",
+        "pead_score": -15,
+        "result_date": "2026-04-29",
+        "forward_pe": 999.0,
+        "returns_pct": 46.82,
+        "daily_ret_pct": -0.09
+      },
+      {
+        "ticker": "STLTECH",
+        "company": "Sterlite Tech.",
+        "pead_score": 7,
+        "result_date": "2026-04-29",
+        "forward_pe": 85.2,
+        "returns_pct": 41.49,
+        "daily_ret_pct": 2.31
+      },
+      {
+        "ticker": "NITTAGELA",
+        "company": "Nitta Gelatin",
+        "pead_score": 45,
+        "result_date": "2026-05-02",
+        "forward_pe": 30.1,
+        "returns_pct": 36.86,
+        "daily_ret_pct": 1.49
+      },
+      {
+        "ticker": "PRECOT",
+        "company": "Precot",
+        "pead_score": 42,
+        "result_date": "2026-05-16",
+        "forward_pe": 19.6,
+        "returns_pct": 35.13,
+        "daily_ret_pct": 8.66
+      },
+      {
+        "ticker": "MMWL",
+        "company": "Media Matrix",
+        "pead_score": -26,
+        "result_date": "2026-04-15",
+        "forward_pe": 143.5,
+        "returns_pct": 35.1,
+        "daily_ret_pct": -4.94
+      },
+      {
+        "ticker": "JAYBARMARU",
+        "company": "Jay Bharat Maru.",
+        "pead_score": 55,
+        "result_date": "2026-05-19",
+        "forward_pe": 12.8,
+        "returns_pct": 34.16,
+        "daily_ret_pct": 12.91
+      },
+      {
+        "ticker": "BALAMINES",
+        "company": "Balaji Amines",
+        "pead_score": 40,
+        "result_date": "2026-05-13",
+        "forward_pe": 24.9,
+        "returns_pct": 33.93,
+        "daily_ret_pct": -1.16
+      },
+      {
+        "ticker": "IDEAFORGE",
+        "company": "Ideaforge Tech",
+        "pead_score": 4,
+        "result_date": "2026-04-30",
+        "forward_pe": 52.7,
+        "returns_pct": 33.01,
+        "daily_ret_pct": -1.03
+      },
+      {
+        "ticker": "KDDL",
+        "company": "KDDL Ltd",
+        "pead_score": 15,
+        "result_date": "2026-05-19",
+        "forward_pe": 39.1,
+        "returns_pct": 32.66,
+        "daily_ret_pct": 10.55
+      },
+      {
+        "ticker": "HFCL",
+        "company": "HFCL",
+        "pead_score": 1,
+        "result_date": "2026-04-30",
+        "forward_pe": 35.9,
+        "returns_pct": 32.66,
+        "daily_ret_pct": 1.68
+      },
+      {
+        "ticker": "MODINATUR",
+        "company": "Modi Naturals",
+        "pead_score": 45,
+        "result_date": "2026-05-14",
+        "forward_pe": 25.2,
+        "returns_pct": 30.53,
+        "daily_ret_pct": 19.99
+      },
+      {
+        "ticker": "IDEA",
+        "company": "Vodafone Idea",
+        "pead_score": -1,
+        "result_date": "2026-04-30",
+        "forward_pe": 999.0,
+        "returns_pct": 25.4,
+        "daily_ret_pct": -0.15
+      },
+      {
+        "ticker": "BAJAJCON",
+        "company": "Bajaj Consumer",
+        "pead_score": -20,
+        "result_date": "2026-05-09",
+        "forward_pe": 999.0,
+        "returns_pct": 25.41,
+        "daily_ret_pct": -0.37
+      },
+      {
+        "ticker": "TATACOMM",
+        "company": "Tata Comm",
+        "pead_score": 45,
+        "result_date": "2026-05-14",
+        "forward_pe": 28.4,
+        "returns_pct": 24.5,
+        "daily_ret_pct": 19.99
+      },
+      {
+        "ticker": "RPEL",
+        "company": "Raghav Product.",
+        "pead_score": 28,
+        "result_date": "2026-04-24",
+        "forward_pe": 72.5,
+        "returns_pct": 28.16,
+        "daily_ret_pct": 1.06
+      },
+      {
+        "ticker": "SASKEN",
+        "company": "Sasken Technol.",
+        "pead_score": -20,
+        "result_date": "2026-04-29",
+        "forward_pe": 999.0,
+        "returns_pct": 27.8,
+        "daily_ret_pct": -0.29
+      },
+      {
+        "ticker": "AVALON",
+        "company": "Avalon Tech",
+        "pead_score": 56,
+        "result_date": "2026-05-09",
+        "forward_pe": 17.6,
+        "returns_pct": 25.41,
+        "daily_ret_pct": 0.85
+      },
+      {
+        "ticker": "SUVEN",
+        "company": "Suven Life Scie.",
+        "pead_score": 20,
+        "result_date": "2026-05-02",
+        "forward_pe": 94.9,
+        "returns_pct": 25.41,
+        "daily_ret_pct": 0.42
+      },
+      {
+        "ticker": "EXICOM",
+        "company": "Exicom Tele-Sys.",
+        "pead_score": 17,
+        "result_date": "2026-05-16",
+        "forward_pe": 999.0,
+        "returns_pct": 27.9,
+        "daily_ret_pct": 19.99
+      },
+      {
+        "ticker": "WHEELS",
+        "company": "Wheels India",
+        "pead_score": 36,
+        "result_date": "2026-05-13",
+        "forward_pe": 22.1,
+        "returns_pct": 24.2,
+        "daily_ret_pct": -0.15
+      },
+      {
+        "ticker": "LAURUSLABS",
+        "company": "Laurus Labs",
+        "pead_score": 45,
+        "result_date": "2026-05-13",
+        "forward_pe": 35.2,
+        "returns_pct": 23.8,
+        "daily_ret_pct": 1.2
+      },
+      {
+        "ticker": "APOLLOPIPE",
+        "company": "Apollo Pipes",
+        "pead_score": -11,
+        "result_date": "2026-04-28",
+        "forward_pe": 999.0,
+        "returns_pct": 22.1,
+        "daily_ret_pct": -8.09
+      },
+      {
+        "ticker": "FCL",
+        "company": "Fineotex Chem",
+        "pead_score": -11,
+        "result_date": "2026-05-01",
+        "forward_pe": 28.4,
+        "returns_pct": 22.5,
+        "daily_ret_pct": 0.55
+      },
+      {
+        "ticker": "TOTEM",
+        "company": "Forbes Precision",
+        "pead_score": 42,
+        "result_date": "2026-05-08",
+        "forward_pe": 18.8,
+        "returns_pct": 28.5,
+        "daily_ret_pct": 12.4
+      },
+      {
+        "ticker": "DHANBANK",
+        "company": "Dhanlaxmi Bank",
+        "pead_score": 36,
+        "result_date": "2026-05-06",
+        "forward_pe": 18.5,
+        "returns_pct": 21.9,
+        "daily_ret_pct": 0.18
+      },
+      {
+        "ticker": "GLAND",
+        "company": "Gland Pharma",
+        "pead_score": 12,
+        "result_date": "2026-05-15",
+        "forward_pe": 31.0,
+        "returns_pct": 21.7,
+        "daily_ret_pct": -0.22
+      },
+      {
+        "ticker": "NRBBEARING",
+        "company": "NRB Bearings",
+        "pead_score": 8,
+        "result_date": "2026-04-25",
+        "forward_pe": 26.3,
+        "returns_pct": 21.6,
+        "daily_ret_pct": 0.44
+      },
+      {
+        "ticker": "KODYTECH",
+        "company": "Kody Technolab",
+        "pead_score": 25,
+        "result_date": "2026-05-10",
+        "forward_pe": 19.8,
+        "returns_pct": 21.55,
+        "daily_ret_pct": 1.1
+      },
+      {
+        "ticker": "GRWRHITECH",
+        "company": "Garware Hi Tech",
+        "pead_score": 18,
+        "result_date": "2026-05-07",
+        "forward_pe": 24.0,
+        "returns_pct": 21.52,
+        "daily_ret_pct": -0.37
+      },
+      {
+        "ticker": "PROTEAN",
+        "company": "Protean eGov",
+        "pead_score": 34,
+        "result_date": "2026-05-20",
+        "forward_pe": 32.4,
+        "returns_pct": 29.8,
+        "daily_ret_pct": 19.99
+      },
+      {
+        "ticker": "GOCOLORS",
+        "company": "Go Fashion (I)",
+        "pead_score": -18,
+        "result_date": "2026-05-10",
+        "forward_pe": 45.0,
+        "returns_pct": -0.25,
+        "daily_ret_pct": -0.15
+      },
+      {
+        "ticker": "SANSERA",
+        "company": "Sansera Enginee.",
+        "pead_score": 55,
+        "result_date": "2026-04-30",
+        "forward_pe": 18.8,
+        "returns_pct": 27.2,
+        "daily_ret_pct": 10.55
+      },
+      {
+        "ticker": "HONAUT",
+        "company": "Honeywell Auto",
+        "pead_score": -4,
+        "result_date": "2026-05-13",
+        "forward_pe": 52.0,
+        "returns_pct": 26.8,
+        "daily_ret_pct": 8.86
+      },
+      {
+        "ticker": "HINDWAREAP",
+        "company": "Hindware Home In",
+        "pead_score": 10,
+        "result_date": "2026-05-12",
+        "forward_pe": 999.0,
+        "returns_pct": 24.9,
+        "daily_ret_pct": 11.2
+      },
+      {
+        "ticker": "SANGHVIMOV",
+        "company": "Sanghvi Movers",
+        "pead_score": 15,
+        "result_date": "2026-05-17",
+        "forward_pe": 22.5,
+        "returns_pct": 22.8,
+        "daily_ret_pct": 6.1
+      },
+      {
+        "ticker": "IMPAL",
+        "company": "India Motor Part",
+        "pead_score": 13,
+        "result_date": "2026-05-15",
+        "forward_pe": 28.0,
+        "returns_pct": 25.6,
+        "daily_ret_pct": 9.1
+      },
+      {
+        "ticker": "JNKINDIA",
+        "company": "JNK",
+        "pead_score": -9,
+        "result_date": "2026-05-11",
+        "forward_pe": 72.0,
+        "returns_pct": 23.5,
+        "daily_ret_pct": 4.2
+      }
+    ]
+  },
+  "ff_daily_ret_dashboard_2026_07_10": {
+    "notes": [
+      "FinanciallyFree PEAD dashboard sorted by Daily Ret descending (2026-07-10 batch 4).",
+      "PEAD Score is FF absolute-style (can be negative). Ours is universe percentile 0-100.",
+      "Daily Ret in FF does not match our returns/trading_days formula.",
+      "Returns should match compute_return_since_result when result_date is correct.",
+      "Samman Capital = Sammaan Capital (SAMMAANCAP). Sharat Parenter. likely Bharat Parenterals (BPLPHARMA)."
+    ],
+    "sort_by": "daily_ret_pct",
+    "rows": [
+      {
+        "ticker": "JAYBARMARU",
+        "company": "Jay. Bharat Maru.",
+        "pead_score": 55,
+        "result_date": "2026-05-19",
+        "forward_pe": 12.8,
+        "returns_pct": 34.16,
+        "daily_ret_pct": 12.91
+      },
+      {
+        "ticker": "IMPAL",
+        "company": "India Motor Part",
+        "pead_score": 15,
+        "result_date": "2026-05-08",
+        "forward_pe": 18.6,
+        "returns_pct": 11.1,
+        "daily_ret_pct": 11.95
+      },
+      {
+        "ticker": "HINDWAREAP",
+        "company": "Hindware Home In",
+        "pead_score": -8,
+        "result_date": "2026-05-19",
+        "forward_pe": 999.0,
+        "returns_pct": 10.0,
+        "daily_ret_pct": 11.03
+      },
+      {
+        "ticker": "KDDL",
+        "company": "KDDL Ltd",
+        "pead_score": -11,
+        "result_date": "2026-05-19",
+        "forward_pe": 39.1,
+        "returns_pct": 32.65,
+        "daily_ret_pct": 10.56
+      },
+      {
+        "ticker": "JNKINDIA",
+        "company": "JNK",
+        "pead_score": 5,
+        "result_date": "2026-05-20",
+        "forward_pe": 32.4,
+        "returns_pct": 10.09,
+        "daily_ret_pct": 10.0
+      },
+      {
+        "ticker": "SANGHVIMOV",
+        "company": "Sanghvi Movers",
+        "pead_score": 34,
+        "result_date": "2026-05-20",
+        "forward_pe": 80.6,
+        "returns_pct": 11.95,
+        "daily_ret_pct": null
+      },
+      {
+        "ticker": "APOLLOPIPE",
+        "company": "Apollo Pipes",
+        "pead_score": -11,
+        "result_date": "2026-05-07",
+        "forward_pe": 999.0,
+        "returns_pct": 23.89,
+        "daily_ret_pct": 8.86
+      },
+      {
+        "ticker": "SAMMAANCAP",
+        "company": "Samman Capital",
+        "pead_score": -22,
+        "result_date": "2026-05-20",
+        "forward_pe": 999.0,
+        "returns_pct": 7.49,
+        "daily_ret_pct": 8.86
+      },
+      {
+        "ticker": "PRECOT",
+        "company": "Precot",
+        "pead_score": 42,
+        "result_date": "2026-05-18",
+        "forward_pe": 19.6,
+        "returns_pct": 35.13,
+        "daily_ret_pct": 8.66
+      },
+      {
+        "ticker": "SUMMITSEC",
+        "company": "Summit Securitie",
+        "pead_score": 4,
+        "result_date": "2026-04-29",
+        "forward_pe": 999.0,
+        "returns_pct": -4.23,
+        "daily_ret_pct": 7.67
+      },
+      {
+        "ticker": "SPECIALITY",
+        "company": "Speciality Rest.",
+        "pead_score": 1,
+        "result_date": "2026-05-20",
+        "forward_pe": 150.1,
+        "returns_pct": 13.03,
+        "daily_ret_pct": 7.57
+      },
+      {
+        "ticker": "SHREERAMA",
+        "company": "Sh. Rama Multi",
+        "pead_score": -13,
+        "result_date": "2026-05-10",
+        "forward_pe": 45.6,
+        "returns_pct": -3.36,
+        "daily_ret_pct": 7.48
+      },
+      {
+        "ticker": "BPLPHARMA",
+        "company": "Sharat Parenter.",
+        "pead_score": -24,
+        "result_date": "2026-05-15",
+        "forward_pe": 999.0,
+        "returns_pct": 6.07,
+        "daily_ret_pct": 7.12
+      },
+      {
+        "ticker": "SGRL",
+        "company": "Shree Ganesh Rem",
+        "pead_score": 33,
+        "result_date": "2026-05-14",
+        "forward_pe": 33.3,
+        "returns_pct": 20.28,
+        "daily_ret_pct": 6.98
+      },
+      {
+        "ticker": "CENTUM",
+        "company": "Centum Electrum",
+        "pead_score": -2,
+        "result_date": "2026-05-15",
+        "forward_pe": 844.6,
+        "returns_pct": 7.39,
+        "daily_ret_pct": 6.73
+      },
+      {
+        "ticker": "IRB",
+        "company": "IRB Infra.Devl.",
+        "pead_score": 8,
+        "result_date": "2026-05-20",
+        "forward_pe": 43.4,
+        "returns_pct": 12.75,
+        "daily_ret_pct": 6.72
+      },
+      {
+        "ticker": "TATACOMM",
+        "company": "Tata Comm",
+        "pead_score": 4,
+        "result_date": "2026-04-22",
+        "forward_pe": 99.6,
+        "returns_pct": 23.97,
+        "daily_ret_pct": 6.61
+      }
+    ]
+  }
+}

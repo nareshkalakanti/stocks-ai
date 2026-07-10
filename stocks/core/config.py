@@ -111,9 +111,13 @@ HEADWIND_PEAD_CACHE_HOURS = int(os.getenv("HEADWIND_PEAD_CACHE_HOURS", "168"))
 HEADWIND_PEAD_BACKFILL_MAX = int(os.getenv("HEADWIND_PEAD_BACKFILL_MAX", "50"))
 # Post-earnings return window: 0 = drift to latest close; >0 = cap at N trading days.
 PEAD2_DRIFT_DAYS = int(os.getenv("PEAD2_DRIFT_DAYS", "0"))
-# percentile = FF-style universe ranks (returns + growth + forward PE); absolute = per-row growth caps
-PEAD2_SCORE_MODE = os.getenv("PEAD2_SCORE_MODE", "percentile").strip().lower()
-PEAD2_CALC_VERSION = 9
+# ff = FinanciallyFree-style signed score; percentile = universe ranks; absolute = 0–100 per-row
+PEAD2_SCORE_MODE = os.getenv("PEAD2_SCORE_MODE", "ff").strip().lower()
+PEAD_RESULT_LAG_DAYS = int(os.getenv("PEAD_RESULT_LAG_DAYS", "45"))
+PEAD2_DAILY_RET_CAP = float(os.getenv("PEAD2_DAILY_RET_CAP", "19.99"))
+PEAD2_RECENT_DAYS_DEFAULT = int(os.getenv("PEAD2_RECENT_DAYS_DEFAULT", "30"))
+PEAD2_RECENT_MAX_FETCH = int(os.getenv("PEAD2_RECENT_MAX_FETCH", "300"))
+PEAD2_CALC_VERSION = 18
 
 PEAD_FACTOR_MAX_WORKERS = YFINANCE_THROTTLED_MAX_WORKERS
 PEAD_FACTOR_SUE_WEIGHT = float(os.getenv("PEAD_FACTOR_SUE_WEIGHT", "0.65"))
