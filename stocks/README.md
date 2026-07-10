@@ -8,7 +8,7 @@
 | `scans/` | Filter bar, playlists, scan toolbar |
 | `pages/` | Streamlit screens (one module per sidebar item) |
 | `dashboards/` | In-app HTML tables + iframe embed |
-| `shared/` | Links, portfolio, HF client, corp tags, superstars |
+| `shared/` | Links, portfolio, corp tags, superstars |
 | `strategies/` | Scan logic per feature (see below) |
 
 ## Strategies

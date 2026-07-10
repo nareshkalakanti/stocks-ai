@@ -3,7 +3,15 @@ import streamlit as st
 
 from stocks.shared.portfolio import enrich_holdings, load_holdings, seed_default_holdings
 
-_CACHE_KEY = "holdings_priced_v3"
+_CACHE_KEY = "holdings_priced_v4"
+
+
+def _session_safe_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert nullable pandas values so Streamlit can JSON-serialize session state."""
+    out = df.copy()
+    for col in out.columns:
+        out[col] = out[col].map(lambda v: None if pd.isna(v) else v)
+    return out
 
 
 def _holdings_display_df(priced: pd.DataFrame) -> pd.DataFrame:
@@ -44,6 +52,7 @@ def render_holdings() -> None:
 
     if st.button("Refresh prices", type="primary"):
         st.session_state.pop(_CACHE_KEY, None)
+        st.session_state.pop("holdings_priced_v3", None)
         st.session_state.pop("holdings_priced_v2", None)
         st.rerun()
 
@@ -53,17 +62,21 @@ def render_holdings() -> None:
     )
 
     if _CACHE_KEY not in st.session_state:
-        with st.spinner("Fetching prices and momentum (2y history per stock)…"):
+        with st.spinner("Fetching prices and momentum (batch download)…"):
             priced = enrich_holdings(holdings, use_cache=True)
-        st.session_state[_CACHE_KEY] = priced
+        st.session_state[_CACHE_KEY] = _session_safe_df(priced)
     else:
         priced = st.session_state[_CACHE_KEY]
 
     priced_count = (
-        int(priced["current_price"].notna().sum()) if "current_price" in priced.columns else 0
+        int(pd.Series(priced["current_price"]).notna().sum())
+        if "current_price" in priced.columns
+        else 0
     )
     momentum_count = (
-        int(priced["momentum_pct"].notna().sum()) if "momentum_pct" in priced.columns else 0
+        int(pd.Series(priced["momentum_pct"]).notna().sum())
+        if "momentum_pct" in priced.columns
+        else 0
     )
 
     m1, m2, m3 = st.columns(3)

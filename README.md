@@ -2,7 +2,7 @@
 
 Streamlit app for Indian equity scans.
 
-**Sidebar:** Settings · Strategy · PEAD · H&T · Sector Landscape · SuperStars · Holdings
+**Sidebar:** Strategy · PEAD · H&T · Sector Landscape · SuperStars · Holdings · ValuePickr
 
 ## Repo layout
 

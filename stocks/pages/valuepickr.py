@@ -1,4 +1,4 @@
-"""ValuePickr — Stock Opportunities + ValuePickrGPT thread analysis."""
+"""ValuePickr — Stock Opportunities."""
 
 from __future__ import annotations
 
@@ -13,10 +13,7 @@ from stocks.core.config import (
 )
 from stocks.core.database import load_valuepickr_opportunities_latest
 from stocks.listings.stocks_data import load_india_stocks
-from stocks.pages.settings import get_selected_model
-from stocks.shared.hf import get_client
 from stocks.valuepickr.forum import VP_SUBCATEGORIES
-from stocks.valuepickr.gpt import analyze_thread_with_gpt
 from stocks.valuepickr.opportunities import latest_scan_label, prepare_opportunities_table
 
 
@@ -59,16 +56,9 @@ def render_valuepickr() -> None:
     st.caption(
         f"[ValuePickr Forum](https://www.valuepickr.com/) · "
         f"[Stock Opportunities]({VALUEPICKR_BASE_URL}/c/stock-opportunities/11) · "
-        "Discussions ranked by smart score · **ValuePickrGPT** for thread deep-dive"
+        "Discussions ranked by smart score"
     )
-
-    tab_opp, tab_gpt = st.tabs(["Stock Opportunities", "ValuePickrGPT"])
-
-    with tab_opp:
-        _render_opportunities()
-
-    with tab_gpt:
-        _render_gpt()
+    _render_opportunities()
 
 
 def _render_opportunities() -> None:
@@ -146,57 +136,3 @@ def _render_opportunities() -> None:
         f"Cache TTL {VALUEPICKR_CACHE_HOURS}h · "
         "Contributions = reply count · Sorted by smart rank (activity + engagement + listing match)"
     )
-
-
-def _render_gpt() -> None:
-    client = get_client()
-    if client is None:
-        st.warning("Set **HF_TOKEN** in `.env` and pick a chat model in **Settings**.")
-        return
-
-    default_url = st.session_state.get("valuepickr_gpt_url", "")
-    url = st.text_input(
-        "ValuePickr thread URL",
-        value=default_url,
-        placeholder="https://forum.valuepickr.com/t/company-name/slug/12345",
-    )
-    analyze = st.button("Analyze with ValuePickrGPT", type="primary")
-
-    st.markdown(
-        """
-ValuePickrGPT reports:
-1. **Strengths & weaknesses** (≤10 each) for long-term investing  
-2. **Monthly sentiment** table (score 1–100 + keywords) through July 2025  
-3. **2025 discussion** summary  
-        """
-    )
-
-    if not analyze:
-        return
-    if not url.strip():
-        st.error("Paste a ValuePickr thread URL.")
-        return
-
-    st.session_state["valuepickr_gpt_url"] = url.strip()
-    model = get_selected_model()
-    max_tokens = int(st.session_state.get("max_tokens", 4096))
-    temperature = float(st.session_state.get("temperature", 0.25))
-
-    with st.spinner(f"Fetching posts and analysing with {model}…"):
-        try:
-            result = analyze_thread_with_gpt(
-                client,
-                model,
-                url=url.strip(),
-                max_tokens=max_tokens,
-                temperature=temperature,
-            )
-        except Exception as exc:
-            st.error(str(exc))
-            return
-
-    st.success(
-        f"Analysed **{result.get('posts_count', 0)}** posts · "
-        f"{result.get('company') or result.get('title')}"
-    )
-    st.markdown(result.get("analysis_md") or "")

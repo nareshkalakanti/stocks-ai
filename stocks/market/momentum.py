@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
 import pandas as pd
 import yfinance as yf
 
-from stocks.core.config import YFINANCE_REQUEST_DELAY
 from stocks.core.text_utils import safe_str
 from stocks.market.price_service import to_yfinance_symbol
-from stocks.market.yfinance_limits import call_throttled
 
 LOOKBACK_1Y = 395  # ~1 year of trading days
 LOOKBACK_1M = 30   # ~1 month of trading days
@@ -42,17 +38,52 @@ def momentum_from_close(close: pd.Series) -> dict[str, float | None]:
     }
 
 
-def fetch_ticker_momentum(ticker: str, market: str | None) -> dict[str, float | None]:
-    symbol = to_yfinance_symbol(ticker, market)
+def _close_from_download(data: pd.DataFrame, symbol: str, *, multi: bool) -> pd.Series | None:
+    try:
+        if multi:
+            block = data[symbol]
+            if block is None or "Close" not in block.columns:
+                return None
+            return block["Close"]
+        if "Close" not in data.columns:
+            return None
+        return data["Close"]
+    except (KeyError, TypeError, AttributeError):
+        return None
 
-    def _fetch() -> dict[str, float | None]:
-        hist = yf.Ticker(symbol).history(period="2y", interval="1d", auto_adjust=True)
-        if hist is None or hist.empty or "Close" not in hist.columns:
-            return {}
-        return momentum_from_close(hist["Close"])
 
-    result = call_throttled(_fetch, delay=YFINANCE_REQUEST_DELAY, on_error=lambda _e: None)
-    return result or {}
+def bulk_fetch_momentum(symbols: list[str]) -> dict[str, dict[str, float | None]]:
+    """Fetch 2y daily history for many tickers in one yfinance batch call."""
+    unique = list(dict.fromkeys(symbols))
+    if not unique:
+        return {}
+
+    try:
+        data = yf.download(
+            unique,
+            period="2y",
+            interval="1d",
+            group_by="ticker",
+            progress=False,
+            threads=True,
+            auto_adjust=True,
+        )
+    except Exception:
+        return {}
+
+    if data is None or data.empty:
+        return {}
+
+    multi = len(unique) > 1
+    out: dict[str, dict[str, float | None]] = {}
+    for symbol in unique:
+        close = _close_from_download(data, symbol, multi=multi)
+        if close is None:
+            continue
+        payload = momentum_from_close(close)
+        if payload:
+            out[symbol] = payload
+    return out
 
 
 def rank_by_momentum(df: pd.DataFrame) -> pd.DataFrame:
@@ -70,12 +101,8 @@ def rank_by_momentum(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def attach_holdings_momentum(
-    df: pd.DataFrame,
-    *,
-    max_workers: int = 8,
-) -> pd.DataFrame:
-    """Fetch 2y daily history per holding and attach price / momentum columns."""
+def attach_holdings_momentum(df: pd.DataFrame) -> pd.DataFrame:
+    """Fetch 2y daily history and attach price / momentum columns (batch download)."""
     if df.empty or "ticker" not in df.columns:
         return df
 
@@ -86,22 +113,20 @@ def attach_holdings_momentum(
 
     markets = out["market"].tolist() if "market" in out.columns else [None] * len(out)
     tickers = out["ticker"].astype(str).tolist()
-    results: dict[str, dict[str, float | None]] = {}
 
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = {
-            pool.submit(fetch_ticker_momentum, ticker, market): safe_str(ticker).upper()
-            for ticker, market in zip(tickers, markets)
-            if safe_str(ticker)
-        }
-        for fut in as_completed(futures):
-            key = futures[fut]
-            try:
-                payload = fut.result()
-            except Exception:
-                payload = {}
-            if payload:
-                results[key] = payload
+    symbol_by_ticker: dict[str, str] = {}
+    for ticker, market in zip(tickers, markets):
+        key = safe_str(ticker).upper()
+        if not key:
+            continue
+        symbol_by_ticker[key] = to_yfinance_symbol(ticker, market)
+
+    momentum_by_symbol = bulk_fetch_momentum(list(symbol_by_ticker.values()))
+    results: dict[str, dict[str, float | None]] = {}
+    for ticker, symbol in symbol_by_ticker.items():
+        payload = momentum_by_symbol.get(symbol)
+        if payload:
+            results[ticker] = payload
 
     for idx, row in out.iterrows():
         key = safe_str(row.get("ticker")).upper()
