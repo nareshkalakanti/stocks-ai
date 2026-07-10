@@ -4,9 +4,8 @@ __pycache__/
 .streamlit/
 .pytest_cache/
 data/stocks_ai.db
-data/stocks.db
-data/model_checks.json
 data/logs/
+data/models/
 ########################################################################
 # Python - https://github.com/github/gitignore/blob/master/Python.gitignore
 ########################################################################
