@@ -16,7 +16,7 @@ from stocks.pages.valuepickr import render_valuepickr
 from stocks.pages.strategy import render_strategy
 
 st.set_page_config(
-    page_title="Stocks AI",
+    page_title="AI",
     layout="wide",
     initial_sidebar_state="expanded",
 )
