@@ -147,7 +147,7 @@ _LANDSCAPE_CSS = """
   .sl-stock-list { list-style: none; margin: 0; padding: 0; }
   .sl-stock {
     display: grid;
-    grid-template-columns: 24px 1fr 56px 72px 64px;
+    grid-template-columns: 24px 1fr 56px 72px 72px;
     gap: 8px;
     align-items: center;
     padding: 9px 0;
@@ -179,6 +179,17 @@ _LANDSCAPE_CSS = """
     font-weight: 600;
     margin-left: 4px;
   }
+  .sl-show-all {
+    margin-top: 10px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .sl-show-all:hover { text-decoration: underline; }
 </style>
 """
 
@@ -245,9 +256,44 @@ let typeFilter = "all";
 let moverFilter = "all";
 let searchQuery = "";
 let selectedKey = null;
+let stocksExpanded = false;
 
 function esc(s) {{
   return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+}}
+function renderStockRow(s, g) {{
+  const sp = linePath(s.spark || [], 56, 28, 2);
+  const up = Number(s.return_pct) >= 0;
+  const links = [];
+  if (s.sc) links.push(`<a class="sl-link" href="${{esc(s.sc)}}" target="_blank" rel="noopener">SC</a>`);
+  if (s.tv) links.push(`<a class="sl-link" href="${{esc(s.tv)}}" target="_blank" rel="noopener">TV</a>`);
+  return `<li class="sl-stock">` +
+    `<span class="sl-stock-rank">${{s.rank || ""}}</span>` +
+    `<div><div class="sl-stock-name">${{esc(s.name || s.ticker)}}${{links.join("")}}</div>` +
+    `<div class="sl-stock-sub">${{esc(s.industry || g.industry || "")}}</div></div>` +
+    `<svg class="sl-stock-spark" viewBox="0 0 56 28"><path class="sl-line-sector" d="${{sp}}"/></svg>` +
+    `<span class="sl-stock-ret ${{up ? '' : 'neg'}}">${{fmtRet(s.return_pct)}}</span>` +
+    `<span class="sl-stock-price">₹${{Number(s.price || 0).toFixed(2)}}</span>` +
+    `</li>`;
+}}
+function bindPanelActions() {{
+  const close = document.getElementById("sl-close");
+  if (close) close.onclick = (e) => {{
+    e.stopPropagation();
+    selectedKey = null;
+    stocksExpanded = false;
+    document.getElementById("sl-panel").classList.remove("open");
+    document.getElementById("sl-layout").classList.remove("panel-open");
+    render();
+  }};
+  const toggle = document.getElementById("sl-show-all");
+  if (toggle) toggle.onclick = (e) => {{
+    e.stopPropagation();
+    stocksExpanded = !stocksExpanded;
+    const panel = document.getElementById("sl-panel");
+    panel.innerHTML = renderPanel(findGroup(selectedKey));
+    bindPanelActions();
+  }};
 }}
 function fmtRet(v) {{
   const n = Number(v);
@@ -282,13 +328,17 @@ function linePath(points, w, h, pad) {{
     return (i ? "L" : "M") + x.toFixed(1) + "," + y.toFixed(1);
   }}).join(" ");
 }}
+function groupId(g) {{
+  return g.id || g.key;
+}}
 function renderCard(g) {{
   const up = Number(g.return_pct) >= 0;
   const bench = DATA.benchmark_series || [];
   const sectorPath = linePath(g.series, 260, 72, 4);
   const benchPath = linePath(bench, 260, 72, 4);
-  const active = selectedKey === g.key ? " active" : "";
-  return `<div class="sl-card${{active}}" data-key="${{esc(g.key)}}">` +
+  const gid = groupId(g);
+  const active = selectedKey === gid ? " active" : "";
+  return `<div class="sl-card${{active}}" data-key="${{esc(gid)}}">` +
     `<div class="sl-card-head">` +
     `<div class="sl-card-name">${{esc(g.key)}}</div>` +
     `<div class="sl-card-ret ${{up ? 'up' : 'down'}}">${{fmtRet(g.return_pct)}}</div>` +
@@ -307,23 +357,16 @@ function renderPanel(g) {{
   const secCls = Number(g.return_pct) >= 0 ? "up" : "down";
   const sectorPath = linePath(g.series, 300, 120, 6);
   const benchPath = linePath(DATA.benchmark_series || [], 300, 120, 6);
-  let stocks = "";
-  (g.stocks || []).slice(0, 10).forEach(s => {{
-    const sp = linePath(s.spark || [], 56, 28, 2);
-    const up = Number(s.return_pct) >= 0;
-    const links = [];
-    if (s.sc) links.push(`<a class="sl-link" href="${{esc(s.sc)}}" target="_blank" rel="noopener">SC</a>`);
-    if (s.tv) links.push(`<a class="sl-link" href="${{esc(s.tv)}}" target="_blank" rel="noopener">TV</a>`);
-    stocks += `<li class="sl-stock">` +
-      `<span class="sl-stock-rank">${{s.rank || ""}}</span>` +
-      `<div><div class="sl-stock-name">${{esc(s.name || s.ticker)}}${{links.join("")}}</div>` +
-      `<div class="sl-stock-sub">${{esc(s.industry || g.industry || "")}}</div></div>` +
-      `<svg class="sl-stock-spark" viewBox="0 0 56 28"><path class="sl-line-sector" d="${{sp}}"/></svg>` +
-      `<span class="sl-stock-ret ${{up ? '' : 'neg'}}">${{fmtRet(s.return_pct)}}</span>` +
-      `<span class="sl-stock-price">₹${{Number(s.price || 0).toFixed(2)}}</span>` +
-      `</li>`;
-  }});
-  const more = (g.stock_count || 0) > 10 ? `<div class="sl-card-meta" style="margin-top:10px">Show all ${{g.stock_count}} stocks in group</div>` : "";
+  const allStocks = g.stocks || [];
+  const limit = stocksExpanded ? allStocks.length : Math.min(10, allStocks.length);
+  let stocks = allStocks.slice(0, limit).map(s => renderStockRow(s, g)).join("");
+  let more = "";
+  if (allStocks.length > 10) {{
+    const label = stocksExpanded
+      ? "Show top 10"
+      : `Show all ${{g.stock_count || allStocks.length}} stocks`;
+    more = `<button type="button" class="sl-show-all" id="sl-show-all">${{label}}</button>`;
+  }}
   return `<button class="sl-close" id="sl-close" title="Close">×</button>` +
     `<h2 class="sl-panel-title">${{esc(g.key)}}</h2>` +
     `<div class="sl-panel-stats">` +
@@ -339,7 +382,7 @@ function renderPanel(g) {{
     `<ul class="sl-stock-list">${{stocks}}</ul>${{more}}`;
 }}
 function findGroup(key) {{
-  return allGroups().find(g => g.key === key);
+  return allGroups().find(g => groupId(g) === key);
 }}
 function render() {{
   const groups = filteredGroups();
@@ -351,12 +394,12 @@ function render() {{
     grid.querySelectorAll(".sl-card").forEach(el => {{
       el.onclick = () => {{
         selectedKey = el.dataset.key;
+        stocksExpanded = false;
         document.getElementById("sl-layout").classList.add("panel-open");
         const panel = document.getElementById("sl-panel");
         panel.classList.add("open");
         panel.innerHTML = renderPanel(findGroup(selectedKey));
-        const close = document.getElementById("sl-close");
-        if (close) close.onclick = (e) => {{ e.stopPropagation(); selectedKey = null; panel.classList.remove("open"); document.getElementById("sl-layout").classList.remove("panel-open"); render(); }};
+        bindPanelActions();
         render();
       }};
     }});
@@ -364,8 +407,7 @@ function render() {{
   const panel = document.getElementById("sl-panel");
   if (selectedKey && panel.classList.contains("open")) {{
     panel.innerHTML = renderPanel(findGroup(selectedKey));
-    const close = document.getElementById("sl-close");
-    if (close) close.onclick = (e) => {{ e.stopPropagation(); selectedKey = null; panel.classList.remove("open"); document.getElementById("sl-layout").classList.remove("panel-open"); render(); }};
+    bindPanelActions();
   }}
 }}
 document.getElementById("sl-search").oninput = (e) => {{ searchQuery = e.target.value.trim(); render(); }};

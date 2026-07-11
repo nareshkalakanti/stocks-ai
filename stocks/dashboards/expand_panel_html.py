@@ -49,6 +49,12 @@ EXPAND_PANEL_CSS = """
   .q-table td.q-up { color: #059669; font-weight: 700; }
   .q-table td.q-down { color: #dc2626; font-weight: 700; }
   .q-table td.q-flat { color: #6b7280; }
+  .expand-pead {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .expand-news-only {
+    max-width: 640px;
+  }
   .q-empty { color: #6b7280; font-size: 12px; padding: 8px 4px; }
   .snap-panel { min-width: 220px; max-width: 300px; font-size: 11px; line-height: 1.3; }
   .snap-metrics {
@@ -72,12 +78,9 @@ EXPAND_PANEL_CSS = """
   }
   .snap-class-sep { margin: 0 5px; opacity: 0.5; }
   .co-profile {
-    margin: 12px 0 0;
-    padding: 12px 0 0;
-    border-top: 1px solid #e5e7eb;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
   }
   .co-profile-website { line-height: 1.35; }
   .co-website {
@@ -95,10 +98,11 @@ EXPAND_PANEL_CSS = """
   }
   .co-website:hover { text-decoration: underline; }
   .co-profile-meta {
-    font-size: 11px;
-    line-height: 1.45;
+    font-size: 12px;
+    line-height: 1.5;
     color: #64748b;
     word-break: break-word;
+    font-weight: 500;
   }
   .co-profile-meta-sep { margin: 0 5px; opacity: 0.4; }
   .co-profile-about {
@@ -109,14 +113,14 @@ EXPAND_PANEL_CSS = """
   }
   .co-profile-desc {
     margin: 0;
-    font-size: 12px;
-    line-height: 1.55;
-    color: #475569;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #334155;
     white-space: pre-wrap;
     word-break: break-word;
     display: -webkit-box;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
+    -webkit-line-clamp: 4;
     overflow: hidden;
   }
   .co-profile-desc.expanded {
@@ -309,6 +313,91 @@ EXPAND_PANEL_CSS = """
     color: #9ca3af;
     font-style: italic;
   }
+  .expand-detail-stack {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+    align-items: start;
+  }
+  @media (max-width: 960px) {
+    .expand-detail-stack { grid-template-columns: 1fr; }
+  }
+  .expand-info-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fff;
+    padding: 8px 10px 10px;
+    min-width: 0;
+  }
+  .expand-info-card.profile { border-left: 3px solid #2563eb; }
+  .expand-info-card.news { border-left: 3px solid #7c3aed; }
+  .expand-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .expand-card-title {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #64748b;
+  }
+  .expand-card-action {
+    font-size: 10px;
+    font-weight: 600;
+    color: #2563eb;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .expand-card-action:hover { text-decoration: underline; }
+  .expand-info-card .co-profile { gap: 5px; }
+  .expand-info-card .co-profile-meta { font-size: 10px; line-height: 1.35; }
+  .expand-info-card .co-website { font-size: 10px; }
+  .expand-info-card .co-profile-desc {
+    font-size: 11px;
+    line-height: 1.45;
+    -webkit-line-clamp: 2;
+  }
+  .expand-info-card .co-profile-more { font-size: 10px; }
+  .co-news-list { display: flex; flex-direction: column; }
+  .co-news-item {
+    padding: 5px 0;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .co-news-item:last-child { border-bottom: none; }
+  .co-news-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 2px;
+    font-size: 9px;
+    color: #94a3b8;
+  }
+  .co-news-tag {
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #1d4ed8;
+    background: #dbeafe;
+    padding: 1px 5px;
+    border-radius: 999px;
+  }
+  .co-news-link {
+    font-size: 11px;
+    line-height: 1.35;
+    color: #0f172a;
+    text-decoration: none;
+    font-weight: 600;
+  }
+  .co-news-link:hover { color: #2563eb; text-decoration: underline; }
+  .expand-news-only { max-width: 720px; }
+  .q-empty { color: #6b7280; font-size: 11px; padding: 4px 0; }
 """
 
 CORP_TAGS_JS = """
@@ -408,7 +497,7 @@ function fmtCoMeta(s) {
   if (!parts.length) return "";
   return `<div class="co-profile-meta">${parts.join('<span class="co-profile-meta-sep">·</span>')}</div>`;
 }
-function renderCompanyProfile(s) {
+function renderCompanyProfileBody(s) {
   const desc = s?.long_description;
   const web = s?.website;
   const meta = fmtCoMeta(s);
@@ -416,20 +505,53 @@ function renderCompanyProfile(s) {
   const esc = (x) => String(x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
   let html = '<div class="co-profile">';
   if (meta) html += meta;
-  if (web) {
-    html += `<div class="co-profile-website">${fmtWebsite(web)}</div>`;
-  }
+  if (web) html += `<div class="co-profile-website">${fmtWebsite(web)}</div>`;
   if (desc) {
-    const long = desc.length > 220;
+    const long = desc.length > 120;
     html += `<div class="co-profile-about">` +
       `<p class="co-profile-desc${long ? "" : " expanded"}">${esc(desc)}</p>` +
-      (long
-        ? `<button type="button" class="co-profile-more" aria-expanded="false" onclick="toggleCoAbout(this)">Show more</button>`
-        : "") +
+      (long ? `<button type="button" class="co-profile-more" aria-expanded="false" onclick="toggleCoAbout(this)">Show more</button>` : "") +
       `</div>`;
   }
   html += "</div>";
   return html;
+}
+function renderProfileCard(s) {
+  const body = renderCompanyProfileBody(s);
+  if (!body) return "";
+  return (
+    `<div class="expand-info-card profile">` +
+    `<div class="expand-card-head"><div class="expand-card-title">Company</div></div>` +
+    body + `</div>`
+  );
+}
+function renderNewsCard(r) {
+  const items = r.news;
+  if (!items || !items.length) return "";
+  const esc = (s) => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  let head = `<div class="expand-card-head"><div class="expand-card-title">Google News</div>`;
+  if (r.news_search_url) {
+    head += `<a class="expand-card-action" href="${esc(r.news_search_url)}" target="_blank" rel="noopener noreferrer">View all ↗</a>`;
+  }
+  head += `</div><div class="co-news-list">`;
+  let list = "";
+  items.slice(0, 3).forEach((item, idx) => {
+    const title = esc(item.title || "");
+    const url = esc(item.url || "");
+    const when = esc(item.when || item.published || "—");
+    const source = item.source ? esc(item.source) : "";
+    const tag = idx === 0 ? '<span class="co-news-tag">Latest</span>' : "";
+    const meta = source ? `${tag}<span>${when}</span><span>·</span><span>${source}</span>` : `${tag}<span>${when}</span>`;
+    list += `<div class="co-news-item"><div class="co-news-meta">${meta}</div>` +
+      `<a class="co-news-link" href="${url}" target="_blank" rel="noopener noreferrer">${title}</a></div>`;
+  });
+  return `<div class="expand-info-card news">${head}${list}</div></div>`;
+}
+function renderDetailCards(r, snap) {
+  const profile = renderProfileCard(snap);
+  const news = renderNewsCard(r);
+  if (!profile && !news) return "";
+  return `<div class="expand-detail-stack">${profile}${news}</div>`;
 }
 function renderSnapshotPanel(s) {
   if (!s || s.price == null) return "";
@@ -490,7 +612,7 @@ function qCellClass(row, i) {
   if (cur < prev) return goodUp ? "q-down" : "q-up";
   return "q-flat";
 }
-function renderQuarterPanel(q, profile) {
+function renderQuarterPanel(q) {
   if (!q || !q.labels || !q.rows) {
     return '<div class="q-empty">No quarterly data.</div>';
   }
@@ -513,9 +635,7 @@ function renderQuarterPanel(q, profile) {
     });
     h += "</tr>";
   });
-  h += "</tbody></table>";
-  h += renderCompanyProfile(profile);
-  h += "</div>";
+  h += "</tbody></table></div>";
   return h;
 }
 function rowSnapshot(r) {
@@ -588,21 +708,24 @@ function renderStockNotes(r) {
   return `<div class="note-stack">${parts.join("")}${src}</div>`;
 }
 function renderExpandPanel(r) {
-  const notesHtml = renderStockNotes(r);
   const snap = rowSnapshot(r);
   const snapHtml = renderSnapshotPanel(snap);
-  const qHtml = renderQuarterPanel(r.quarters, snap);
-  let body = "";
-  if (snapHtml || qHtml) {
-    body = `<div class="expand-body">`;
-    if (snapHtml) body += snapHtml;
-    if (qHtml) body += `<div class="expand-main">${qHtml}</div>`;
-    body += `</div>`;
+  const qHtml = renderQuarterPanel(r.quarters);
+  const cardsHtml = renderDetailCards(r, snap);
+  if (!snapHtml && !qHtml && !cardsHtml) {
+    return renderExpandPanelNews(r);
   }
-  if (notesHtml && body) return `<div class="expand-wrap">${notesHtml}${body}</div>`;
-  if (notesHtml) return `<div class="expand-wrap">${notesHtml}</div>`;
-  if (body) return body;
-  return '<div class="q-empty">No detail data.</div>';
+  const soloClass = snapHtml ? "" : " expand-pead-solo";
+  let body = `<div class="expand-body expand-pead${soloClass}">`;
+  if (snapHtml) body += snapHtml;
+  body += `<div class="expand-main">${qHtml || ""}${cardsHtml || ""}</div>`;
+  body += `</div>`;
+  return body;
+}
+function renderExpandPanelNews(r) {
+  const news = renderNewsCard(r);
+  if (news) return `<div class="expand-news-only">${news}</div>`;
+  return '<div class="q-empty">No Google News found.</div>';
 }
 """
 

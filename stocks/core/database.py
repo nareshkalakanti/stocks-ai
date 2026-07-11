@@ -343,6 +343,16 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_company_profile_cache_fetched
                 ON company_profile_cache(fetched_at);
+
+            CREATE TABLE IF NOT EXISTS google_news_cache (
+                ticker TEXT PRIMARY KEY,
+                query TEXT,
+                items_json TEXT NOT NULL,
+                fetched_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_google_news_cache_fetched
+                ON google_news_cache(fetched_at);
             """
         )
         _ensure_stocks_columns(conn)
@@ -1204,6 +1214,72 @@ def save_company_profile_cache(rows: list[dict]) -> None:
                     row.get("headquarters"),
                     row.get("employees"),
                     row.get("source"),
+                    now,
+                ),
+            )
+
+
+def load_google_news_cache(
+    tickers: list[str],
+    *,
+    max_hours: int | None = None,
+) -> dict[str, list[dict]]:
+    if not tickers:
+        return {}
+    init_db()
+    keys = [str(t).strip().upper() for t in tickers if str(t).strip()]
+    if not keys:
+        return {}
+    placeholders = ",".join("?" * len(keys))
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT ticker, items_json, fetched_at
+            FROM google_news_cache
+            WHERE ticker IN ({placeholders})
+            """,
+            keys,
+        ).fetchall()
+    out: dict[str, list[dict]] = {}
+    for row in rows:
+        if max_hours is not None and not _is_fresh(row["fetched_at"], max_hours):
+            continue
+        ticker = str(row["ticker"]).upper()
+        try:
+            items = json.loads(row["items_json"])
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if isinstance(items, list):
+            out[ticker] = items
+    return out
+
+
+def save_google_news_cache(rows: list[dict]) -> None:
+    if not rows:
+        return
+    init_db()
+    now = _utc_now()
+    with get_connection() as conn:
+        for row in rows:
+            ticker = str(row.get("ticker", "")).strip().upper()
+            if not ticker:
+                continue
+            items = row.get("items")
+            if not isinstance(items, list):
+                continue
+            conn.execute(
+                """
+                INSERT INTO google_news_cache (ticker, query, items_json, fetched_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(ticker) DO UPDATE SET
+                    query=excluded.query,
+                    items_json=excluded.items_json,
+                    fetched_at=excluded.fetched_at
+                """,
+                (
+                    ticker,
+                    row.get("query"),
+                    json.dumps(items, default=str),
                     now,
                 ),
             )

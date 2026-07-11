@@ -257,6 +257,7 @@ def render_headwind_tailwind() -> None:
         st.caption(
             "**PE** (Option A) = price ÷ sum of last 4 quarters’ EPS. "
             "**Fwd PE** (Option B) = price ÷ (latest quarter EPS × 4). "
+            "**PEAD** = earnings-drift score from the PEAD scan (hover **—** for why). "
             "Yellow **SS** tags = SuperStar investors holding the stock (refresh on **SuperStars** page). "
             "Re-run **Run scan** if PE shows —."
         )

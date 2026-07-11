@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Literal
 
 import pandas as pd
 import yfinance as yf
@@ -161,6 +163,179 @@ def _newest_legacy_cache(all_cached: dict[str, dict]) -> dict[str, dict]:
         if prev is None or (blob.get("calc_version") or 0) >= (prev.get("calc_version") or 0):
             legacy[ticker] = blob
     return legacy
+
+
+PendingFetchMode = Literal["all", "missing", "stale"]
+PEAD2_PENDING_FETCH_MODES: tuple[PendingFetchMode, ...] = ("all", "missing", "stale")
+
+
+@dataclass(frozen=True)
+class Pead2ScanCoverage:
+    """How much of a scan universe is already in ``pead2_cache`` (current calc version)."""
+
+    universe_total: int
+    cached: int
+    stale: int
+    missing: int
+
+    @property
+    def pending(self) -> int:
+        return self.stale + self.missing
+
+    @property
+    def complete(self) -> bool:
+        return self.universe_total > 0 and self.pending == 0
+
+    def pending_count(self, mode: PendingFetchMode = "all") -> int:
+        if mode == "missing":
+            return self.missing
+        if mode == "stale":
+            return self.stale
+        return self.pending
+
+
+def _pead2_scorable_blob(blob: dict) -> bool:
+    return not blob.get("no_pead_data")
+
+
+def _pead2_no_data_blob(ticker: str, market: str | None) -> dict:
+    return {
+        "ticker": safe_str(ticker).upper(),
+        "market": market,
+        "calc_version": PEAD2_CALC_VERSION,
+        "no_pead_data": True,
+        "lags": {},
+    }
+
+
+def _scorable_cached_rows(cached: dict[str, dict], universe_keys: set[str]) -> list[dict]:
+    return [
+        blob
+        for blob in cached.values()
+        if safe_str(blob.get("ticker")).upper() in universe_keys and _pead2_scorable_blob(blob)
+    ]
+
+
+def _universe_ticker_lists(
+    universe: pd.DataFrame,
+) -> tuple[list[str], list[str | None], set[str]]:
+    if universe.empty or "ticker" not in universe.columns:
+        return [], [], set()
+    work = universe.drop_duplicates("ticker")
+    tickers: list[str] = []
+    markets: list[str | None] = []
+    has_market = "market" in work.columns
+    for _, row in work.iterrows():
+        ticker = safe_str(row["ticker"]).upper()
+        if not ticker:
+            continue
+        tickers.append(ticker)
+        markets.append(safe_str(row["market"]) or None if has_market else None)
+    return tickers, markets, set(tickers)
+
+
+def _filter_pending_tickers(
+    tickers: list[str],
+    markets: list[str | None],
+    cached: dict[str, dict],
+    all_cached: dict[str, dict],
+    *,
+    mode: PendingFetchMode = "all",
+) -> list[tuple[str, str | None]]:
+    pending: list[tuple[str, str | None]] = []
+    for ticker, market in zip(tickers, markets):
+        if ticker in cached:
+            continue
+        raw = all_cached.get(ticker)
+        if mode == "missing" and raw is not None:
+            continue
+        if mode == "stale" and raw is None:
+            continue
+        pending.append((ticker, market))
+    return pending
+
+
+def _partition_pead2_universe_cache(
+    universe: pd.DataFrame,
+    *,
+    pending_mode: PendingFetchMode = "all",
+) -> tuple[dict[str, dict], list[tuple[str, str | None]], Pead2ScanCoverage, dict[str, dict]]:
+    """Split universe into fresh SQLite rows vs tickers that still need Yahoo."""
+    tickers, markets, universe_keys = _universe_ticker_lists(universe)
+    if not tickers:
+        empty = Pead2ScanCoverage(0, 0, 0, 0)
+        return {}, [], empty, {}
+
+    all_cached = load_pead2_cache(tickers, max_hours=999999)
+    legacy_by_ticker = _newest_legacy_cache(all_cached)
+
+    cached: dict[str, dict] = {}
+    stale = 0
+    missing = 0
+    for ticker in tickers:
+        raw = all_cached.get(ticker)
+        if raw is None:
+            missing += 1
+            continue
+        if raw.get("calc_version") != PEAD2_CALC_VERSION:
+            stale += 1
+            continue
+        cached[ticker] = hydrate_blob_profile(
+            _backfill_blob_from_legacy(raw, legacy_by_ticker.get(ticker))
+        )
+
+    pending = _filter_pending_tickers(
+        tickers,
+        markets,
+        cached,
+        all_cached,
+        mode=pending_mode,
+    )
+
+    coverage = Pead2ScanCoverage(
+        universe_total=len(tickers),
+        cached=len(cached),
+        stale=stale,
+        missing=missing,
+    )
+    return cached, pending, coverage, legacy_by_ticker
+
+
+def pead2_scan_coverage(universe: pd.DataFrame) -> Pead2ScanCoverage:
+    """DB-only count of cached vs remaining tickers for the current universe."""
+    _, _, coverage, _ = _partition_pead2_universe_cache(universe)
+    return coverage
+
+
+def _pead2_scan_result_shell(
+    *,
+    coverage: Pead2ScanCoverage,
+    cache_hits: int = 0,
+    fetched: int = 0,
+    fetch_failed: int = 0,
+    saved: int = 0,
+    tombstoned: int = 0,
+    **extra,
+) -> dict:
+    return {
+        "candidates": pd.DataFrame(),
+        "candidates_previous": pd.DataFrame(),
+        "scanned": coverage.universe_total,
+        "hits": 0,
+        "hits_previous": 0,
+        "cache_hits": cache_hits,
+        "cached": coverage.cached,
+        "pending": coverage.pending,
+        "stale": coverage.stale,
+        "missing": coverage.missing,
+        "fetched": fetched,
+        "fetch_failed": fetch_failed,
+        "saved": saved,
+        "tombstoned": tombstoned,
+        "cleared": saved + tombstoned,
+        "coverage": coverage,
+        **extra,
+    }
 
 
 def _normalize_cache_blob(row: dict) -> dict:
@@ -502,19 +677,13 @@ def run_pead2_recent_scan(
     from stocks.core.config import PEAD2_RECENT_MAX_FETCH
 
     if universe.empty:
-        return {
-            "candidates": pd.DataFrame(),
-            "candidates_previous": pd.DataFrame(),
-            "scanned": 0,
-            "hits": 0,
-            "hits_previous": 0,
-            "cache_hits": 0,
-            "recent_days": recent_days,
-        }
+        return _pead2_scan_result_shell(
+            coverage=Pead2ScanCoverage(0, 0, 0, 0),
+            recent_days=recent_days,
+        )
 
     fetch_cap = PEAD2_RECENT_MAX_FETCH if max_fetch is None else max(0, max_fetch)
-    tickers = universe["ticker"].tolist()
-    markets = universe["market"].tolist() if "market" in universe.columns else [None] * len(tickers)
+    tickers, markets, universe_keys = _universe_ticker_lists(universe)
     workers = yfinance_worker_count(
         len(tickers),
         min(max_workers or PEAD2_MAX_WORKERS, STRATEGY_YFINANCE_MAX_INFLIGHT),
@@ -524,41 +693,29 @@ def run_pead2_recent_scan(
         if col in universe.columns:
             meta_cols.append(col)
     meta = universe[meta_cols].drop_duplicates("ticker")
-    universe_keys = {safe_str(t).upper() for t in tickers if safe_str(t)}
 
-    all_cached = load_pead2_cache(tickers, max_hours=999999)
-    legacy_by_ticker = _newest_legacy_cache(all_cached)
-    cached = {
-        k: hydrate_blob_profile(
-            _backfill_blob_from_legacy(v, legacy_by_ticker.get(k))
-        )
-        for k, v in all_cached.items()
-        if v.get("calc_version") == PEAD2_CALC_VERSION
-    }
-    rows: list[dict] = [blob for blob in cached.values() if safe_str(blob.get("ticker")).upper() in universe_keys]
+    cached, pending_all, coverage, legacy_by_ticker = _partition_pead2_universe_cache(universe)
+    rows = _scorable_cached_rows(cached, universe_keys)
     cache_hits = len(rows)
+    pending = pending_all[:fetch_cap]
 
-    pending: list[tuple[str, str | None]] = []
-    for t, m in zip(tickers, markets):
-        key = safe_str(t).upper()
-        if key and key not in cached:
-            pending.append((t, m))
-    pending = pending[:fetch_cap]
-
-    total = len(tickers)
+    total = coverage.universe_total
     fetch_total = len(pending)
     done = 0
+    fetch_failed = 0
     if progress_callback and fetch_total == 0:
         progress_callback(1, 1)
 
     fresh_rows: list[dict] = []
+    tombstone_rows: list[dict] = []
     if pending:
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {
-                pool.submit(analyze_pead2_ticker, t, m, min_mcap_cr=min_mcap_cr): t
+                pool.submit(analyze_pead2_ticker, t, m, min_mcap_cr=min_mcap_cr): (t, m)
                 for t, m in pending
             }
             for future in as_completed(futures):
+                ticker, market = futures[future]
                 result = future.result()
                 if result:
                     ticker_key = safe_str(result.get("ticker")).upper()
@@ -569,23 +726,28 @@ def run_pead2_recent_scan(
                     if ticker_key in universe_keys:
                         fresh_rows.append(result)
                         rows.append(result)
+                else:
+                    fetch_failed += 1
+                    tombstone_rows.append(_pead2_no_data_blob(ticker, market))
                 done += 1
                 if progress_callback:
                     progress_callback(done, fetch_total)
-        if fresh_rows:
-            save_pead2_cache(fresh_rows)
+        if fresh_rows or tombstone_rows:
+            save_pead2_cache(fresh_rows + tombstone_rows)
+            cached, _, coverage, legacy_by_ticker = _partition_pead2_universe_cache(universe)
+            rows = _scorable_cached_rows(cached, universe_keys)
+            cache_hits = len(rows)
 
     if not rows:
-        return {
-            "candidates": pd.DataFrame(),
-            "candidates_previous": pd.DataFrame(),
-            "scanned": total,
-            "hits": 0,
-            "hits_previous": 0,
-            "cache_hits": cache_hits,
-            "recent_days": recent_days,
-            "fetched": len(pending),
-        }
+        return _pead2_scan_result_shell(
+            coverage=coverage,
+            cache_hits=cache_hits,
+            fetched=len(pending),
+            fetch_failed=fetch_failed,
+            saved=len(fresh_rows),
+            tombstoned=len(tombstone_rows),
+            recent_days=recent_days,
+        )
 
     current_rows = _expand_lag_rows(rows, quarter_lag=0)
     previous_rows = _expand_lag_rows(rows, quarter_lag=1)
@@ -605,8 +767,17 @@ def run_pead2_recent_scan(
         "hits": len(df),
         "hits_previous": len(df_prev),
         "cache_hits": cache_hits,
-        "recent_days": recent_days,
+        "cached": coverage.cached,
+        "pending": coverage.pending,
+        "stale": coverage.stale,
+        "missing": coverage.missing,
         "fetched": len(pending),
+        "fetch_failed": fetch_failed,
+        "saved": len(fresh_rows),
+        "tombstoned": len(tombstone_rows),
+        "cleared": len(fresh_rows) + len(tombstone_rows),
+        "coverage": coverage,
+        "recent_days": recent_days,
     }
 
 
@@ -617,19 +788,24 @@ def run_pead2_scan(
     max_workers: int | None = None,
     progress_callback: Callable[[int, int], None] | None = None,
     min_mcap_cr: float | None = None,
+    only_pending: bool = False,
+    pending_mode: PendingFetchMode = "all",
+    max_fetch: int | None = None,
 ) -> dict:
-    if universe.empty:
-        return {
-            "candidates": pd.DataFrame(),
-            "candidates_previous": pd.DataFrame(),
-            "scanned": 0,
-            "hits": 0,
-            "hits_previous": 0,
-            "cache_hits": 0,
-        }
+    """
+    Load PEAD rows from SQLite, then fetch Yahoo for tickers not cached at the
+    current calc version. Set ``only_pending`` to skip Yahoo when nothing remains.
+    Use ``pending_mode`` with ``only_pending`` to fetch only never-scanned or stale rows.
+    When ``only_pending`` is true, Yahoo fetches are capped by ``max_fetch`` (default
+    ``PEAD2_RECENT_MAX_FETCH``) so Remaining runs proceed in batches.
+    """
+    from stocks.core.config import PEAD2_RECENT_MAX_FETCH
 
-    tickers = universe["ticker"].tolist()
-    markets = universe["market"].tolist() if "market" in universe.columns else [None] * len(tickers)
+    fetch_mode: PendingFetchMode = pending_mode if only_pending else "all"
+    tickers, markets, universe_keys = _universe_ticker_lists(universe)
+    if not tickers:
+        return _pead2_scan_result_shell(coverage=Pead2ScanCoverage(0, 0, 0, 0))
+
     workers = yfinance_worker_count(
         len(tickers),
         min(max_workers or PEAD2_MAX_WORKERS, STRATEGY_YFINANCE_MAX_INFLIGHT),
@@ -640,34 +816,38 @@ def run_pead2_scan(
             meta_cols.append(col)
     meta = universe[meta_cols].drop_duplicates("ticker")
 
-    all_cached = load_pead2_cache(tickers, max_hours=999999)
-    legacy_by_ticker = _newest_legacy_cache(all_cached)
-    cached = {
-        k: hydrate_blob_profile(
-            _backfill_blob_from_legacy(v, legacy_by_ticker.get(k))
-        )
-        for k, v in all_cached.items()
-        if v.get("calc_version") == PEAD2_CALC_VERSION
-    }
-    rows: list[dict] = list(cached.values())
-    cache_hits = len(cached)
-    pending: list[tuple[str, str | None]] = [
-        (t, m) for t, m in zip(tickers, markets) if safe_str(t).upper() not in cached
-    ]
+    cached, pending_all, coverage, legacy_by_ticker = _partition_pead2_universe_cache(
+        universe,
+        pending_mode=fetch_mode,
+    )
+    if only_pending:
+        fetch_cap = PEAD2_RECENT_MAX_FETCH if max_fetch is None else max(0, max_fetch)
+        pending = pending_all[:fetch_cap]
+    else:
+        pending = pending_all
+    rows = _scorable_cached_rows(cached, universe_keys)
+    cache_hits = len(rows)
 
-    total = len(tickers)
-    done = cache_hits
-    if progress_callback and cache_hits:
-        progress_callback(done, total)
+    total = coverage.universe_total
+    fetch_total = len(pending)
+    done = 0
+    fetch_failed = 0
+    if progress_callback:
+        if fetch_total == 0:
+            progress_callback(1, 1)
+        elif cache_hits:
+            progress_callback(0, fetch_total)
 
     fresh_rows: list[dict] = []
-    if pending:
+    tombstone_rows: list[dict] = []
+    if pending and not (only_pending and fetch_total == 0):
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {
-                pool.submit(analyze_pead2_ticker, t, m, min_mcap_cr=min_mcap_cr): t
+                pool.submit(analyze_pead2_ticker, t, m, min_mcap_cr=min_mcap_cr): (t, m)
                 for t, m in pending
             }
             for future in as_completed(futures):
+                ticker, market = futures[future]
                 result = future.result()
                 if result:
                     ticker_key = safe_str(result.get("ticker")).upper()
@@ -675,23 +855,35 @@ def run_pead2_scan(
                         result,
                         legacy_by_ticker.get(ticker_key),
                     )
-                    fresh_rows.append(result)
-                    rows.append(result)
+                    if ticker_key in universe_keys:
+                        fresh_rows.append(result)
+                        rows.append(result)
+                else:
+                    fetch_failed += 1
+                    if only_pending:
+                        tombstone_rows.append(_pead2_no_data_blob(ticker, market))
                 done += 1
                 if progress_callback:
-                    progress_callback(done, total)
-        if fresh_rows:
-            save_pead2_cache(fresh_rows)
+                    progress_callback(done, fetch_total)
+        if fresh_rows or tombstone_rows:
+            save_pead2_cache(fresh_rows + tombstone_rows)
+            cached, _, coverage, legacy_by_ticker = _partition_pead2_universe_cache(
+                universe,
+                pending_mode=fetch_mode,
+            )
+            rows = _scorable_cached_rows(cached, universe_keys)
+            cache_hits = len(rows)
 
     if not rows:
-        return {
-            "candidates": pd.DataFrame(),
-            "candidates_previous": pd.DataFrame(),
-            "scanned": total,
-            "hits": 0,
-            "hits_previous": 0,
-            "cache_hits": cache_hits,
-        }
+        return _pead2_scan_result_shell(
+            coverage=coverage,
+            cache_hits=cache_hits,
+            fetched=done,
+            fetch_failed=fetch_failed,
+            saved=len(fresh_rows),
+            tombstoned=len(tombstone_rows),
+            pending_mode=fetch_mode,
+        )
 
     current_rows = _expand_lag_rows(rows, quarter_lag=0)
     previous_rows = _expand_lag_rows(rows, quarter_lag=1)
@@ -705,10 +897,25 @@ def run_pead2_scan(
         "hits": len(df),
         "hits_previous": len(df_prev),
         "cache_hits": cache_hits,
+        "cached": coverage.cached,
+        "pending": coverage.pending,
+        "stale": coverage.stale,
+        "missing": coverage.missing,
+        "fetched": done,
+        "fetch_failed": fetch_failed,
+        "saved": len(fresh_rows),
+        "tombstoned": len(tombstone_rows),
+        "cleared": len(fresh_rows) + len(tombstone_rows),
+        "coverage": coverage,
+        "pending_mode": fetch_mode,
     }
 
 
 __all__ = [
+    "Pead2ScanCoverage",
+    "PendingFetchMode",
+    "PEAD2_PENDING_FETCH_MODES",
+    "pead2_scan_coverage",
     "prepare_pead_universe",
     "run_pead2_scan",
     "run_pead2_recent_scan",

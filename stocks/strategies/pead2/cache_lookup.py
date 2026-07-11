@@ -7,8 +7,25 @@ import pandas as pd
 from stocks.core.config import PEAD2_CALC_VERSION
 from stocks.core.database import load_pead2_cache, save_pead2_cache
 from stocks.core.text_utils import safe_str
-from stocks.strategies.pead2.service import _expand_lag_rows
+from stocks.strategies.pead2.service import _expand_lag_rows, _pead2_scorable_blob
 from stocks.strategies.pead2.strategy import score_pead2_candidates
+
+
+def _pead_blob_scorable(blob: dict | None) -> bool:
+    """True when cache row has lag-0 metrics usable for scoring."""
+    if not blob or not isinstance(blob, dict):
+        return False
+    if blob.get("unavailable") or blob.get("no_pead_data"):
+        return False
+    return _pead2_scorable_blob(blob) and bool((blob.get("lags") or {}).get("0"))
+
+
+def _pead_unavailable_note(blob: dict) -> str:
+    if blob.get("unavailable"):
+        return safe_str(blob.get("unavailable_reason")) or "No PEAD data"
+    if blob.get("no_pead_data"):
+        return safe_str(blob.get("no_pead_data_reason")) or "No PEAD data"
+    return "No PEAD data"
 
 
 def pead_score_from_blob(blob: dict | None) -> float | None:
@@ -77,19 +94,23 @@ def _pead_notes_from_cache(tickers: list[str], *, max_hours: int) -> dict[str, s
         return {}
     cached = load_pead2_cache(keys, max_hours=max_hours)
     notes: dict[str, str] = {}
-    for key, blob in cached.items():
-        if isinstance(blob, dict) and blob.get("unavailable"):
-            notes[key] = safe_str(blob.get("unavailable_reason")) or "No PEAD data"
+    for key in keys:
+        blob = cached.get(key)
+        if blob is None:
+            notes[key] = "Not scanned — run PEAD fetch"
+            continue
+        if not _pead_blob_scorable(blob):
+            notes[key] = _pead_unavailable_note(blob)
     return notes
 
 
 def count_pead_backfill_pending(tickers: list[str], *, max_hours: int) -> int:
-    """How many tickers still need a PEAD fetch attempt (not cached, including unavailable)."""
+    """How many tickers still need a PEAD fetch (missing or not scorable in cache)."""
     keys = [safe_str(t).upper() for t in tickers if safe_str(t)]
     if not keys:
         return 0
     cached = load_pead2_cache(keys, max_hours=max_hours)
-    return sum(1 for key in keys if key not in cached)
+    return sum(1 for key in keys if not _pead_blob_scorable(cached.get(key)))
 
 
 def load_pead_scores_by_ticker(
@@ -114,7 +135,7 @@ def load_pead_scores_by_ticker(
     blobs = [
         blob
         for blob in cached.values()
-        if isinstance(blob, dict) and not blob.get("unavailable")
+        if _pead_blob_scorable(blob)
     ]
     rows = _expand_lag_rows(blobs, quarter_lag=0)
     if not rows:
@@ -154,7 +175,7 @@ def load_pead_pe_by_ticker(
     blobs = [
         blob
         for blob in cached.values()
-        if isinstance(blob, dict) and not blob.get("unavailable")
+        if _pead_blob_scorable(blob)
     ]
     rows = _expand_lag_rows(blobs, quarter_lag=0)
     out: dict[str, dict[str, float | None]] = {}
@@ -196,8 +217,8 @@ def attach_pead_scores(
     scores = load_pead_scores_by_ticker(tickers, max_hours=max_hours)
     notes = _pead_notes_from_cache(tickers, max_hours=max_hours)
     out[column] = out["ticker"].astype(str).str.upper().map(scores)
-    if notes:
-        out["pead_note"] = out["ticker"].astype(str).str.upper().map(notes)
+    out["pead_note"] = out["ticker"].astype(str).str.upper().map(notes)
+    out.loc[out[column].notna(), "pead_note"] = pd.NA
     return out
 
 
@@ -209,9 +230,9 @@ def backfill_pead_cache_for_tickers(
     max_workers: int = 4,
 ) -> int:
     """
-    Fetch and cache PEAD2 payloads for tickers missing from SQLite.
+    Fetch and cache PEAD2 payloads for tickers missing or not scorable in SQLite.
 
-    Returns the number of tickers successfully cached.
+    Returns the number of tickers fetched (including unavailable tombstones).
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -224,7 +245,7 @@ def backfill_pead_cache_for_tickers(
     existing = load_pead2_cache(keys, max_hours=999999)
     pending: list[tuple[str, str | None]] = []
     for i, key in enumerate(keys):
-        if key in existing:
+        if _pead_blob_scorable(existing.get(key)):
             continue
         market = None
         if markets is not None and i < len(markets):
@@ -250,13 +271,16 @@ def backfill_pead_cache_for_tickers(
             if row:
                 fresh.append(row)
             else:
+                reason = pead_missing_reason(ticker, market)
                 fresh.append(
                     {
                         "ticker": ticker,
                         "market": market,
                         "calc_version": PEAD2_CALC_VERSION,
+                        "no_pead_data": True,
+                        "no_pead_data_reason": reason,
                         "unavailable": True,
-                        "unavailable_reason": pead_missing_reason(ticker, market),
+                        "unavailable_reason": reason,
                         "lags": {},
                     }
                 )

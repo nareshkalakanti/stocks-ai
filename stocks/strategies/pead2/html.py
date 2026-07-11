@@ -179,6 +179,15 @@ _PEAD2_DASHBOARD_CSS = """
     border-color: var(--accent);
   }
   .quarter-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .recent-days { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .recent-days-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    margin-right: 2px;
+  }
   .filter-block { margin-bottom: 14px; }
   .filter-label {
     font-size: 10px;
@@ -584,20 +593,112 @@ _PEAD2_DASHBOARD_CSS = """
   .expand-hint { color: var(--muted); font-size: 10px; margin-left: 6px; }
   tr.pead-row.expanded .expand-hint::after { content: "▴"; }
   tr.pead-row:not(.expanded) .expand-hint::after { content: "▾"; }
-  .expand-body {
+  .expand-body.expand-pead {
     display: grid;
     grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
     gap: 12px;
     align-items: start;
     width: 100%;
   }
+  .expand-body.expand-pead.expand-pead-solo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  @media (max-width: 960px) {
+    .expand-body.expand-pead { grid-template-columns: 1fr; }
+  }
   .expand-main {
     min-width: 0;
     width: 100%;
   }
-  @media (max-width: 960px) {
-    .expand-body { grid-template-columns: 1fr; }
+  .expand-detail-stack {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+    width: 100%;
+    align-items: start;
   }
+  @media (max-width: 960px) {
+    .expand-detail-stack { grid-template-columns: 1fr; }
+  }
+  .expand-info-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel);
+    padding: 8px 10px 10px;
+    min-width: 0;
+  }
+  .expand-info-card.profile { border-left: 3px solid var(--accent); }
+  .expand-info-card.news { border-left: 3px solid #7c3aed; }
+  .expand-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .expand-card-title {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .expand-card-action {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--link);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .expand-card-action:hover { text-decoration: underline; }
+  .expand-info-card .co-profile {
+    margin: 0;
+    padding: 0;
+    border-top: none;
+    gap: 5px;
+  }
+  .expand-info-card .co-profile-meta { font-size: 10px; line-height: 1.35; }
+  .expand-info-card .co-website { font-size: 10px; }
+  .expand-info-card .co-profile-desc {
+    font-size: 11px;
+    line-height: 1.45;
+    -webkit-line-clamp: 2;
+  }
+  .expand-info-card .co-profile-more { font-size: 10px; }
+  .co-news-list { display: flex; flex-direction: column; }
+  .co-news-item {
+    padding: 5px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .co-news-item:last-child { border-bottom: none; }
+  .co-news-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 2px;
+    font-size: 9px;
+    color: var(--muted);
+  }
+  .co-news-tag {
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--link);
+    background: var(--accent-soft);
+    padding: 1px 5px;
+    border-radius: 999px;
+  }
+  .co-news-link {
+    font-size: 11px;
+    line-height: 1.35;
+    color: var(--text);
+    text-decoration: none;
+    font-weight: 600;
+  }
+  .co-news-link:hover { color: var(--link); text-decoration: underline; }
   .expand-wrap { display: flex; flex-direction: column; gap: 14px; width: 100%; }
   .note-stack {
     display: grid;
@@ -858,6 +959,7 @@ def _scan_generated_ist(df: pd.DataFrame) -> str:
 
 
 from stocks.core.json_utils import json_dumps, json_safe_obj, json_safe_scalar
+from stocks.market.google_news import attach_google_news_to_rows
 
 
 def _rows_for_json(df: pd.DataFrame) -> list[dict]:
@@ -952,7 +1054,19 @@ def _rows_for_json(df: pd.DataFrame) -> list[dict]:
                 "moving_averages": [],
             }
         rows.append(json_safe_obj(row_data))
-    return rows
+    return attach_google_news_to_rows(rows)
+
+
+def _recent_day_pills_html(options: tuple[int, ...]) -> str:
+    parts = [
+        f'<button type="button" class="quarter-btn recent-day-btn" data-days="{int(d)}">{int(d)}d</button>'
+        for d in options
+    ]
+    parts.append('<button type="button" class="quarter-btn recent-day-btn" data-days="">All</button>')
+    return (
+        '<span class="recent-days-label">Results</span>'
+        + "".join(parts)
+    )
 
 
 def build_pead2_dashboard_html(
@@ -964,7 +1078,13 @@ def build_pead2_dashboard_html(
     default_sort_col: str = "returns_pct",
     default_sort_dir: int = -1,
     recent_filter_days: int | None = None,
+    recent_day_options: tuple[int, ...] | None = None,
 ) -> str:
+    day_options = recent_day_options or (7, 15, 30, 60)
+    default_days = recent_filter_days
+    if default_days is None and day_options:
+        default_days = 30 if 30 in day_options else day_options[0]
+    recent_pills = _recent_day_pills_html(day_options)
     updated = _scan_generated_ist(df)
     data_current = json_dumps(_rows_for_json(df), separators=(",", ":"))
     prev_df = df_previous if df_previous is not None else pd.DataFrame()
@@ -978,7 +1098,7 @@ def build_pead2_dashboard_html(
       <div>
         <h1 class="title">🏆 {html.escape(title)}</h1>
         <div class="meta">
-          {html.escape(updated)} · FF-style PEAD score · click row for quarterly data
+          {html.escape(updated)} · FF-style PEAD score · click row for quarterly data &amp; price snapshot
           <span class="quarter-toggle">
             <button type="button" class="quarter-btn on" id="btn-q-current">Current Quarter</button>
             <button type="button" class="quarter-btn" id="btn-q-previous"{" disabled" if not has_previous else ""}>Previous Quarter</button>
@@ -993,7 +1113,7 @@ def build_pead2_dashboard_html(
     <div class="toolbar">
       <div class="count" id="count-label">0 companies</div>
       <div class="col-toggle">
-        <button type="button" class="quarter-btn" id="btn-recent" title="Show only stocks with a recent result date">Latest results</button>
+        <div class="recent-days quarter-toggle" id="recent-days">{recent_pills}</div>
         <button type="button" id="btn-cols" title="Show growth / CF columns">Columns (<span id="col-visible">6</span>/<span id="col-total">13</span>)</button>
       </div>
     </div>
@@ -1046,8 +1166,9 @@ document.getElementById("btn-cols").onclick = () => {{
 updateColBtn();
 let sortCol = {json.dumps(default_sort_col)};
 let sortDir = {default_sort_dir};
-let recentOnlyDays = {json.dumps(recent_filter_days)};
-let recentFilterOn = {json.dumps(recent_filter_days is not None and default_sort_col == "result_date")};
+const RECENT_DAY_DEFAULT = {json.dumps(default_days)};
+let recentOnlyDays = RECENT_DAY_DEFAULT;
+let recentFilterOn = RECENT_DAY_DEFAULT != null;
 let expandedTicker = null;
 
 function recentCutoffIso() {{
@@ -1065,29 +1186,33 @@ function passesRecentFilter(r) {{
   return cutoff && rd && rd >= cutoff;
 }}
 
-function updateRecentBtn() {{
-  const btn = document.getElementById("btn-recent");
-  if (!btn) return;
-  if (!recentOnlyDays) {{
-    btn.style.display = "none";
-    return;
-  }}
-  btn.classList.toggle("on", recentFilterOn);
-  btn.textContent = recentFilterOn
-    ? `Latest ${{recentOnlyDays}}d`
-    : "Latest results";
+function updateRecentDayPills() {{
+  document.querySelectorAll(".recent-day-btn").forEach(btn => {{
+    const raw = btn.dataset.days;
+    const days = raw ? Number(raw) : null;
+    const on = recentFilterOn
+      ? days === recentOnlyDays
+      : days === null;
+    btn.classList.toggle("on", on);
+  }});
 }}
-document.getElementById("btn-recent").onclick = () => {{
-  if (!recentOnlyDays) return;
-  recentFilterOn = !recentFilterOn;
-  if (recentFilterOn) {{
-    sortCol = "result_date";
-    sortDir = -1;
-  }}
-  updateRecentBtn();
-  render();
-}};
-updateRecentBtn();
+
+document.querySelectorAll(".recent-day-btn").forEach(btn => {{
+  btn.onclick = () => {{
+    const raw = btn.dataset.days;
+    if (!raw) {{
+      recentFilterOn = false;
+    }} else {{
+      recentOnlyDays = Number(raw);
+      recentFilterOn = true;
+      sortCol = "result_date";
+      sortDir = -1;
+    }}
+    updateRecentDayPills();
+    render();
+  }};
+}});
+updateRecentDayPills();
 
 function colById(id) {{
   return COLS.find(c => c.id === id) || COLS[0];
@@ -1252,7 +1377,7 @@ function fmtCompany(r) {{
     `<div class="company-top">` +
     `<span class="company-name" title="${{esc(name)}}">${{esc(name)}}</span>` +
     `<span class="company-actions">` +
-    `<span class="expand-hint" title="Click row for quarterly data"></span>` +
+    `<span class="expand-hint" title="Click row for price, quarterly data &amp; news"></span>` +
     `<span class="links-inline">` +
     `<a href="${{r.sc}}" target="_blank" rel="noopener noreferrer" title="screener.in">SC</a>` +
     `<a href="${{r.tv}}" target="_blank" rel="noopener noreferrer" title="TradingView">TV</a>` +
@@ -1314,7 +1439,7 @@ function render() {{
   let rows = DATA.filter(passesRecentFilter);
   const sortColumn = colById(sortCol);
   rows.sort((a, b) => compareRows(a, b, sortColumn));
-  const recentNote = recentFilterOn && recentOnlyDays ? ` · latest ${{recentOnlyDays}}d` : "";
+  const recentNote = recentFilterOn && recentOnlyDays ? ` · last ${{recentOnlyDays}}d results` : "";
   document.getElementById("count-label").textContent =
     `PEAD Candidates (${{rows.length}} companies · ${{quarterMode === "previous" ? "Previous" : "Current"}} quarter${{recentNote}})`;
   renderHead();

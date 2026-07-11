@@ -12,6 +12,7 @@ from stocks.dashboards.report_html import _REPORT_CSS
 from stocks.shared.corp_tags import corp_tags_dict_for_ticker
 from stocks.shared.links import attach_research_links, screener_url, tradingview_url
 from stocks.shared.stock_notes import attach_stock_notes, sync_stock_notes_from_file
+from stocks.market.google_news import attach_google_news_to_rows
 from stocks.core.text_utils import safe_str
 
 
@@ -66,7 +67,7 @@ def rows_for_json(df: pd.DataFrame, *, extra_cols: tuple[str, ...] = ()) -> list
                 "source": safe_str(note.get("source")) or None,
             }
         rows.append(item)
-    return rows
+    return attach_google_news_to_rows(rows)
 
 
 def build_interactive_section(
@@ -77,7 +78,7 @@ def build_interactive_section(
     *,
     kind: str,
     open_section: bool = False,
-    expand_hint: str = "Click for price, MAs, 52w range & quarterly data",
+    expand_hint: str = "Click row for Google News",
 ) -> str:
     del kind
     data_json = json.dumps(rows_for_json(df), separators=(",", ":"))
@@ -172,7 +173,7 @@ def build_interactive_section(
         tr2.className = "strat-expand";
         const td = document.createElement("td");
         td.colSpan = COLS.length;
-        td.innerHTML = renderExpandPanel(r);
+        td.innerHTML = renderExpandPanelNews(r);
         tr2.appendChild(td);
         tb.appendChild(tr2);
       }}

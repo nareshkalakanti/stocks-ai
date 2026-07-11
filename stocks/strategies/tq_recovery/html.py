@@ -1,4 +1,4 @@
-"""HTML report for TQ W52 recovery scan — click row for snapshot + quarterly data."""
+"""HTML report for TQ W52 recovery scan — click row for Google News."""
 
 from __future__ import annotations
 

@@ -71,7 +71,10 @@ def _build_groups(
         sector = safe_str(info.get("sector"))
         industry = safe_str(info.get("industry"))
         sector_members[group_key(sector, industry, kind="sector")].append(row)
-        industry_members[group_key(sector, industry, kind="industry")].append(row)
+        ikey = group_key(sector, industry, kind="industry")
+        skey = group_key(sector, industry, kind="sector")
+        if ikey != skey:
+            industry_members[ikey].append(row)
 
     sector_groups = _groups_from_members(sector_members, meta, kind="sector", min_group_size=min_group_size)
     industry_groups = _groups_from_members(
@@ -105,7 +108,7 @@ def _groups_from_members(
 
         ranked = sorted(rows, key=lambda r: r["return_pct"], reverse=True)
         stocks_payload: list[dict] = []
-        for i, r in enumerate(ranked[:24], start=1):
+        for i, r in enumerate(ranked, start=1):
             info = meta.get(r["ticker"], {})
             stocks_payload.append(
                 {
@@ -115,7 +118,9 @@ def _groups_from_members(
                     "industry": safe_str(info.get("industry")) or None,
                     "return_pct": r["return_pct"],
                     "price": r["price"],
-                    "spark": series_to_points(r["close"], max_points=32),
+                    "spark": series_to_points(r["close"], max_points=32)
+                    if i <= 24
+                    else [],
                 }
             )
 
@@ -123,6 +128,7 @@ def _groups_from_members(
         down = len(rows) - up
         groups.append(
             {
+                "id": f"{kind}:{label}",
                 "key": label,
                 "kind": kind,
                 "sector": sector or None,
