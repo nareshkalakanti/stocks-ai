@@ -54,6 +54,7 @@ from stocks.strategies.pead2.quarters import (
 )
 from stocks.strategies.pead2.technicals import build_price_snapshot
 from stocks.strategies.pead.service import estimate_result_date, prepare_pead_universe
+from stocks.strategies.formula_100x.strategy import compute_100x_cfo_checks
 from stocks.market.company_profile import hydrate_blob_profile, merge_company_profile
 from stocks.market.price_service import to_yfinance_symbol
 from stocks.shared.links import attach_research_links
@@ -593,6 +594,7 @@ def analyze_pead2_ticker(
 
         hist = yt.history(period="6y", interval="1d", auto_adjust=True)
         price_val = _info_price(info, hist)
+        cfo_checks = compute_100x_cfo_checks(yt.cashflow, yt.financials) or {}
         comfort = comfort_buy_fields(
             price=price_val,
             info=info,
@@ -622,6 +624,13 @@ def analyze_pead2_ticker(
             if lag_row:
                 if lag == 0:
                     lag_row.update(comfort)
+                    lag_row.update(
+                        {
+                            "pass_rising_cfo": bool(cfo_checks.get("pass_rising_cfo")),
+                            "pass_cfo_ebit": bool(cfo_checks.get("pass_cfo_ebit")),
+                            "cfo_ebit_pct": cfo_checks.get("cfo_ebit_pct"),
+                        }
+                    )
                 lags[str(lag)] = lag_row
 
         if "0" not in lags:

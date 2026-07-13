@@ -769,5 +769,71 @@
         "daily_ret_pct": 6.61
       }
     ]
+  },
+  "ff_pead_monitor_2026_07_13": {
+    "notes": [
+      "FinanciallyFree PEAD Result Monitor screenshots (2026-07-13).",
+      "KPL = Kwality Pharmaceuticals (NSE: KPL).",
+      "Monitor card PEAD can differ from dashboard table row (44 vs 47) — both captured.",
+      "Run: pytest tests/test_pead_validation.py::TestPeadFfMonitorJul2026 -q"
+    ],
+    "cases": [
+      {
+        "ticker": "KPL",
+        "company": "Kwality Pharmaceuticals",
+        "result_date": "2026-05-19",
+        "monitor_card": {
+          "pead_score": 44.0,
+          "forward_pe": 35.8,
+          "sales_yoy_pct": 45.7,
+          "np_yoy_pct": 87.8,
+          "revenue_q0_lakhs": 15711,
+          "revenue_q1_lakhs": 12344,
+          "revenue_yoy_lakhs": 11568,
+          "np_q0_lakhs": 2531.05,
+          "np_q1_lakhs": 1600.0,
+          "np_yoy_lakhs": 1447.99,
+          "ebitda_pct_q0": 25.3,
+          "ebitda_pct_q1": 24.0,
+          "ebitda_pct_yoy": 23.0,
+          "pbt_q0_lakhs": 3166.83,
+          "generated_ist": "2026-05-19 11:50"
+        },
+        "dashboard_row": {
+          "pead_score": 47,
+          "forward_pe": 22.7,
+          "returns_pct": 7.62,
+          "daily_ret_pct": 9.65
+        }
+      },
+      {
+        "ticker": "WPIL",
+        "company": "WPIL Ltd",
+        "result_date": "2026-05-14",
+        "monitor_card": {
+          "pead_score": 40.4,
+          "forward_pe": null,
+          "sales_yoy_pct": -10.6,
+          "np_yoy_pct": null,
+          "revenue_q0_lakhs": 51124,
+          "revenue_q1_lakhs": 53872,
+          "revenue_yoy_lakhs": 57187,
+          "np_q0_lakhs": 4652.8,
+          "np_q1_lakhs": 7556.33,
+          "np_yoy_lakhs": null,
+          "ebitda_pct_q0": 17.6,
+          "ebitda_pct_q1": 24.3,
+          "ebitda_pct_yoy": 15.0,
+          "pbt_q0_lakhs": 6685.71,
+          "generated_ist": "2024-05-14 22:54"
+        },
+        "dashboard_row": {
+          "pead_score": 40.4,
+          "forward_pe": 14.5,
+          "returns_pct": null,
+          "daily_ret_pct": null
+        }
+      }
+    ]
   }
 }

@@ -26,6 +26,9 @@ from stocks.strategies.pead2.validation_refs import (
     assert_close,
     extract_raw_quarterly,
     ff_daily_ret_rows,
+    ff_monitor_case,
+    ff_monitor_cases,
+    ff_monitor_score_comparison,
     ff_reference_by_ticker,
     live_returns_vs_ff,
     load_pead_references,
@@ -55,6 +58,7 @@ class TestPeadReferenceFile:
         assert "financiallyfree_screenshot" in refs
         assert "ff_returns_dashboard_2026_07_10" in refs
         assert "ff_daily_ret_dashboard_2026_07_10" in refs
+        assert "ff_pead_monitor_2026_07_13" in refs
         for sym in YFINANCE_SYMBOLS:
             assert sym in refs["yfinance_raw"]
         ff_rows = refs["ff_returns_dashboard_2026_07_10"]["rows"]
@@ -199,6 +203,78 @@ class TestPeadCalculationLogic:
             rd = row.get("result_date")
             assert rd and len(str(rd)) == 10
             pd.Timestamp(rd)
+
+
+class TestPeadFfMonitorJul2026:
+    """FinanciallyFree PEAD Result Monitor — KPL & WPIL (Jul 2026 screenshots)."""
+
+    def test_monitor_cases_present(self):
+        cases = ff_monitor_cases()
+        tickers = {c["ticker"] for c in cases}
+        assert "KPL" in tickers
+        assert "WPIL" in tickers
+
+    def test_kpl_quarterly_lakhs_match_monitor_card(self):
+        kpl = ff_monitor_case("KPL")
+        card = kpl["monitor_card"]
+        ff = load_pead_references()["financiallyfree_screenshot"]["KPL"]
+        for key in (
+            "revenue_q0_lakhs",
+            "revenue_q1_lakhs",
+            "revenue_yoy_lakhs",
+            "np_q0_lakhs",
+            "np_q1_lakhs",
+            "np_yoy_lakhs",
+        ):
+            assert card[key] == ff[key]
+
+    def test_wpil_monitor_card_matches_screenshot(self):
+        wpil = ff_monitor_case("WPIL")
+        card = wpil["monitor_card"]
+        ff = load_pead_references()["financiallyfree_screenshot"]["WPIL"]
+        assert card["pead_score"] == ff["pead_score"] == 40.4
+        assert card["revenue_q0_lakhs"] == ff["revenue_q0_lakhs"]
+        assert card["ebitda_pct_q0"] == ff["ebitda_pct_q0"]
+
+    def test_ff_mode_score_with_dashboard_inputs_kpl(self):
+        """Dashboard row (fwd PE 22.7 + returns) is closer to FF table score 47 than monitor card alone."""
+        kpl = ff_monitor_case("KPL")
+        card = kpl["monitor_card"]
+        dash = kpl["dashboard_row"]
+        monitor_row = {
+            "sales_yoy": card["sales_yoy_pct"],
+            "np_yoy": card["np_yoy_pct"],
+            "forward_pe": card["forward_pe"],
+        }
+        dash_row = {
+            "sales_yoy": card["sales_yoy_pct"],
+            "np_yoy": card["np_yoy_pct"],
+            "forward_pe": dash["forward_pe"],
+            "returns_pct": dash["returns_pct"],
+        }
+        monitor_score = float(score_pead2_ff(pd.DataFrame([monitor_row]))["pead_score"].iloc[0])
+        dash_score = float(score_pead2_ff(pd.DataFrame([dash_row]))["pead_score"].iloc[0])
+        assert abs(dash_score - dash["pead_score"]) < abs(monitor_score - card["pead_score"])
+        assert abs(dash_score - dash["pead_score"]) <= 6.0
+
+    def test_ff_mode_score_computed_for_wpil(self):
+        wpil = ff_monitor_case("WPIL")
+        card = wpil["monitor_card"]
+        raw = load_pead_references()["yfinance_raw"]["WPIL"]
+        row = {
+            "sales_yoy": raw["sales_yoy_pct"],
+            "np_yoy": raw["np_yoy_pct"],
+            "forward_pe": raw["forward_pe"],
+        }
+        ours = float(score_pead2_ff(pd.DataFrame([row]))["pead_score"].iloc[0])
+        assert ours is not None
+        assert card["pead_score"] == 40.4
+
+    def test_score_comparison_helper_runs(self):
+        df = ff_monitor_score_comparison()
+        assert len(df) >= 2
+        assert "ff_pead_score" in df.columns
+        assert "our_pead_score" in df.columns
 
 
 class TestPeadUnitValidation:

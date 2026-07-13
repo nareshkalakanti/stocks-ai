@@ -420,6 +420,9 @@ function fmtCorpTags(r) {
 """
 
 EXPAND_PANEL_JS = """
+function esc(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+}
 function fmtPctNum(n) {
   const v = Number(n);
   if (!isFinite(v)) return "—";
@@ -553,13 +556,253 @@ function renderDetailCards(r, snap) {
   if (!profile && !news) return "";
   return `<div class="expand-detail-stack">${profile}${news}</div>`;
 }
+function renderScoreRing(score) {
+  const n = Number(score);
+  if (isNaN(n)) return "";
+  const pct = Math.max(0, Math.min(100, Math.abs(n)));
+  const r = 22;
+  const c = 2 * Math.PI * r;
+  const offset = c * (1 - pct / 100);
+  const color = n > 40 ? "#22c55e" : n > 30 ? "#d97706" : "#ef4444";
+  const txt = n.toFixed(n % 1 === 0 ? 0 : 1);
+  return (
+    `<div class="pead-score-ring" title="PEAD score">` +
+    `<svg viewBox="0 0 52 52" width="54" height="54" aria-hidden="true">` +
+    `<circle cx="26" cy="26" r="${r}" fill="none" stroke="currentColor" stroke-width="4" opacity="0.15"/>` +
+    `<circle cx="26" cy="26" r="${r}" fill="none" stroke="${color}" stroke-width="4" ` +
+    `stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}" ` +
+    `stroke-linecap="round" transform="rotate(-90 26 26)"/>` +
+    `<text x="26" y="28.5" text-anchor="middle" class="pead-score-ring-txt">${txt}</text>` +
+    `</svg></div>`
+  );
+}
+function trendLinePath(points, w, h, pad) {
+  if (!points || !points.length) return "";
+  const vals = points.map(p => Number(p.v));
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const span = max - min || 1;
+  return points.map((p, i) => {
+    const x = pad + (i / Math.max(1, points.length - 1)) * (w - pad * 2);
+    const y = h - pad - ((Number(p.v) - min) / span) * (h - pad * 2);
+    return (i ? "L" : "M") + x.toFixed(1) + "," + y.toFixed(1);
+  }).join(" ");
+}
+function renderTrendSection(s) {
+  const pts = s?.price_trend || [];
+  if (!pts.length) return "";
+  const path = trendLinePath(pts, 320, 88, 6);
+  const mas = s.moving_averages || [];
+  const below = mas.filter(m => m.above).map(m => "MA" + m.period);
+  const above = mas.filter(m => !m.above).map(m => "MA" + m.period);
+  let legend = "";
+  if (below.length) {
+    legend += `<span class="pead-legend-item"><span class="pead-dot up"></span>${below.join("/")} below price</span>`;
+  }
+  if (above.length) {
+    legend += `<span class="pead-legend-item"><span class="pead-dot down"></span>${above.join("/")} above price</span>`;
+  }
+  return (
+    `<div class="pead-section">` +
+    `<div class="pead-section-title">Trend vs moving averages</div>` +
+    `<svg class="pead-trend-chart" viewBox="0 0 320 88" preserveAspectRatio="none">` +
+    `<path class="pead-trend-line" d="${path}"/></svg>` +
+    (legend ? `<div class="pead-legend">${legend}</div>` : "") +
+    `</div>`
+  );
+}
+function renderRangeSection(s) {
+  if (!s) return "";
+  const lo = s.w52_low, hi = s.w52_high, px = s.price;
+  if (lo == null || hi == null || hi <= lo || px == null) {
+    return `<div class="pead-section pead-range-section"><div class="pead-section-title">52-week range</div><div class="q-empty">No range data</div></div>`;
+  }
+  const pct = Math.max(0, Math.min(100, ((px - lo) / (hi - lo)) * 100));
+  const drawdown = hi > 0 ? ((hi - px) / hi * 100) : 0;
+  const ddTxt = drawdown > 0 ? ` · drawdown from high ${fmtPctNum(drawdown)}%` : "";
+  return (
+    `<div class="pead-section pead-range-section">` +
+    `<div class="pead-section-title">52-week range${ddTxt}</div>` +
+    `<div class="range-wrap">` +
+    `<div class="range-ends"><span class="range-low">${fmtSnapNum(lo)}</span>` +
+    `<span class="range-high">${fmtSnapNum(hi)}</span></div>` +
+    `<div class="range-track"><span class="range-thumb" style="left:${pct.toFixed(1)}%"></span></div>` +
+    `</div></div>`
+  );
+}
+function renderPeadNewsSection(r) {
+  const items = r.news;
+  if (!items || !items.length) return "";
+  const esc = (s) => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  let list = "";
+  items.slice(0, 4).forEach((item, idx) => {
+    const title = esc(item.title || "");
+    const url = esc(item.url || "");
+    const when = esc(item.when || item.published || "");
+    const sentiment = idx === 0 ? "Positive" : "Neutral";
+    const sentCls = idx === 0 ? "sent-pos" : "sent-neu";
+    list += `<div class="pead-news-row">` +
+      `<span class="pead-sent ${sentCls}">${sentiment}</span>` +
+      `<a class="pead-news-link" href="${url}" target="_blank" rel="noopener noreferrer">${title}</a>` +
+      `<span class="pead-news-when">${when}</span></div>`;
+  });
+  let head = `<div class="pead-section-title">News · sentiment</div>`;
+  if (r.news_search_url) {
+    head = `<div class="pead-section-head"><div class="pead-section-title">News · sentiment</div>` +
+      `<a class="expand-card-action" href="${esc(r.news_search_url)}" target="_blank" rel="noopener noreferrer">View all ↗</a></div>`;
+  }
+  return `<div class="pead-section pead-news-block">${head}${list}</div>`;
+}
+function fmtPctChip(v) {
+  const n = Number(v);
+  if (isNaN(n)) return "—";
+  const cls = n >= 0 ? "pos" : "neg";
+  const sign = n >= 0 ? "+" : "";
+  return `<span class="pead-chip ${cls}">${sign}${fmtPctNum(n)}%</span>`;
+}
+function renderPeadHero(r, snap) {
+  const esc = (s) => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  const name = r.name || r.ticker;
+  const mkt = safeStrMarket(r.market);
+  const subParts = [];
+  if (mkt && r.ticker) subParts.push(`${mkt}: ${r.ticker}`);
+  else if (r.ticker) subParts.push(String(r.ticker));
+  const ind = r.industry || r.sub_sector || r.sector;
+  if (ind) subParts.push(String(ind));
+  const hq = snap?.headquarters || r.headquarters;
+  if (hq) {
+    const city = String(hq).split(",")[0].trim();
+    if (city) subParts.push(city);
+  }
+  const px = snap?.price ?? r.price;
+  const daily = r.daily_ret_pct;
+  const cagr = snap?.cagr;
+  const mcap = snap?.market_cap_cr ?? r.market_cap_cr;
+  const cagrTxt = cagr == null || isNaN(Number(cagr)) ? "—" : `${Number(cagr) >= 0 ? "+" : ""}${fmtPctNum(Number(cagr))}%`;
+  const mcapTxt = mcap != null && !isNaN(Number(mcap)) ? `${fmtPctNum(Number(mcap))} Cr` : "—";
+  let about = "";
+  const desc = snap?.long_description || r.long_description;
+  if (desc) {
+    const long = desc.length > 140;
+    about = `<div class="pead-about co-profile-about">` +
+      `<p class="co-profile-desc${long ? "" : " expanded"}">${esc(desc)}</p>` +
+      (long ? `<button type="button" class="co-profile-more" aria-expanded="false" onclick="toggleCoAbout(this)">Show more</button>` : "") +
+      `</div>`;
+  }
+  const tags = fmtCorpTags(r);
+  const web = snap?.website || r.website;
+  let links =
+    `<div class="pead-detail-links">` +
+    `<span class="links-inline">` +
+    `<a href="${esc(r.sc || "#")}" target="_blank" rel="noopener noreferrer">SC</a>` +
+    `<a href="${esc(r.tv || "#")}" target="_blank" rel="noopener noreferrer">TV</a>` +
+    `</span>`;
+  if (web) links += `<span class="pead-detail-web">${fmtWebsite(web)}</span>`;
+  links += `</div>`;
+  return (
+    `<div class="pead-hero">` +
+    `<div class="pead-top">` +
+    `<div class="pead-top-left">` +
+    `<div class="pead-detail-name">${esc(name)}</div>` +
+    `<div class="pead-detail-sub">${esc(subParts.join(" · "))}</div>` +
+    (tags ? `<div class="company-tags-row">${tags}</div>` : "") +
+    links +
+    `</div>` +
+    `<div class="pead-top-right">` +
+    `<div class="pead-capline">Mkt cap ${mcapTxt} · CAGR ${cagrTxt}</div>` +
+    renderScoreRing(r.pead_score) +
+    `</div></div>` +
+    `<div class="pead-detail-price-row">` +
+    `<span class="pead-detail-price">${px != null ? fmtSnapNum(px) : "—"}</span>` +
+    (daily != null && !isNaN(Number(daily)) ? fmtPctChip(daily) : "") +
+    `</div>` +
+    about +
+    `</div>`
+  );
+}
+function renderEmaLine(snap) {
+  const emas = snap?.ema_averages || [];
+  if (!emas.length) return "";
+  const allAbove = snap.above_all_emas === true;
+  const cls = allAbove ? "pead-ema-good" : "pead-ema-warn";
+  const icon = allAbove ? "✓" : "✕";
+  const label = allAbove ? "Above all EMAs" : `Above ${emas.filter((m) => m.above).length}/${emas.length} EMAs`;
+  const detail = emas.map((m) => `${m.period}:${m.above ? "↑" : "↓"}`).join(" ");
+  return (
+    `<div class="pead-ema-line ${cls}" title="Price vs EMA ${detail}">` +
+    `<span class="pead-ema-icon">${icon}</span> ${label}` +
+    `<span class="pead-ema-detail">20 · 50 · 100 · 200</span></div>`
+  );
+}
+function renderPeadHeroCompact(r, snap) {
+  const esc = (s) => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  const subParts = [];
+  if (r.ticker) subParts.push(String(r.ticker));
+  const ind = r.industry || r.sub_sector || r.sector;
+  if (ind) subParts.push(String(ind));
+  const hq = snap?.headquarters || r.headquarters;
+  if (hq) {
+    const city = String(hq).split(",")[0].trim();
+    if (city) subParts.push(city);
+  }
+  const px = snap?.price ?? r.price;
+  const daily = r.daily_ret_pct;
+  const cagr = snap?.cagr;
+  const mcap = snap?.market_cap_cr ?? r.market_cap_cr;
+  const cagrTxt = cagr == null || isNaN(Number(cagr)) ? "—" : `${Number(cagr) >= 0 ? "+" : ""}${fmtPctNum(Number(cagr))}%`;
+  const mcapTxt = mcap != null && !isNaN(Number(mcap)) ? `${fmtPctNum(Number(mcap))} Cr` : "—";
+  let about = "";
+  const desc = snap?.long_description || r.long_description;
+  if (desc) {
+    const long = desc.length > 140;
+    about = `<div class="pead-about co-profile-about">` +
+      `<p class="co-profile-desc${long ? "" : " expanded"}">${esc(desc)}</p>` +
+      (long ? `<button type="button" class="co-profile-more" aria-expanded="false" onclick="toggleCoAbout(this)">Show more</button>` : "") +
+      `</div>`;
+  }
+  const subLine = subParts.length
+    ? `<div class="pead-detail-sub">${esc(subParts.join(" · "))}</div>`
+    : "";
+  const capLine =
+    `<div class="pead-capline-below">` +
+    `<span class="pead-cap-label">Mkt cap</span> <span class="pead-cap-val">${mcapTxt}</span>` +
+    ` · <span class="pead-cap-label">CAGR</span> <span class="pead-cap-val">${cagrTxt}</span>` +
+    `</div>`;
+  const emaLine = renderEmaLine(snap);
+  return (
+    `<div class="pead-hero pead-hero-compact">` +
+    `<div class="pead-top">` +
+    `<div class="pead-top-left">` +
+    subLine +
+    capLine +
+    emaLine +
+    `</div>` +
+    `</div>` +
+    `<div class="pead-detail-price-row">` +
+    `<span class="pead-detail-price">${px != null ? fmtSnapNum(px) : "—"}</span>` +
+    (daily != null && !isNaN(Number(daily)) ? fmtPctChip(daily) : "") +
+    `</div>` +
+    about +
+    `</div>`
+  );
+}
+function safeStrMarket(m) {
+  const s = String(m || "").trim().toUpperCase();
+  return s === "NSE" || s === "BSE" ? s : "";
+}
+function renderPeadSidebar(s) {
+  return "";
+}
 function renderSnapshotPanel(s) {
   if (!s || s.price == null) return "";
   const cagr = s.cagr == null || isNaN(s.cagr) ? null : Number(s.cagr);
   const cagrValCls = cagr === null ? "" : (cagr >= 0 ? "pos" : "neg");
   const cagrTxt = cagr === null ? "—" : `${cagr >= 0 ? "+" : ""}${fmtPctNum(cagr)}%`;
   let maHtml = "";
-  (s.moving_averages || []).forEach(ma => {
+  const mas = (s.ema_averages && s.ema_averages.length)
+    ? s.ema_averages
+    : (s.moving_averages || []);
+  mas.forEach(ma => {
     const cls = ma.above ? "above" : "below";
     const icon = ma.above ? "✓" : "✕";
     const iconCls = ma.above ? "up" : "down";
@@ -619,23 +862,23 @@ function renderQuarterPanel(q) {
   const skipRows = new Set(["Current PE", "Forward PE", "Forward EPS"]);
   const rows = q.rows.filter(row => !skipRows.has(String(row.label || "")));
   const n = q.labels.length;
-  let h = '<div class="q-panel"><table class="q-table"><thead><tr><th></th>';
+  let h = '<div class="q-block"><div class="q-block-title">Quarterly (Rs Cr)</div><div class="q-panel"><table class="q-table pead-q-table"><thead><tr><th></th>';
   q.labels.forEach((lb, i) => {
-    const recent = i >= n - 3 ? "q-recent" : "";
-    h += `<th class="${recent}">${lb}</th>`;
+    const latest = i === n - 1 ? "q-latest" : "";
+    h += `<th class="${latest}">${lb}</th>`;
   });
   h += "</tr></thead><tbody>";
   rows.forEach(row => {
     h += `<tr><td class="q-label">${row.label}</td>`;
     row.values.forEach((v, i) => {
       const tone = qCellClass(row, i);
-      const recent = i >= n - 3 ? "q-recent" : "";
-      const cls = [tone, recent].filter(Boolean).join(" ");
+      const latest = i === n - 1 ? "q-latest" : "";
+      const cls = [tone, latest].filter(Boolean).join(" ");
       h += `<td${cls ? ` class="${cls}"` : ""}>${fmtQVal(v, row.decimals, row.pct)}</td>`;
     });
     h += "</tr>";
   });
-  h += "</tbody></table></div>";
+  h += "</tbody></table></div></div>";
   return h;
 }
 function rowSnapshot(r) {
@@ -673,6 +916,18 @@ function rowSnapshot(r) {
     if (!snap.company_industry && r.company_industry) snap.company_industry = r.company_industry;
     if (!snap.headquarters && r.headquarters) snap.headquarters = r.headquarters;
     if (snap.employees == null && r.employees != null) snap.employees = r.employees;
+    if (!snap.price_trend && r.price_trend) snap.price_trend = r.price_trend;
+    if (snap.price_trend == null && r.snapshot?.price_trend) snap.price_trend = r.snapshot.price_trend;
+    if (!snap.ema_averages && r.ema_averages) snap.ema_averages = r.ema_averages;
+    if (snap.ema_averages == null && r.snapshot?.ema_averages) {
+      snap.ema_averages = r.snapshot.ema_averages;
+    }
+    if (snap.above_all_emas == null && r.above_all_emas != null) {
+      snap.above_all_emas = r.above_all_emas;
+    }
+    if (snap.above_all_emas == null && r.snapshot?.above_all_emas != null) {
+      snap.above_all_emas = r.snapshot.above_all_emas;
+    }
   }
   return snap;
 }
@@ -709,16 +964,150 @@ function renderStockNotes(r) {
 }
 function renderExpandPanel(r) {
   const snap = rowSnapshot(r);
-  const snapHtml = renderSnapshotPanel(snap);
+  const hero = renderPeadHero(r, snap);
+  const trend = renderTrendSection(snap);
+  const range = renderRangeSection(snap);
   const qHtml = renderQuarterPanel(r.quarters);
-  const cardsHtml = renderDetailCards(r, snap);
-  if (!snapHtml && !qHtml && !cardsHtml) {
+  const newsHtml = renderPeadNewsSection(r);
+  if (!hero && !trend && !range && !qHtml && !newsHtml) {
     return renderExpandPanelNews(r);
   }
-  const soloClass = snapHtml ? "" : " expand-pead-solo";
-  let body = `<div class="expand-body expand-pead${soloClass}">`;
-  if (snapHtml) body += snapHtml;
-  body += `<div class="expand-main">${qHtml || ""}${cardsHtml || ""}</div>`;
+  let body = `<div class="pead-card">`;
+  if (hero) body += hero;
+  if (trend) body += trend;
+  if (range) body += range;
+  if (qHtml) body += `<div class="pead-section">${qHtml}</div>`;
+  if (newsHtml) body += newsHtml;
+  body += `</div>`;
+  return body;
+}
+function renderPeadNewsCompact(r) {
+  const items = r.news;
+  if (!items || !items.length) return "";
+  let list = "";
+  items.slice(0, 3).forEach((item, idx) => {
+    const title = esc(item.title || "");
+    const url = esc(item.url || "");
+    const when = esc(item.when || item.published || "");
+    const sentiment = idx === 0 ? "Positive" : "Neutral";
+    const sentCls = idx === 0 ? "sent-pos" : "sent-neu";
+    list += `<a class="pead-news-compact-row" href="${url}" target="_blank" rel="noopener noreferrer">` +
+      `<span class="pead-sent ${sentCls}">${sentiment}</span>` +
+      `<span class="pead-news-compact-title">${title}</span>` +
+      `<span class="pead-news-when">${when}</span></a>`;
+  });
+  let head = `<div class="pead-insight-label">News</div>`;
+  if (r.news_search_url) {
+    head = `<div class="pead-insight-head">` +
+      `<div class="pead-insight-label">News</div>` +
+      `<a class="expand-card-action" href="${esc(r.news_search_url)}" target="_blank" rel="noopener noreferrer">All ↗</a>` +
+      `</div>`;
+  }
+  return `<div class="pead-insight-news">${head}<div class="pead-news-compact-list">${list}</div></div>`;
+}
+function renderPeadAboutBlock(snap, r) {
+  const desc = snap?.long_description || r.long_description;
+  if (!desc) return "";
+  const long = desc.length > 120;
+  return (
+    `<div class="pead-insight-about">` +
+    `<div class="pead-insight-label">About</div>` +
+    `<div class="co-profile-about">` +
+    `<p class="co-profile-desc pead-about-desc${long ? "" : " expanded"}">${esc(desc)}</p>` +
+    (long ? `<button type="button" class="co-profile-more" aria-expanded="false" onclick="toggleCoAbout(this)">More</button>` : "") +
+    `</div></div>`
+  );
+}
+function renderPeadInsightRow(snap, r) {
+  const about = renderPeadAboutBlock(snap, r);
+  const news = renderPeadNewsCompact(r);
+  if (!about && !news) return "";
+  return `<div class="pead-insight-row${about && news ? "" : " single"}">${about}${news}</div>`;
+}
+function renderMaPills(s) {
+  const mas = (s?.ema_averages && s.ema_averages.length)
+    ? s.ema_averages
+    : (s?.moving_averages || []);
+  let maHtml = "";
+  mas.forEach(ma => {
+    const cls = ma.above ? "above" : "below";
+    const icon = ma.above ? "✓" : "✕";
+    const iconCls = ma.above ? "up" : "down";
+    maHtml += `<span class="ma-pill ${cls}">` +
+      `<span class="ma-icon ${iconCls}">${icon}</span>` +
+      `<span class="ma-period">${ma.period}</span>` +
+      `<span class="ma-val">${fmtSnapNum(ma.value)}</span></span>`;
+  });
+  return maHtml;
+}
+function renderPeadMetricsCard(s, r) {
+  if (!s || s.price == null) return "";
+  const subParts = [];
+  if (r.ticker) subParts.push(String(r.ticker));
+  const ind = r.industry || r.sub_sector || r.sector;
+  if (ind) subParts.push(String(ind));
+  const hq = s.headquarters || r.headquarters;
+  if (hq) {
+    const city = String(hq).split(",")[0].trim();
+    if (city) subParts.push(city);
+  }
+  const pe = s.pe_ratio ?? s.pe ?? r?.pe_ratio;
+  const cagr = s.cagr == null || isNaN(s.cagr) ? null : Number(s.cagr);
+  const cagrValCls = cagr === null ? "" : (cagr >= 0 ? "pos" : "neg");
+  const cagrTxt = cagr === null ? "—" : `${cagr >= 0 ? "+" : ""}${fmtPctNum(cagr)}%`;
+  const daily = r.daily_ret_pct;
+  const maHtml = renderMaPills(s);
+  const lo = s.w52_low, hi = s.w52_high, px = s.price;
+  let rangeHtml = "";
+  if (lo != null && hi != null && hi > lo && px != null) {
+    const pct = Math.max(0, Math.min(100, ((px - lo) / (hi - lo)) * 100));
+    rangeHtml = `<div class="snap-section snap-section-tight">` +
+      `<div class="snap-label">52-week range</div>` +
+      `<div class="range-wrap">` +
+      `<div class="range-ends">` +
+      `<span class="range-low">${fmtSnapNum(lo)}</span>` +
+      `<span class="range-high">${fmtSnapNum(hi)}</span>` +
+      `</div>` +
+      `<div class="range-track"><span class="range-thumb" style="left:${pct.toFixed(1)}%"></span></div>` +
+      `</div></div>`;
+  }
+  const subLine = subParts.length
+    ? `<div class="pead-panel-sub">${esc(subParts.join(" · "))}</div>`
+    : "";
+  const dailyChip = daily != null && !isNaN(Number(daily)) ? fmtPctChip(daily) : "";
+  return (
+    `<div class="pead-metrics-card snap-panel">` +
+    subLine +
+    `<div class="snap-metrics">` +
+    `<div class="snap-metric"><span class="snap-metric-label">Price</span>` +
+    `<span class="snap-metric-val">${fmtSnapNum(s.price)}</span>${dailyChip}</div>` +
+    `<div class="snap-metric"><span class="snap-metric-label">PE</span>` +
+    `<span class="snap-metric-val">${pe != null ? fmtSnapNum(pe) : "—"}</span></div>` +
+    `<div class="snap-metric"><span class="snap-metric-label">CAGR</span>` +
+    `<span class="snap-metric-val ${cagrValCls}">${cagrTxt}</span></div>` +
+    `</div>` +
+    `<div class="snap-section snap-section-tight"><div class="snap-label">Moving averages</div>` +
+    `<div class="ma-pills pead-ma-pills">${maHtml || "—"}</div></div>` +
+    rangeHtml +
+    `</div>`
+  );
+}
+function renderPeadExpandPanel(r) {
+  const snap = rowSnapshot(r);
+  const metrics = renderPeadMetricsCard(snap, r);
+  const insight = renderPeadInsightRow(snap, r);
+  const qHtml = renderQuarterPanel(r.quarters);
+  if (!metrics && !insight && !qHtml) {
+    return renderExpandPanelNews(r);
+  }
+  let body = `<div class="pead-card pead-card-compact">`;
+  if (metrics || qHtml) {
+    body += `<div class="pead-main-row">`;
+    if (metrics) body += metrics;
+    if (qHtml) body += `<div class="pead-section pead-q-section">${qHtml}</div>`;
+    body += `</div>`;
+  }
+  if (insight) body += insight;
   body += `</div>`;
   return body;
 }

@@ -351,6 +351,19 @@ def init_db() -> None:
                 fetched_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS merger_demerger_cache (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                payload_json TEXT NOT NULL,
+                fetched_at TEXT NOT NULL,
+                lookback_years INTEGER NOT NULL DEFAULT 4
+            );
+
+            CREATE TABLE IF NOT EXISTS merger_demerger_enrich_cache (
+                ticker TEXT PRIMARY KEY,
+                payload_json TEXT NOT NULL,
+                fetched_at TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_google_news_cache_fetched
                 ON google_news_cache(fetched_at);
             """
@@ -1282,6 +1295,118 @@ def save_google_news_cache(rows: list[dict]) -> None:
                     json.dumps(items, default=str),
                     now,
                 ),
+            )
+
+
+def load_merger_demerger_cache(*, max_hours: int) -> pd.DataFrame | None:
+    init_db()
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT payload_json, fetched_at, lookback_years FROM merger_demerger_cache WHERE id = 1"
+        ).fetchone()
+    if row is None or not _is_fresh(row["fetched_at"], max_hours):
+        return None
+    try:
+        data = json.loads(row["payload_json"])
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, list):
+        return None
+    df = pd.DataFrame(data)
+    df.attrs["fetched_at"] = row["fetched_at"]
+    df.attrs["lookback_years"] = row["lookback_years"]
+    return df
+
+
+def save_merger_demerger_cache(
+    df: pd.DataFrame,
+    *,
+    fetched_at: str | None = None,
+    lookback_years: int = 4,
+) -> None:
+    if df.empty:
+        return
+    init_db()
+    now = fetched_at or _utc_now()
+    payload = df.to_dict(orient="records")
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO merger_demerger_cache (id, payload_json, fetched_at, lookback_years)
+            VALUES (1, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                payload_json=excluded.payload_json,
+                fetched_at=excluded.fetched_at,
+                lookback_years=excluded.lookback_years
+            """,
+            (json.dumps(payload, default=str), now, int(lookback_years)),
+        )
+
+
+def load_merger_demerger_enrich_cache(
+    tickers: list[str],
+    *,
+    max_hours: int | None,
+) -> dict[str, dict]:
+    if not tickers:
+        return {}
+    init_db()
+    keys = [safe_str(t).upper() for t in tickers if safe_str(t)]
+    if not keys:
+        return {}
+    placeholders = ",".join("?" for _ in keys)
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT ticker, payload_json, fetched_at
+            FROM merger_demerger_enrich_cache
+            WHERE ticker IN ({placeholders})
+            """,
+            keys,
+        ).fetchall()
+    out: dict[str, dict] = {}
+    for row in rows:
+        ticker = safe_str(row["ticker"]).upper()
+        if max_hours is not None and not _is_fresh(row["fetched_at"], max_hours):
+            continue
+        try:
+            payload = json.loads(row["payload_json"])
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict):
+            out[ticker] = payload
+    return out
+
+
+def save_merger_demerger_enrich_cache(rows: list[dict]) -> None:
+    if not rows:
+        return
+    init_db()
+    now = _utc_now()
+    with get_connection() as conn:
+        for row in rows:
+            ticker = safe_str(row.get("ticker")).upper()
+            if not ticker:
+                continue
+            payload = {
+                k: row[k]
+                for k in (
+                    "resulting_companies",
+                    "resulting_tickers",
+                    "demerged_company",
+                    "demerged_ticker",
+                )
+                if k in row
+            }
+            conn.execute(
+                """
+                INSERT INTO merger_demerger_enrich_cache (ticker, payload_json, fetched_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(ticker) DO UPDATE SET
+                    payload_json=excluded.payload_json,
+                    fetched_at=excluded.fetched_at
+                """,
+                (ticker, json.dumps(payload, default=str), row.get("fetched_at") or now),
             )
 
 

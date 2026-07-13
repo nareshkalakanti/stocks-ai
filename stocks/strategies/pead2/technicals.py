@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 import pandas as pd
 
 from stocks.core.text_utils import safe_str
@@ -60,6 +62,106 @@ def _sales_cagr_years(revenue: pd.Series, years: int = 3) -> float | None:
     return round(((end / start) ** (1 / years) - 1) * 100, 2)
 
 
+_EMA_PERIODS = (20, 50, 100, 200)
+
+
+def indian_fy_labels(count: int = 4, as_of: date | None = None) -> list[str]:
+    """Indian fiscal-year labels (FY26 = year ending Mar 2026) for the next ``count`` years."""
+    d = as_of or date.today()
+    first_fy_end = d.year + 1 if d.month >= 4 else d.year
+    start = first_fy_end - 1
+    return [f"FY{str(start + i)[-2:]}" for i in range(count)]
+
+
+def build_expected_prices(
+    price: float | None,
+    *,
+    pe_ratio: float | None = None,
+    cagr: float | None = None,
+    eps_yoy: float | None = None,
+    comfortable_buy: float | None = None,
+) -> list[dict[str, object]] | None:
+    """
+    FY26–FY29 price projection for expand panel.
+
+    FY26 anchors on comfortable buy when available, else price grown by EPS YoY (or sales CAGR).
+    Later years compound at the same growth rate.
+    """
+    if price is None or price <= 0:
+        return None
+    growth = eps_yoy if eps_yoy is not None else cagr
+    if comfortable_buy is not None and comfortable_buy > 0:
+        v0 = round(float(comfortable_buy))
+    elif growth is not None:
+        v0 = round(price * (1 + float(growth) / 100.0))
+    else:
+        return None
+
+    labels = indian_fy_labels(4)
+    values: list[float | None] = [v0]
+    v = float(v0)
+    if growth is not None:
+        g = float(growth) / 100.0
+        for _ in range(3):
+            v *= 1 + g
+            values.append(round(v))
+    else:
+        values.extend([None, None, None])
+
+    return [{"fy": labels[i], "price": values[i]} for i in range(4)]
+
+
+def enrich_snapshot_valuation_projection(
+    snapshot: dict,
+    *,
+    price: float | None,
+    pe_ratio: float | None = None,
+    eps_yoy: float | None = None,
+    comfortable_buy: float | None = None,
+) -> dict:
+    """Attach ``expected_prices`` to a price snapshot dict."""
+    expected = build_expected_prices(
+        price,
+        pe_ratio=pe_ratio,
+        cagr=snapshot.get("cagr"),
+        eps_yoy=eps_yoy,
+        comfortable_buy=comfortable_buy,
+    )
+    if not expected:
+        return snapshot
+    out = dict(snapshot)
+    out["expected_prices"] = expected
+    return out
+
+
+def _ema_last(close: pd.Series, period: int) -> float | None:
+    if len(close) < period:
+        return None
+    ema = close.ewm(span=period, adjust=False).mean()
+    val = float(ema.iloc[-1])
+    if pd.isna(val):
+        return None
+    return round(val, 2)
+
+
+def _build_ema_averages(close: pd.Series, px: float) -> tuple[list[dict], bool | None]:
+    rows: list[dict] = []
+    for period in _EMA_PERIODS:
+        ema_val = _ema_last(close, period)
+        if ema_val is None:
+            continue
+        rows.append(
+            {
+                "period": period,
+                "value": ema_val,
+                "above": px >= ema_val,
+            }
+        )
+    if not rows:
+        return [], None
+    return rows, all(row["above"] for row in rows)
+
+
 def build_price_snapshot(
     info: dict,
     hist: pd.DataFrame,
@@ -106,6 +208,11 @@ def build_price_snapshot(
     high = float(w52_high) if w52_high is not None and not pd.isna(w52_high) else None
 
     close = hist["Close"].dropna().sort_index() if hist is not None and not hist.empty else pd.Series(dtype=float)
+    price_trend: list[dict] = []
+    if not close.empty:
+        from stocks.strategies.sector_landscape.strategy import series_to_points
+
+        price_trend = series_to_points(close, max_points=48)
     moving_averages: list[dict] = []
     for period in (20, 50, 100, 200):
         ma_val = None
@@ -128,6 +235,8 @@ def build_price_snapshot(
                 }
             )
 
+    ema_averages, above_all_emas = _build_ema_averages(close, px) if not close.empty else ([], None)
+
     return {
         "price": round(px, 2),
         "market_cap_cr": market_cap_cr,
@@ -138,5 +247,8 @@ def build_price_snapshot(
         "w52_low": round(low, 2) if low is not None else None,
         "w52_high": round(high, 2) if high is not None else None,
         "moving_averages": moving_averages,
+        "ema_averages": ema_averages,
+        "above_all_emas": above_all_emas,
+        "price_trend": price_trend,
         **_profile_from_info(info),
     }

@@ -38,8 +38,8 @@ STRATEGY_OPTIONS = ("Both", "TQ", "Bollinger Bands")
 
 
 def render_strategy() -> None:
-    tab_scan, tab_recovery, tab_pead = st.tabs(
-        ["TQ / Bollinger Bands", "TQ W52 Recovery", "PEAD"]
+    tab_scan, tab_recovery, tab_pead, tab_100x, tab_valuation = st.tabs(
+        ["TQ / Bollinger Bands", "TQ W52 Recovery", "PEAD", "100X", "Valuation FW"]
     )
     with tab_scan:
         render_strategy_scan()
@@ -51,6 +51,14 @@ def render_strategy() -> None:
         from stocks.pages.pead2 import render_pead2
 
         render_pead2(show_title=False)
+    with tab_100x:
+        from stocks.pages.formula_100x import render_100x
+
+        render_100x(show_title=False)
+    with tab_valuation:
+        from stocks.pages.valuation_framework import render_valuation_framework
+
+        render_valuation_framework(show_title=False)
 
 
 def render_strategy_scan() -> None:

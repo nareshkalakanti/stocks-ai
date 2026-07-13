@@ -46,6 +46,68 @@ def ff_daily_ret_rows() -> list[dict]:
     return load_pead_references().get("ff_daily_ret_dashboard_2026_07_10", {}).get("rows", [])
 
 
+def ff_monitor_cases() -> list[dict]:
+    """FinanciallyFree PEAD Result Monitor reference cases (KPL, WPIL, …)."""
+    batch = load_pead_references().get("ff_pead_monitor_2026_07_13", {})
+    return list(batch.get("cases", []))
+
+
+def ff_monitor_case(ticker: str) -> dict | None:
+    t = str(ticker).upper()
+    for case in ff_monitor_cases():
+        if str(case.get("ticker", "")).upper() == t:
+            return case
+    return None
+
+
+def score_row_from_ff_monitor(case: dict, *, use_dashboard: bool = False) -> dict:
+    """Build a PEAD2 scoring row from captured FF monitor / dashboard fields."""
+    src = case.get("dashboard_row") if use_dashboard else case.get("monitor_card")
+    if not src:
+        src = case.get("monitor_card") or {}
+    card = case.get("monitor_card") or {}
+    row: dict = {
+        "ticker": case.get("ticker"),
+        "sales_yoy": card.get("sales_yoy_pct") if not use_dashboard else card.get("sales_yoy_pct"),
+        "np_yoy": card.get("np_yoy_pct") if not use_dashboard else card.get("np_yoy_pct"),
+        "forward_pe": src.get("forward_pe"),
+        "returns_pct": src.get("returns_pct"),
+    }
+    if use_dashboard and src.get("forward_pe") is not None:
+        row["forward_pe"] = src.get("forward_pe")
+    return row
+
+
+def ff_monitor_score_comparison(*, use_dashboard: bool = False) -> pd.DataFrame:
+    """Compare our FF-mode PEAD score vs captured FinanciallyFree monitor values."""
+    from stocks.strategies.pead2.strategy import score_pead2_ff
+
+    rows: list[dict] = []
+    for case in ff_monitor_cases():
+        ticker = str(case.get("ticker", ""))
+        src = case.get("dashboard_row") if use_dashboard else case.get("monitor_card")
+        expected = (src or {}).get("pead_score")
+        score_row = score_row_from_ff_monitor(case, use_dashboard=use_dashboard)
+        scored = score_pead2_ff(pd.DataFrame([score_row]))
+        ours = float(scored["pead_score"].iloc[0]) if not scored.empty else None
+        delta = round(ours - float(expected), 1) if ours is not None and expected is not None else None
+        rows.append(
+            {
+                "ticker": ticker,
+                "company": case.get("company"),
+                "ff_pead_score": expected,
+                "our_pead_score": ours,
+                "delta": delta,
+                "sales_yoy": score_row.get("sales_yoy"),
+                "np_yoy": score_row.get("np_yoy"),
+                "forward_pe": score_row.get("forward_pe"),
+                "returns_pct": score_row.get("returns_pct"),
+                "source": "dashboard_row" if use_dashboard else "monitor_card",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def ff_reference_by_ticker() -> dict[str, dict]:
     """Merge FF screenshot rows; daily-ret batch wins on duplicate tickers."""
     merged: dict[str, dict] = {}

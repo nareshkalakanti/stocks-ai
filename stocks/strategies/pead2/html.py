@@ -17,8 +17,11 @@ from stocks.dashboards.expand_panel_html import EXPAND_PANEL_JS
 from stocks.strategies.pead2.strategy import enrich_pead_candidates
 from stocks.strategies.pead2.quarters import sanitize_quarter_panel
 from stocks.shared.links import screener_url, tradingview_url
+from stocks.core.config import FORMULA_100X_CFO_EBIT_MIN
 from stocks.core.text_utils import safe_str
 
+
+_PEAD2_UI_BUILD = "2026-07-13s"
 
 _PEAD2_FONT_LINKS = """
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -294,11 +297,10 @@ _PEAD2_DASHBOARD_CSS = """
     font-size: 12px;
   }
   #pead-table td.pead-expand-td {
-    padding: 12px 16px 16px;
+    padding: 0;
     border-bottom: 1px solid var(--border);
     white-space: normal;
     vertical-align: top;
-    width: 100%;
   }
   #pead-table td.col-num { text-align: right; }
   #pead-table th.col-company,
@@ -359,9 +361,16 @@ _PEAD2_DASHBOARD_CSS = """
   .company-cell { min-width: 0; }
   .company-top {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 8px;
+  }
+  .company-name-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
   }
   .company-name {
     font-weight: 600;
@@ -371,7 +380,6 @@ _PEAD2_DASHBOARD_CSS = """
     letter-spacing: -0.01em;
     white-space: normal;
     word-break: break-word;
-    flex: 1;
     min-width: 0;
   }
   .company-tags-row {
@@ -480,6 +488,15 @@ _PEAD2_DASHBOARD_CSS = """
     line-height: 1.4;
   }
   .links-inline a:hover { text-decoration: underline; }
+  .x100-cfo-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    flex-shrink: 0;
+    vertical-align: middle;
+  }
+  .x100-cfo-dot.pass { background: var(--green); }
   .sub { color: var(--muted); font-size: 11px; }
   .num { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
   .g-high { color: var(--green); font-weight: 700; }
@@ -552,15 +569,23 @@ _PEAD2_DASHBOARD_CSS = """
   .dash.sidebar-hidden .show-sidebar-btn { display: inline-block; }
   tr.pead-row { cursor: pointer; }
   tr.pead-row.expanded td { background: var(--accent-soft) !important; }
-  tr.pead-expand td {
-    padding: 8px 10px 10px;
-    background: var(--panel-2);
+  tr.pead-expand td.pead-expand-td {
+    padding: 0;
+    background: var(--panel);
     border-bottom: 1px solid var(--border);
     white-space: normal;
     vertical-align: top;
-    width: 100%;
   }
-  .pead-expand-td { padding: 12px 16px 16px; }
+  #pead-table td.pead-expand-td .pead-card {
+    width: 100%;
+    max-width: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 14px 16px 16px;
+    box-sizing: border-box;
+  }
+  .pead-card .pead-section { width: 100%; }
   .q-panel { overflow-x: auto; padding: 4px 0 2px; }
   .q-table { width: 100%; border-collapse: collapse; min-width: 480px; font-size: 11px; }
   .q-table th, .q-table td {
@@ -581,30 +606,434 @@ _PEAD2_DASHBOARD_CSS = """
   }
   .q-table th { color: var(--muted); font-size: 10px; text-transform: uppercase; background: var(--thead); }
   .q-table th.q-recent, .q-table td.q-recent { background: rgba(37, 99, 235, 0.08); }
+  .pead-card .q-table th.q-latest,
+  .pead-card .q-table td.q-latest {
+    background: rgba(34, 197, 94, 0.14);
+    font-weight: 700;
+  }
   [data-theme="dark"] .q-table th.q-recent,
   [data-theme="dark"] .q-table td.q-recent { background: rgba(88, 166, 255, 0.12); }
-  .q-table td.q-up,
-  #pead-table .q-table td.q-up { color: var(--green); font-weight: 700; }
-  .q-table td.q-down,
-  #pead-table .q-table td.q-down { color: var(--red); font-weight: 700; }
-  .q-table td.q-flat,
-  #pead-table .q-table td.q-flat { color: var(--muted); }
-  .q-empty { color: var(--muted); font-size: 12px; padding: 8px 4px; }
+  .q-table td.q-up { color: var(--green); font-weight: 700; }
+  .q-table td.q-down { color: var(--red); font-weight: 700; }
+  .q-table td.q-flat { color: var(--muted); }
+  .pead-empty { color: var(--muted); font-size: 12px; padding: 8px 4px; }
+  .pead-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel);
+    padding: 16px 18px 14px;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
+  }
+  .pead-card.pead-card-compact {
+    padding: 10px 12px 8px;
+    border-radius: 8px;
+    gap: 8px;
+  }
+  .pead-hero {
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 14px;
+  }
+  .pead-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .pead-top-left { min-width: 0; flex: 1; }
+  .pead-top-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .pead-capline {
+    font-size: 11px;
+    color: var(--muted);
+    font-weight: 500;
+    white-space: nowrap;
+    text-align: right;
+  }
+  .pead-capline-below {
+    margin-top: 6px;
+    line-height: 1.3;
+  }
+  .pead-capline-below .pead-cap-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--muted);
+  }
+  .pead-capline-below .pead-cap-val {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .pead-ema-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 5px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .pead-ema-line.pead-ema-good { color: var(--green); }
+  .pead-ema-line.pead-ema-warn { color: var(--amber); }
+  .pead-ema-detail {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--muted);
+  }
+  .pead-hero-compact .pead-top-right {
+    justify-content: flex-start;
+  }
+  .pead-about { margin-top: 10px; }
+  .pead-section {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .pead-section:last-child { border-bottom: none; padding-bottom: 0; }
+  .pead-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .pead-section-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.01em;
+    margin-bottom: 10px;
+  }
+  .pead-section-head .pead-section-title { margin-bottom: 0; }
+  .pead-card .pead-range-section {
+    padding: 8px 0 10px;
+    max-width: 340px;
+  }
+  .pead-card .pead-range-section .pead-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .pead-card .pead-range-section .range-wrap { margin-top: 0; }
+  .pead-card .pead-range-section .range-ends {
+    font-size: 10px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .pead-card .pead-range-section .range-track {
+    height: 5px;
+  }
+  .pead-card .pead-range-section .range-thumb {
+    width: 10px;
+    height: 10px;
+    margin-top: -5px;
+    margin-left: -5px;
+    border-width: 1.5px;
+  }
+  .pead-trend-chart {
+    display: block;
+    width: 100%;
+    height: 88px;
+    margin-bottom: 8px;
+  }
+  .pead-trend-line {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+  .pead-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .pead-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+  .pead-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .pead-dot.up { background: var(--green); }
+  .pead-dot.down { background: var(--red); }
+  .pead-news-block .pead-section-title { margin-bottom: 8px; }
+  .pead-news-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 8px 10px;
+    align-items: start;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .pead-news-row:last-child { border-bottom: none; padding-bottom: 0; }
+  .pead-sent {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+    line-height: 1.4;
+  }
+  .pead-sent.sent-pos { color: #166534; background: rgba(34, 197, 94, 0.18); }
+  .pead-sent.sent-neu { color: #57534e; background: rgba(120, 113, 108, 0.15); }
+  .pead-news-link {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    text-decoration: none;
+    line-height: 1.35;
+  }
+  .pead-news-link:hover { color: var(--link); text-decoration: underline; }
+  .pead-news-when {
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .pead-card .q-block-title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    text-transform: none;
+    color: var(--text);
+    margin-bottom: 10px;
+  }
+  .pead-card .q-panel { padding: 0; overflow-x: auto; }
+  .pead-card .q-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    min-width: 0;
+    font-size: 12px;
+    table-layout: auto;
+  }
+  .pead-card .q-table th,
+  .pead-card .q-table td {
+    padding: 9px 12px;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    vertical-align: middle;
+  }
+  .pead-card .q-table thead th {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: transparent;
+    border-bottom: 1px solid var(--border);
+    padding-top: 0;
+  }
+  .pead-card .q-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+  .pead-card .q-table th:first-child,
+  .pead-card .q-table td.q-label {
+    text-align: left;
+    font-weight: 600;
+    color: var(--muted);
+    min-width: 108px;
+    position: static;
+    background: transparent;
+  }
+  .pead-card .q-table td.q-label {
+    color: var(--text);
+    font-weight: 500;
+  }
+  .pead-card .q-table th.q-recent,
+  .pead-card .q-table td.q-recent {
+    background: transparent;
+  }
+  .pead-card .q-table th.q-latest,
+  .pead-card .q-table td.q-latest {
+    background: rgba(34, 197, 94, 0.1);
+    font-weight: 700;
+  }
+  [data-theme="dark"] .pead-card .q-table th.q-latest,
+  [data-theme="dark"] .pead-card .q-table td.q-latest {
+    background: rgba(34, 197, 94, 0.14);
+  }
+  .pead-card .q-table td.q-up {
+    color: var(--green);
+    font-weight: 700;
+    background: rgba(34, 197, 94, 0.08);
+  }
+  .pead-card .q-table td.q-down {
+    color: var(--red);
+    font-weight: 700;
+    background: rgba(239, 68, 68, 0.08);
+  }
+  .pead-card .q-table td.q-flat {
+    color: var(--muted);
+    background: transparent;
+  }
+  .pead-card .q-table td.q-latest.q-up {
+    background: rgba(34, 197, 94, 0.16);
+  }
+  .pead-card .q-table td.q-latest.q-down {
+    background: rgba(239, 68, 68, 0.12);
+  }
+  .pead-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+  }
+  .pead-detail-hero {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--panel);
+    padding: 14px 16px 12px;
+    box-shadow: var(--shadow);
+  }
+  .pead-detail-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .pead-detail-titleblk { min-width: 0; flex: 1; }
+  .pead-detail-name {
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.25;
+    letter-spacing: -0.02em;
+    color: var(--text);
+  }
+  .pead-detail-sub {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+    margin-top: 0;
+    line-height: 1.35;
+  }
+  .pead-detail-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    margin-top: 6px;
+  }
+  .pead-detail-web .co-website { font-size: 11px; }
+  .pead-score-ring { flex-shrink: 0; color: var(--border); }
+  .pead-score-ring-txt {
+    fill: var(--text);
+    font-size: 13px;
+    font-weight: 700;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+  }
+  .pead-detail-price-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .pead-detail-price {
+    font-size: 26px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.03em;
+    line-height: 1;
+  }
+  .pead-chip {
+    font-size: 12px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    padding: 2px 7px;
+    border-radius: 6px;
+  }
+  .pead-chip.pos { color: var(--green); background: rgba(34, 197, 94, 0.12); }
+  .pead-chip.neg { color: var(--red); background: rgba(239, 68, 68, 0.12); }
+  .pead-detail-metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+    gap: 8px 12px;
+  }
+  .pead-metric { min-width: 0; }
+  .pead-metric-lbl {
+    display: block;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 2px;
+  }
+  .pead-metric-val {
+    font-size: 13px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
+  .pead-metric-val.pos { color: var(--green); }
+  .pead-metric-val.neg { color: var(--red); }
+  .pead-metric-date { font-size: 11px; font-weight: 600; color: var(--muted); }
+  .pead-detail-about {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+  .pead-detail-grid {
+    display: grid;
+    grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+  }
+  @media (max-width: 900px) {
+    .pead-detail-grid { grid-template-columns: 1fr; }
+  }
+  .pead-detail-side {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .pead-side-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel);
+    padding: 10px 12px 12px;
+  }
+  .pead-detail-main {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel);
+    padding: 10px 12px 12px;
+    min-width: 0;
+  }
+  .pead-detail-main.solo { width: 100%; }
+  .q-block-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .pead-detail-foot .expand-detail-stack { margin-top: 0; }
   .expand-hint { color: var(--muted); font-size: 10px; margin-left: 6px; }
   tr.pead-row.expanded .expand-hint::after { content: "▴"; }
   tr.pead-row:not(.expanded) .expand-hint::after { content: "▾"; }
   .expand-body.expand-pead {
-    display: grid;
-    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
-    gap: 12px;
-    align-items: start;
+    display: block;
     width: 100%;
-  }
-  .expand-body.expand-pead.expand-pead-solo {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  @media (max-width: 960px) {
-    .expand-body.expand-pead { grid-template-columns: 1fr; }
   }
   .expand-main {
     min-width: 0;
@@ -900,6 +1329,233 @@ _PEAD2_DASHBOARD_CSS = """
   }
   .ma-icon.up { color: var(--green); }
   .ma-icon.down { color: var(--red); }
+  .pead-main-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px 18px;
+    width: 100%;
+  }
+  .pead-main-row .pead-metrics-card {
+    flex: 0 0 min(380px, 38%);
+    max-width: 400px;
+    min-width: 260px;
+  }
+  .pead-main-row .pead-q-section {
+    flex: 1 1 280px;
+    min-width: 0;
+    padding: 0 !important;
+    border-top: none !important;
+    overflow-x: auto;
+  }
+  .pead-card-compact .pead-q-section .q-block {
+    border: 1px solid rgba(148, 163, 184, 0.32);
+    border-radius: 8px;
+    padding: 8px 10px 6px;
+    background: rgba(248, 250, 252, 0.55);
+  }
+  [data-theme="dark"] .pead-card-compact .pead-q-section .q-block {
+    border-color: rgba(148, 163, 184, 0.22);
+    background: rgba(15, 23, 42, 0.35);
+  }
+  .pead-card-compact .pead-q-section .q-table th,
+  .pead-card-compact .pead-q-section .q-table td {
+    border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  }
+  .pead-card-compact .pead-q-section .q-table thead th {
+    border-bottom: 1px solid rgba(148, 163, 184, 0.28);
+  }
+  .pead-card-compact .pead-q-section .q-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+  .pead-main-row .q-panel {
+    overflow-x: auto;
+  }
+  @media (max-width: 720px) {
+    .pead-main-row {
+      flex-direction: column;
+    }
+    .pead-main-row .pead-metrics-card {
+      flex: 1 1 auto;
+      max-width: none;
+      width: 100%;
+    }
+    .pead-main-row .pead-q-section {
+      width: 100%;
+      border-top: 1px solid var(--border) !important;
+      padding-top: 8px !important;
+    }
+  }
+  .pead-metrics-card {
+    margin-top: 0;
+    width: 100%;
+    font-size: 11px;
+    line-height: 1.25;
+  }
+  .pead-panel-sub {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 6px;
+    line-height: 1.3;
+  }
+  .pead-metrics-card .snap-metrics {
+    margin-bottom: 8px;
+    gap: 6px 14px;
+  }
+  .pead-metrics-card .snap-metric {
+    gap: 4px;
+  }
+  .pead-metrics-card .snap-metric-label {
+    font-size: 11px;
+  }
+  .pead-metrics-card .snap-metric-val {
+    font-size: 14px;
+  }
+  .pead-metrics-card .snap-metric .pead-chip {
+    margin-left: 4px;
+    font-size: 9px;
+    padding: 1px 5px;
+  }
+  .pead-metrics-card .snap-section-tight {
+    margin-top: 8px;
+  }
+  .pead-metrics-card .snap-label {
+    margin-bottom: 5px;
+    font-size: 9px;
+  }
+  .pead-ma-pills {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 5px;
+  }
+  .pead-ma-pills .ma-pill {
+    padding: 4px 7px;
+    gap: 4px;
+    border-radius: 6px;
+  }
+  .pead-ma-pills .ma-pill .ma-period {
+    font-size: 10px;
+    min-width: 18px;
+  }
+  .pead-ma-pills .ma-pill .ma-val {
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .pead-ma-pills .ma-icon {
+    width: 11px;
+    height: 11px;
+    font-size: 9px;
+  }
+  .pead-ma-pills .ma-pill:nth-child(4) {
+    grid-column: 1;
+  }
+  .pead-metrics-card .range-ends {
+    font-size: 10px;
+    margin-bottom: 4px;
+  }
+  .pead-metrics-card .range-track {
+    height: 5px;
+  }
+  .pead-metrics-card .range-thumb {
+    width: 10px;
+    height: 10px;
+    margin-top: -5px;
+    margin-left: -5px;
+    border-width: 1.5px;
+  }
+  .pead-insight-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 10px 14px;
+    padding: 8px 0 0;
+    border-top: 1px solid var(--border);
+  }
+  .pead-insight-row.single {
+    grid-template-columns: 1fr;
+  }
+  .pead-insight-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 5px;
+  }
+  .pead-insight-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 5px;
+  }
+  .pead-insight-head .pead-insight-label {
+    margin-bottom: 0;
+  }
+  .pead-insight-head .expand-card-action {
+    font-size: 10px;
+  }
+  .pead-about-desc {
+    font-size: 11px;
+    line-height: 1.45;
+    -webkit-line-clamp: 2;
+  }
+  .pead-insight-about .co-profile-more {
+    font-size: 10px;
+    margin-top: 2px;
+  }
+  .pead-news-compact-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .pead-news-compact-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 6px 8px;
+    align-items: start;
+    padding: 4px 0;
+    text-decoration: none;
+    color: inherit;
+    border-radius: 4px;
+  }
+  .pead-news-compact-row:hover .pead-news-compact-title {
+    color: var(--link);
+    text-decoration: underline;
+  }
+  .pead-news-compact-title {
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--text);
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+  .pead-insight-row .pead-sent {
+    font-size: 8px;
+    padding: 1px 5px;
+  }
+  .pead-insight-row .pead-news-when {
+    font-size: 9px;
+  }
+  .pead-q-section {
+    padding: 4px 0 8px !important;
+    border-top: 1px solid var(--border);
+    border-bottom: none !important;
+  }
+  .pead-card-compact .q-block-title {
+    font-size: 11px;
+    margin-bottom: 6px;
+  }
+  .pead-card-compact .q-table th,
+  .pead-card-compact .q-table td {
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+  .pead-card-compact .q-table thead th {
+    font-size: 9px;
+    padding-bottom: 4px;
+  }
   .range-wrap { margin-top: 2px; }
   .range-ends {
     display: flex;
@@ -929,6 +1585,89 @@ _PEAD2_DASHBOARD_CSS = """
     background: #4f46e5;
     border: 2px solid #fff;
     box-shadow: 0 1px 4px rgba(15, 23, 42, 0.3);
+  }
+  #pead-table td.pead-expand-td .pead-q-table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    min-width: 0;
+    font-size: 12px;
+  }
+  #pead-table td.pead-expand-td .pead-q-section .q-block {
+    border: 1px solid rgba(148, 163, 184, 0.32);
+    border-radius: 8px;
+    padding: 8px 10px 6px;
+    background: rgba(248, 250, 252, 0.55);
+  }
+  [data-theme="dark"] #pead-table td.pead-expand-td .pead-q-section .q-block {
+    border-color: rgba(148, 163, 184, 0.22);
+    background: rgba(15, 23, 42, 0.35);
+  }
+  #pead-table td.pead-expand-td .pead-q-table th,
+  #pead-table td.pead-expand-td .pead-q-table td {
+    border: none;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+    padding: 7px 12px;
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    vertical-align: middle;
+    background: transparent;
+    position: static;
+  }
+  [data-theme="dark"] #pead-table td.pead-expand-td .pead-q-table th,
+  [data-theme="dark"] #pead-table td.pead-expand-td .pead-q-table td {
+    border-bottom-color: rgba(148, 163, 184, 0.16);
+  }
+  #pead-table td.pead-expand-td .pead-q-table thead th {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: transparent;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.28);
+    padding: 0 12px 8px;
+  }
+  #pead-table td.pead-expand-td .pead-q-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+  #pead-table td.pead-expand-td .pead-q-table th:first-child,
+  #pead-table td.pead-expand-td .pead-q-table td.q-label {
+    width: 18%;
+    text-align: left;
+    font-weight: 500;
+    color: var(--text);
+  }
+  #pead-table td.pead-expand-td .pead-q-table th.q-latest,
+  #pead-table td.pead-expand-td .pead-q-table td.q-latest {
+    background: rgba(34, 197, 94, 0.1);
+    font-weight: 700;
+  }
+  #pead-table td.pead-expand-td .pead-q-table td.q-up {
+    color: var(--green);
+    font-weight: 700;
+    background: rgba(34, 197, 94, 0.08);
+  }
+  #pead-table td.pead-expand-td .pead-q-table td.q-down {
+    color: var(--red);
+    font-weight: 700;
+    background: rgba(239, 68, 68, 0.08);
+  }
+  #pead-table td.pead-expand-td .pead-q-table td.q-flat {
+    color: var(--muted);
+    background: transparent;
+  }
+  #pead-table td.pead-expand-td .pead-q-table td.q-latest.q-up {
+    background: rgba(34, 197, 94, 0.14);
+  }
+  #pead-table td.pead-expand-td .pead-q-table td.q-latest.q-down {
+    background: rgba(239, 68, 68, 0.12);
+  }
+  #pead-table td.pead-expand-td .q-panel {
+    width: 100%;
+    padding: 0;
+    overflow: visible;
   }
 </style>
 """
@@ -1005,6 +1744,9 @@ def _rows_for_json(df: pd.DataFrame) -> list[dict]:
                 "ebidt_yoy": json_safe_scalar(row.get("ebidt_yoy")),
                 "ebidt_qoq": json_safe_scalar(row.get("ebidt_qoq")),
                 "cf_profit": json_safe_scalar(row.get("cf_profit")),
+                "pass_rising_cfo": bool(row.get("pass_rising_cfo")),
+                "pass_cfo_ebit": bool(row.get("pass_cfo_ebit")),
+                "cfo_ebit_pct": json_safe_scalar(row.get("cfo_ebit_pct")),
                 "sales_bust": bool(row.get("sales_bust")),
                 "sales_streak": json_safe_scalar(row.get("sales_streak")),
             }
@@ -1057,34 +1799,19 @@ def _rows_for_json(df: pd.DataFrame) -> list[dict]:
     return attach_google_news_to_rows(rows)
 
 
-def _recent_day_pills_html(options: tuple[int, ...]) -> str:
-    parts = [
-        f'<button type="button" class="quarter-btn recent-day-btn" data-days="{int(d)}">{int(d)}d</button>'
-        for d in options
-    ]
-    parts.append('<button type="button" class="quarter-btn recent-day-btn" data-days="">All</button>')
-    return (
-        '<span class="recent-days-label">Results</span>'
-        + "".join(parts)
-    )
-
-
 def build_pead2_dashboard_html(
     df: pd.DataFrame,
     *,
     df_previous: pd.DataFrame | None = None,
     title: str = "Top PEAD Candidates",
     standalone: bool = True,
-    default_sort_col: str = "returns_pct",
+    default_sort_col: str = "result_date",
     default_sort_dir: int = -1,
     recent_filter_days: int | None = None,
     recent_day_options: tuple[int, ...] | None = None,
 ) -> str:
-    day_options = recent_day_options or (7, 15, 30, 60)
-    default_days = recent_filter_days
-    if default_days is None and day_options:
-        default_days = 30 if 30 in day_options else day_options[0]
-    recent_pills = _recent_day_pills_html(day_options)
+    del recent_filter_days, recent_day_options
+    cfo_ebit_min = int(FORMULA_100X_CFO_EBIT_MIN)
     updated = _scan_generated_ist(df)
     data_current = json_dumps(_rows_for_json(df), separators=(",", ":"))
     prev_df = df_previous if df_previous is not None else pd.DataFrame()
@@ -1098,7 +1825,7 @@ def build_pead2_dashboard_html(
       <div>
         <h1 class="title">🏆 {html.escape(title)}</h1>
         <div class="meta">
-          {html.escape(updated)} · FF-style PEAD score · click row for quarterly data &amp; price snapshot
+          {html.escape(updated)} · panel {_PEAD2_UI_BUILD} · click row to expand detail
           <span class="quarter-toggle">
             <button type="button" class="quarter-btn on" id="btn-q-current">Current Quarter</button>
             <button type="button" class="quarter-btn" id="btn-q-previous"{" disabled" if not has_previous else ""}>Previous Quarter</button>
@@ -1113,7 +1840,7 @@ def build_pead2_dashboard_html(
     <div class="toolbar">
       <div class="count" id="count-label">0 companies</div>
       <div class="col-toggle">
-        <div class="recent-days quarter-toggle" id="recent-days">{recent_pills}</div>
+        <button type="button" class="quarter-btn cfo-filter-btn" id="btn-cfo-100x" title="Rising CFO + CFO/EBIT&gt;{cfo_ebit_min}%">100X CFO</button>
         <button type="button" id="btn-cols" title="Show growth / CF columns">Columns (<span id="col-visible">6</span>/<span id="col-total">13</span>)</button>
       </div>
     </div>
@@ -1147,6 +1874,19 @@ const COLS = [
   {{id:"cf_profit", label:"CF/Profit", fmt:"cf", def:false}},
 ];
 let showAllCols = false;
+let cfo100xOnly = false;
+const CFO_EBIT_MIN = {cfo_ebit_min};
+
+function passes100xCfo(r) {{
+  return r.pass_rising_cfo === true && r.pass_cfo_ebit === true;
+}}
+
+function fmt100xCfoDot(r) {{
+  if (!passes100xCfo(r)) return "";
+  return (
+  `<span class="x100-cfo-dot pass" title="100X CFO pass: rising cash flow & CFO/EBIT>${{CFO_EBIT_MIN}}%"></span>`
+  );
+}}
 
 function visibleCols() {{
   return COLS.filter(c => c.def || showAllCols);
@@ -1166,53 +1906,18 @@ document.getElementById("btn-cols").onclick = () => {{
 updateColBtn();
 let sortCol = {json.dumps(default_sort_col)};
 let sortDir = {default_sort_dir};
-const RECENT_DAY_DEFAULT = {json.dumps(default_days)};
-let recentOnlyDays = RECENT_DAY_DEFAULT;
-let recentFilterOn = RECENT_DAY_DEFAULT != null;
 let expandedTicker = null;
 
-function recentCutoffIso() {{
-  if (!recentOnlyDays) return null;
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() - Number(recentOnlyDays));
-  return d.toISOString().slice(0, 10);
+function passesCfoFilters(r) {{
+  if (cfo100xOnly && !passes100xCfo(r)) return false;
+  return true;
 }}
 
-function passesRecentFilter(r) {{
-  if (!recentFilterOn || !recentOnlyDays) return true;
-  const rd = String(r.result_date || "");
-  const cutoff = recentCutoffIso();
-  return cutoff && rd && rd >= cutoff;
-}}
-
-function updateRecentDayPills() {{
-  document.querySelectorAll(".recent-day-btn").forEach(btn => {{
-    const raw = btn.dataset.days;
-    const days = raw ? Number(raw) : null;
-    const on = recentFilterOn
-      ? days === recentOnlyDays
-      : days === null;
-    btn.classList.toggle("on", on);
-  }});
-}}
-
-document.querySelectorAll(".recent-day-btn").forEach(btn => {{
-  btn.onclick = () => {{
-    const raw = btn.dataset.days;
-    if (!raw) {{
-      recentFilterOn = false;
-    }} else {{
-      recentOnlyDays = Number(raw);
-      recentFilterOn = true;
-      sortCol = "result_date";
-      sortDir = -1;
-    }}
-    updateRecentDayPills();
-    render();
-  }};
-}});
-updateRecentDayPills();
+document.getElementById("btn-cfo-100x").onclick = () => {{
+  cfo100xOnly = !cfo100xOnly;
+  document.getElementById("btn-cfo-100x").classList.toggle("on", cfo100xOnly);
+  render();
+}};
 
 function colById(id) {{
   return COLS.find(c => c.id === id) || COLS[0];
@@ -1337,6 +2042,18 @@ function fmtCf(v) {{
   else if (n < 1.2) cls = "g-fpe-mid";
   return `<span class="${{cls}}">${{n.toFixed(2)}}</span>`;
 }}
+function fmtCheck(pass) {{
+  if (pass === true) return `<span class="g-pos">✓</span>`;
+  if (pass === false) return `<span class="g-neg">✗</span>`;
+  return "—";
+}}
+function fmtCfoEbit(r) {{
+  const pct = num(r.cfo_ebit_pct);
+  if (pct === null || isNaN(pct)) return "—";
+  const ok = r.pass_cfo_ebit === true;
+  const cls = ok ? "g-pos" : "g-neg";
+  return `<span class="${{cls}}">${{pct.toFixed(1)}}%</span>`;
+}}
 function fmtDateIso(v) {{
   if (!v) return "—";
   return String(v).slice(0, 10);
@@ -1368,20 +2085,40 @@ function fmtPrice(v) {{
   if (n === null || isNaN(n)) return "—";
   return `<span class="num">₹${{n.toLocaleString("en-IN", {{ minimumFractionDigits: 2, maximumFractionDigits: 2 }})}}</span>`;
 }}
+function fmtWebPill(web) {{
+  if (!web) return "";
+  let href = String(web).trim();
+  if (!/^https?:\\/\\//i.test(href)) href = "https://" + href;
+  const esc = (s) => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  let title = href;
+  try {{
+    const host = new URL(href).hostname.replace(/^www\\./i, "");
+    if (host) title = host;
+  }} catch (_) {{}}
+  return `<a href="${{esc(href)}}" target="_blank" rel="noopener noreferrer" title="${{esc(title)}}">Web</a>`;
+}}
 function fmtCompany(r) {{
   const name = r.name || r.ticker;
   const esc = (s) => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
   const tags = fmtCorpTags(r);
+  const web = r.website || (r.snapshot && r.snapshot.website);
+  let links =
+    `<span class="links-inline">` +
+    `<a href="${{esc(r.sc)}}" target="_blank" rel="noopener noreferrer" title="screener.in">SC</a>` +
+    `<a href="${{esc(r.tv)}}" target="_blank" rel="noopener noreferrer" title="TradingView">TV</a>`;
+  if (web) links += fmtWebPill(web);
+  links += `</span>`;
   return (
     `<div class="company-cell">` +
     `<div class="company-top">` +
+    `<div class="company-name-wrap">` +
     `<span class="company-name" title="${{esc(name)}}">${{esc(name)}}</span>` +
+    fmt100xCfoDot(r) +
+    `</div>` +
     `<span class="company-actions">` +
     `<span class="expand-hint" title="Click row for price, quarterly data &amp; news"></span>` +
-    `<span class="links-inline">` +
-    `<a href="${{r.sc}}" target="_blank" rel="noopener noreferrer" title="screener.in">SC</a>` +
-    `<a href="${{r.tv}}" target="_blank" rel="noopener noreferrer" title="TradingView">TV</a>` +
-    `</span></span></div>` +
+    links +
+    `</span></div>` +
     (tags ? `<div class="company-tags-row">${{tags}}</div>` : "") +
     `</div>`
   );
@@ -1394,15 +2131,35 @@ function cell(col, r) {{
     case "date_iso": return fmtDateIso(r.result_date);
     case "fpe": return fmtFpe(r.forward_pe);
     case "cf": return fmtCf(r.cf_profit);
+    case "check": return fmtCheck(r[col.id]);
+    case "cfo_ebit": return fmtCfoEbit(r);
     case "pct": return fmtPct(r[col.id]);
     case "daily": return fmtDaily(r.daily_ret_pct);
     default: return r[col.id] ?? "—";
   }}
 }}
 
+function syncExpandPanelWidth() {{
+  const wrap = document.getElementById("table-wrap");
+  const table = document.getElementById("pead-table");
+  if (!wrap || !table) return;
+  const w = wrap.clientWidth;
+  document.querySelectorAll("tr.pead-expand td.pead-expand-td").forEach(td => {{
+    td.style.width = w + "px";
+    td.style.maxWidth = w + "px";
+  }});
+}}
+
 function toggleExpand(ticker) {{
   expandedTicker = expandedTicker === ticker ? null : ticker;
   render();
+  if (expandedTicker) {{
+    requestAnimationFrame(() => {{
+      syncExpandPanelWidth();
+      const open = document.querySelector("tr.pead-expand");
+      if (open) open.scrollIntoView({{ block: "nearest", behavior: "smooth" }});
+    }});
+  }}
 }}
 
 function colClass(c) {{
@@ -1436,12 +2193,12 @@ function renderHead() {{
 
 function render() {{
   const DATA = activeData();
-  let rows = DATA.filter(passesRecentFilter);
+  let rows = DATA.filter(passesCfoFilters);
   const sortColumn = colById(sortCol);
   rows.sort((a, b) => compareRows(a, b, sortColumn));
-  const recentNote = recentFilterOn && recentOnlyDays ? ` · last ${{recentOnlyDays}}d results` : "";
+  const cfoNote = cfo100xOnly ? " · 100X CFO pass only" : "";
   document.getElementById("count-label").textContent =
-    `PEAD Candidates (${{rows.length}} companies · ${{quarterMode === "previous" ? "Previous" : "Current"}} quarter${{recentNote}})`;
+    `PEAD Candidates (${{rows.length}} companies · ${{quarterMode === "previous" ? "Previous" : "Current"}} quarter · latest results first${{cfoNote}})`;
   renderHead();
   const tb = document.getElementById("tbody");
   tb.innerHTML = "";
@@ -1468,14 +2225,16 @@ function render() {{
       const td = document.createElement("td");
       td.colSpan = cols.length;
       td.className = "pead-expand-td";
-      td.innerHTML = renderExpandPanel(r);
+      td.innerHTML = renderPeadExpandPanel(r);
       tr2.appendChild(td);
       tb.appendChild(tr2);
     }}
   }});
+  syncExpandPanelWidth();
 }}
 
 render();
+window.addEventListener("resize", () => syncExpandPanelWidth());
 </script>
 """
 
@@ -1494,4 +2253,4 @@ render();
 def pead2_iframe_height(row_count: int, *, expanded: bool = False) -> int:
     """Tall embed so dashboard fills the page; internal scroll in table."""
     base = min(1500, max(960, 920 + min(row_count, 40) * 2))
-    return base + (360 if expanded else 0)
+    return base + (480 if expanded else 0)

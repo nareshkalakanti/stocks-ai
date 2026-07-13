@@ -3,8 +3,6 @@ import pandas as pd
 
 from stocks.core.config import (
     INDIA_STOCKS_DATASET,
-    PEAD2_RECENT_DAY_OPTIONS,
-    PEAD2_RECENT_DAYS_DEFAULT,
     PEAD2_RECENT_MAX_FETCH,
     cap_tier_id_from_label,
 )
@@ -32,6 +30,31 @@ from stocks.dashboards.report_html import embed_html_iframe
 from stocks.scans.scan_universe import cap_tier_min_mcap_cr, resolve_cap_tier_id
 from stocks.scans.stock_filters import apply_stock_filters
 from stocks.listings.stocks_data import load_india_stocks
+
+
+def _render_ff_score_reference() -> None:
+    from stocks.strategies.pead2.validation_refs import ff_monitor_score_comparison
+
+    with st.expander("FF PEAD score test · KPL & WPIL"):
+        st.caption(
+            "FinanciallyFree monitor screenshots (Jul 2026). "
+            "Compare our FF-mode score vs their PEAD. "
+            "Run `pytest tests/test_pead_validation.py::TestPeadFfMonitorJul2026 -q`"
+        )
+        tab_card, tab_row = st.tabs(["Monitor card", "Dashboard row"])
+        with tab_card:
+            st.dataframe(
+                ff_monitor_score_comparison(use_dashboard=False),
+                use_container_width=True,
+                hide_index=True,
+            )
+        with tab_row:
+            st.dataframe(
+                ff_monitor_score_comparison(use_dashboard=True),
+                use_container_width=True,
+                hide_index=True,
+            )
+
 
 _PEAD_SCAN_CSS = """
 <style>
@@ -307,6 +330,8 @@ def render_pead2(*, show_title: bool = True) -> None:
     if show_title:
         st.markdown("### PEAD")
 
+    _render_ff_score_reference()
+
     with scan_toolbar_row(*base_scan_extra_widths(COMPACT_SCAN_BTN_COL_WIDTH)) as row:
         filters, cap_tier_label_ui, holdings_industries_only = render_base_scan_filters(
             stocks,
@@ -444,15 +469,13 @@ def render_pead2(*, show_title: bool = True) -> None:
         df_previous=prev_df,
         title="Top PEAD Candidates",
         standalone=False,
-        default_sort_col="returns_pct",
-        default_sort_dir=-1,
-        recent_filter_days=PEAD2_RECENT_DAYS_DEFAULT,
-        recent_day_options=PEAD2_RECENT_DAY_OPTIONS,
     )
 
     st.caption(
         f"{len(candidates)} stocks · {cache_hits:,} from DB · "
-        f"**Results window** pills filter by result date (default **{PEAD2_RECENT_DAYS_DEFAULT}d**)."
+        f"sorted by **latest result date** · "
+        f"**green square** = rising CFO + CFO/EBIT gate · toggle **100X CFO** to filter · "
+        f"**click a row** to expand the detail panel."
     )
     embed_html_iframe(embed_html, height=pead2_iframe_height(len(candidates)))
 
