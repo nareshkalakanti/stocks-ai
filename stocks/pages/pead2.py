@@ -6,10 +6,12 @@ from stocks.core.config import (
     PEAD2_RECENT_MAX_FETCH,
     cap_tier_id_from_label,
 )
+from stocks.market.fundamentals_service import cap_tier_label
 from stocks.strategies.pead2.html import build_pead2_dashboard_html, pead2_iframe_height
 from stocks.strategies.pead2.service import (
     Pead2ScanCoverage,
     PendingFetchMode,
+    expand_pead_candidates_to_universe,
     pead2_scan_coverage,
     prepare_pead_universe,
     run_pead2_scan,
@@ -18,6 +20,7 @@ from stocks.strategies.pead2.strategy import (
     enrich_pead_candidates,
     format_pead_export_df,
 )
+from stocks.scans.holdings_playlist import is_holdings_playlist
 from stocks.scans.holdings_industry_filter import apply_holdings_industries_if_checked
 from stocks.scans.scan_toolbar import (
     COMPACT_SCAN_BTN_COL_WIDTH,
@@ -30,30 +33,6 @@ from stocks.dashboards.report_html import embed_html_iframe
 from stocks.scans.scan_universe import cap_tier_min_mcap_cr, resolve_cap_tier_id
 from stocks.scans.stock_filters import apply_stock_filters
 from stocks.listings.stocks_data import load_india_stocks
-
-
-def _render_ff_score_reference() -> None:
-    from stocks.strategies.pead2.validation_refs import ff_monitor_score_comparison
-
-    with st.expander("FF PEAD score test · KPL & WPIL"):
-        st.caption(
-            "FinanciallyFree monitor screenshots (Jul 2026). "
-            "Compare our FF-mode score vs their PEAD. "
-            "Run `pytest tests/test_pead_validation.py::TestPeadFfMonitorJul2026 -q`"
-        )
-        tab_card, tab_row = st.tabs(["Monitor card", "Dashboard row"])
-        with tab_card:
-            st.dataframe(
-                ff_monitor_score_comparison(use_dashboard=False),
-                use_container_width=True,
-                hide_index=True,
-            )
-        with tab_row:
-            st.dataframe(
-                ff_monitor_score_comparison(use_dashboard=True),
-                use_container_width=True,
-                hide_index=True,
-            )
 
 
 _PEAD_SCAN_CSS = """
@@ -174,6 +153,7 @@ def _sync_fetch_baselines(filter_key: tuple, coverage: Pead2ScanCoverage) -> dic
             "filter_key": filter_key,
             "missing": coverage.pending_count("missing"),
             "stale": coverage.pending_count("stale"),
+            "no_data": coverage.pending_count("no_data"),
         }
         st.session_state.pead2_fetch_baselines = baselines
         st.session_state.pop("pead2_last_fetch", None)
@@ -203,7 +183,7 @@ def _render_last_fetch_status(filter_key: tuple) -> None:
     if not isinstance(last, dict) or last.get("filter_key") != filter_key:
         return
     mode = last.get("mode")
-    label = "New" if mode == "missing" else "Stale"
+    label = {"missing": "New", "stale": "Stale", "no_data": "No data"}.get(mode, "Batch")
     delta = int(last["remaining_before"]) - int(last["remaining_after"])
     cleared = int(last.get("cleared") or last.get("saved") or 0)
     saved = int(last.get("saved") or 0)
@@ -230,7 +210,7 @@ def _run_scan(
             progress.progress(1.0, text="PEAD — loading from DB...")
             return
         if only_pending:
-            mode_label = "never scanned" if pending_mode == "missing" else "stale"
+            mode_label = "never scanned" if pending_mode == "missing" else "stale" if pending_mode == "stale" else "no PEAD data"
             progress.progress(
                 min(done / total, 1.0),
                 text=f"Fetching {mode_label}: {done:,} / {total:,} this batch...",
@@ -264,24 +244,34 @@ def _render_fetch_remaining_box(
     filter_key: tuple,
     baselines: dict[str, int],
     batch_size: int,
+    show_no_data_retry: bool = False,
 ) -> None:
     """Collapsible batch-fetch panel — collapsed when queue is empty."""
     missing_n = coverage.pending_count("missing")
     stale_n = coverage.pending_count("stale")
+    no_data_n = coverage.pending_count("no_data")
     pending_n = coverage.pending
     missing_base = max(int(baselines.get("missing") or missing_n), missing_n, 1)
     stale_base = max(int(baselines.get("stale") or stale_n), stale_n, 1)
+    no_data_base = max(int(baselines.get("no_data") or no_data_n), no_data_n, 1)
 
     if pending_n > 0:
         summary = f"Fetch queue · {pending_n:,} remaining (new {missing_n:,} · stale {stale_n:,})"
+    elif show_no_data_retry and no_data_n > 0:
+        summary = (
+            f"Fetch queue · complete · {coverage.cached:,} in DB · "
+            f"{coverage.scorable:,} scorable · {no_data_n:,} no data"
+        )
     else:
         summary = f"Fetch queue · complete · {coverage.cached:,} in DB"
 
-    with st.expander(summary, expanded=(pending_n > 0)):
+    with st.expander(summary, expanded=(pending_n > 0 or (show_no_data_retry and no_data_n > 0))):
         st.markdown('<div class="pead-fetch-panel"></div>', unsafe_allow_html=True)
         _render_last_fetch_status(filter_key)
 
-        row = st.columns([0.55, 1.15, 1.15], gap="small", vertical_alignment="bottom")
+        col_count = 4 if show_no_data_retry else 3
+        widths = [0.55] + [1.15] * (col_count - 1)
+        row = st.columns(widths, gap="small", vertical_alignment="bottom")
         with row[0]:
             st.number_input(
                 "Batch",
@@ -316,6 +306,19 @@ def _render_fetch_remaining_box(
                 on_click=_queue_pead_fetch,
                 args=("stale",),
             )
+        if show_no_data_retry:
+            with row[3]:
+                st.caption(f"No data **{no_data_n:,}**")
+                if no_data_n > 0:
+                    _render_bucket_progress(no_data_n, no_data_base)
+                st.button(
+                    f"Retry {min(no_data_n, batch_size):,}",
+                    use_container_width=True,
+                    key="pead2_fetch_no_data",
+                    disabled=no_data_n == 0,
+                    on_click=_queue_pead_fetch,
+                    args=("no_data",),
+                )
 
 
 def render_pead2(*, show_title: bool = True) -> None:
@@ -329,8 +332,6 @@ def render_pead2(*, show_title: bool = True) -> None:
 
     if show_title:
         st.markdown("### PEAD")
-
-    _render_ff_score_reference()
 
     with scan_toolbar_row(*base_scan_extra_widths(COMPACT_SCAN_BTN_COL_WIDTH)) as row:
         filters, cap_tier_label_ui, holdings_industries_only = render_base_scan_filters(
@@ -390,6 +391,8 @@ def render_pead2(*, show_title: bool = True) -> None:
             pending_mode: PendingFetchMode = "missing"
         elif fetch_queue == "stale":
             pending_mode = "stale"
+        elif fetch_queue == "no_data":
+            pending_mode = "no_data"
         else:
             pending_mode = "all"
 
@@ -400,7 +403,7 @@ def render_pead2(*, show_title: bool = True) -> None:
         with status_slot.container():
             st.info(
                 f"Starting batch — **{min(remaining_before, batch_size):,}** "
-                f"{'never scanned' if pending_mode == 'missing' else 'stale' if pending_mode == 'stale' else 'remaining'} "
+                f"{'never scanned' if pending_mode == 'missing' else 'stale' if pending_mode == 'stale' else 'no PEAD data' if pending_mode == 'no_data' else 'remaining'} "
                 f"tickers (of {remaining_before:,} in queue)..."
             )
 
@@ -442,17 +445,38 @@ def render_pead2(*, show_title: bool = True) -> None:
 
     coverage = pead2_scan_coverage(universe)
     st.session_state.pead2_coverage = coverage
+    holdings_view = is_holdings_playlist(filters.market)
     _render_fetch_remaining_box(
         coverage,
         filter_key=filter_key,
         baselines=baselines,
         batch_size=batch_size,
+        show_no_data_retry=holdings_view,
     )
 
     candidates = st.session_state.get("pead2_candidates")
     candidates_previous = st.session_state.get("pead2_candidates_previous")
 
-    if candidates is None or candidates.empty:
+    if candidates is None and holdings_view and not universe.empty:
+        result = run_pead2_scan(universe, only_pending=True, max_fetch=0)
+        _store_scan_result(result)
+        candidates = result.get("candidates")
+        candidates_previous = result.get("candidates_previous")
+
+    if candidates is None:
+        st.caption("Set filters, then click **Scan**.")
+        return
+
+    if holdings_view and not universe.empty:
+        candidates = expand_pead_candidates_to_universe(universe, candidates)
+        if candidates_previous is not None and not candidates_previous.empty:
+            candidates_previous = expand_pead_candidates_to_universe(
+                universe, candidates_previous
+            )
+        else:
+            candidates_previous = expand_pead_candidates_to_universe(universe, pd.DataFrame())
+
+    if candidates.empty:
         st.caption("Set filters, then click **Scan**.")
         return
 
@@ -464,19 +488,35 @@ def render_pead2(*, show_title: bool = True) -> None:
         else pd.DataFrame()
     )
     cache_hits = int(st.session_state.get("pead2_cache_hits") or 0)
+    scored_n = int(candidates["pead_score"].notna().sum()) if "pead_score" in candidates.columns else len(candidates)
     embed_html = build_pead2_dashboard_html(
         candidates,
         df_previous=prev_df,
-        title="Top PEAD Candidates",
+        title="Holdings PEAD" if holdings_view else "Top PEAD Candidates",
+        list_label="Holdings" if holdings_view else "PEAD candidates",
+        show_scored_split=holdings_view,
         standalone=False,
     )
 
-    st.caption(
-        f"{len(candidates)} stocks · {cache_hits:,} from DB · "
-        f"sorted by **latest result date** · "
-        f"**green square** = rising CFO + CFO/EBIT gate · toggle **100X CFO** to filter · "
-        f"**click a row** to expand the detail panel."
-    )
+    if holdings_view:
+        no_data_n = coverage.no_data
+        tier_note = (
+            f" · **{cap_tier_label(cap_tier_id)}**"
+            if cap_tier_id not in ("all", "", None)
+            else ""
+        )
+        st.caption(
+            f"{len(candidates)} holdings{tier_note} · **{scored_n:,}** with PEAD scores · "
+            f"**{no_data_n:,}** without quarterly data · "
+            f"{cache_hits:,} loaded from DB · "
+            f"**click a row** to expand the detail panel."
+        )
+    else:
+        st.caption(
+            f"{len(candidates)} stocks · {cache_hits:,} from DB · "
+            f"sorted by **latest result date** · "
+            f"**click a row** to expand the detail panel."
+        )
     embed_html_iframe(embed_html, height=pead2_iframe_height(len(candidates)))
 
     csv = format_pead_export_df(candidates).to_csv(index=False).encode("utf-8")

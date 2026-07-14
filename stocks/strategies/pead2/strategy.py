@@ -128,6 +128,7 @@ def attach_strategy_breakout_signals(df: pd.DataFrame) -> pd.DataFrame:
         ("has_bb", False),
         ("tq_score", pd.NA),
         ("tq_crossover", ""),
+        ("tq_timeframe", ""),
         ("bb_signal", ""),
         ("bb_timeframe", ""),
     ):
@@ -150,6 +151,7 @@ def attach_strategy_breakout_signals(df: pd.DataFrame) -> pd.DataFrame:
             if tq.get("score") is not None:
                 out.at[idx, "tq_score"] = float(tq["score"])
             out.at[idx, "tq_crossover"] = str(tq.get("crossover_type") or "")
+            out.at[idx, "tq_timeframe"] = str(tq.get("timeframe") or "")
         bb = rec.get("bb")
         if bb:
             out.at[idx, "has_bb"] = True

@@ -32,6 +32,38 @@ def spin_off_map() -> dict[str, bool]:
 
 
 @lru_cache(maxsize=1)
+def parents_ticker_set() -> frozenset[str]:
+    from stocks.core.database import load_demerger_stocks_from_db
+
+    df = load_demerger_stocks_from_db()
+    if df.empty or "role" not in df.columns:
+        return frozenset()
+    parents = df[df["role"].astype(str) == "Parent"]
+    return frozenset(safe_str(t).upper() for t in parents["ticker"] if safe_str(t))
+
+
+@lru_cache(maxsize=1)
+def spinoffs_ticker_set() -> frozenset[str]:
+    from stocks.core.database import load_demerger_stocks_from_db
+
+    df = load_demerger_stocks_from_db()
+    if df.empty or "role" not in df.columns:
+        return frozenset()
+    spins = df[df["role"].astype(str) == "Spin-off"]
+    return frozenset(safe_str(t).upper() for t in spins["ticker"] if safe_str(t))
+
+
+@lru_cache(maxsize=1)
+def ds_ticker_set() -> frozenset[str]:
+    from stocks.core.database import load_demerger_stocks_from_db
+
+    df = load_demerger_stocks_from_db()
+    if df.empty:
+        return frozenset()
+    return frozenset(safe_str(t).upper() for t in df["ticker"] if safe_str(t))
+
+
+@lru_cache(maxsize=1)
 def holdings_ticker_set() -> frozenset[str]:
     from stocks.core.database import load_holdings_from_db
 
@@ -44,7 +76,9 @@ def holdings_ticker_set() -> frozenset[str]:
 def clear_corp_tags_cache() -> None:
     business_group_map.cache_clear()
     demerger_map.cache_clear()
-    spin_off_map.cache_clear()
+    parents_ticker_set.cache_clear()
+    spinoffs_ticker_set.cache_clear()
+    ds_ticker_set.cache_clear()
     holdings_ticker_set.cache_clear()
 
 
@@ -53,11 +87,13 @@ def business_group_for_ticker(ticker: str) -> str:
 
 
 def demerger_for_ticker(ticker: str) -> bool:
-    return bool(demerger_map().get(safe_str(ticker).upper()))
+    t = safe_str(ticker).upper()
+    return bool(t) and t in parents_ticker_set()
 
 
 def spin_off_for_ticker(ticker: str) -> bool:
-    return bool(spin_off_map().get(safe_str(ticker).upper()))
+    t = safe_str(ticker).upper()
+    return bool(t) and t in spinoffs_ticker_set()
 
 
 def is_holding_for_ticker(ticker: str) -> bool:
@@ -138,11 +174,11 @@ def attach_corp_tags(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     tickers = out["ticker"].astype(str).str.upper()
     bg_map = business_group_map()
-    dem_map = demerger_map()
-    spin_map = spin_off_map()
+    parents = parents_ticker_set()
+    spinoffs = spinoffs_ticker_set()
     holdings = holdings_ticker_set()
     out["business_group"] = tickers.map(lambda t: bg_map.get(safe_str(t).upper(), ""))
     out["is_holding"] = tickers.map(lambda t: safe_str(t).upper() in holdings)
-    out["demerger"] = tickers.map(lambda t: bool(dem_map.get(safe_str(t).upper())))
-    out["spin_off"] = tickers.map(lambda t: bool(spin_map.get(safe_str(t).upper())))
+    out["demerger"] = tickers.map(lambda t: safe_str(t).upper() in parents)
+    out["spin_off"] = tickers.map(lambda t: safe_str(t).upper() in spinoffs)
     return out

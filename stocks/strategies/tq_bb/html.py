@@ -13,6 +13,7 @@ _TQ_JS_COLS = [
     {"id": "sector", "label": "Sector", "fmt": "text"},
     {"id": "price", "label": "Price", "fmt": "num2"},
     {"id": "crossover_type", "label": "Crossover", "fmt": "text"},
+    {"id": "timeframe", "label": "TF", "fmt": "text"},
     {"id": "date", "label": "Signal", "fmt": "date"},
 ]
 
@@ -31,7 +32,7 @@ def build_strategy_dashboard_html(
     *,
     tq_df: pd.DataFrame | None = None,
     bb_df: pd.DataFrame | None = None,
-    bb_timeframe: str = "weekly",
+    timeframe: str = "weekly",
     include_tq: bool = True,
     include_bb: bool = False,
     title: str = "Strategy scan",
@@ -43,7 +44,7 @@ def build_strategy_dashboard_html(
         sections.append(
             build_interactive_section(
                 "tq",
-                "TQ — weekly trend + RS vs NIFTY",
+                f"TQ — {timeframe} trend + RS vs NIFTY",
                 tq_df if tq_df is not None else pd.DataFrame(),
                 _TQ_JS_COLS,
                 kind="tq",
@@ -54,7 +55,7 @@ def build_strategy_dashboard_html(
         sections.append(
             build_interactive_section(
                 "bb",
-                f"Bollinger Bands ({bb_timeframe})",
+                f"Bollinger Bands ({timeframe})",
                 bb_df if bb_df is not None else pd.DataFrame(),
                 _BB_JS_COLS,
                 kind="bb",

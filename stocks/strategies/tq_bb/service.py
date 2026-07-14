@@ -20,13 +20,14 @@ from stocks.core.config import (
 from stocks.market.fundamentals_service import filter_listings_by_cap_tier
 from stocks.scans.results_utils import analysis_universe
 from stocks.market.indicators import (
-    align_weekly_with_nifty,
+    align_ohlcv_with_nifty,
     calculate_adx,
     calculate_bollinger_bands,
     calculate_relative_strength,
     calculate_rsi,
     calculate_supertrend,
     get_nifty_data,
+    get_nifty_data_daily,
 )
 from stocks.core.log_service import METRICS_ERROR, log_error
 from stocks.market.price_service import to_yfinance_symbol
@@ -34,11 +35,29 @@ from stocks.shared.links import attach_research_links
 from stocks.core.text_utils import safe_str
 from stocks.market.yfinance_limits import call_fast
 
-BB_TIMEFRAMES = ("weekly", "monthly", "3months")
+TQ_TIMEFRAMES = ("daily", "weekly")
+BB_TIMEFRAMES = ("daily", "weekly", "monthly", "3months")
+
+
+def strategy_timeframe_options(strategy_choice: str) -> tuple[str, ...]:
+    """Shared scan timeframe dropdown options (TQ supports daily/weekly only)."""
+    if safe_str(strategy_choice) == "Bollinger Bands":
+        return BB_TIMEFRAMES
+    return TQ_TIMEFRAMES
+
 BB_INTERVAL_MAP = {
+    "daily": ("1y", "1d"),
     "weekly": ("1y", "1wk"),
     "monthly": ("5y", "1mo"),
     "3months": ("max", "3mo"),
+}
+TQ_INTERVAL_MAP = {
+    "weekly": ("2y", "1wk"),
+    "daily": ("2y", "1d"),
+}
+TQ_MIN_BARS = {
+    "weekly": 65,
+    "daily": 65,
 }
 
 
@@ -127,15 +146,23 @@ def analyze_stock_bb(
     }
 
 
-def analyze_stock_tq(ticker: str, market: str | None, nifty_data: pd.DataFrame) -> dict | None:
+def analyze_stock_tq(
+    ticker: str,
+    market: str | None,
+    nifty_data: pd.DataFrame,
+    timeframe: str = "weekly",
+) -> dict | None:
     if is_skippable_symbol(ticker):
         return None
 
-    data = _fetch_history(ticker, market, period="2y", interval="1wk")
-    if data is None or len(data) < 50:
+    tf = safe_str(timeframe).lower() or "weekly"
+    period, interval = TQ_INTERVAL_MAP.get(tf, TQ_INTERVAL_MAP["weekly"])
+    data = _fetch_history(ticker, market, period=period, interval=interval)
+    min_bars = TQ_MIN_BARS.get(tf, 65)
+    if data is None or len(data) < min_bars:
         return None
 
-    data, nifty = align_weekly_with_nifty(data, nifty_data)
+    data, nifty = align_ohlcv_with_nifty(data, nifty_data, timeframe=tf, min_bars=min_bars)
     if data is None or nifty is None:
         return None
 
@@ -187,6 +214,9 @@ def analyze_stock_tq(ticker: str, market: str | None, nifty_data: pd.DataFrame) 
     prev_long_term_rs = long_term_rs.iloc[-2] if len(long_term_rs) > 1 else 0
     prev_short_term_rs = short_term_rs.iloc[-2] if len(short_term_rs) > 1 else 0
 
+    long_label = "52P" if tf == "daily" else "52W"
+    short_label = "13P" if tf == "daily" else "13W"
+
     long_term_crossover = (
         prev_long_term_rs < -0.15 and current_long_term_rs > 0.005
     ) or (prev_long_term_rs < 0 and current_long_term_rs > 0.02)
@@ -195,13 +225,13 @@ def analyze_stock_tq(ticker: str, market: str | None, nifty_data: pd.DataFrame) 
     ) or (prev_short_term_rs < 0.01 and current_short_term_rs > 0.02)
 
     if long_term_crossover and short_term_crossover:
-        crossover_type = "Both 52W & 13W"
+        crossover_type = f"Both {long_label} & {short_label}"
         crossover_score = 3
     elif long_term_crossover:
-        crossover_type = "52W Only"
+        crossover_type = f"{long_label} Only"
         crossover_score = 2
     elif short_term_crossover:
-        crossover_type = "13W Only"
+        crossover_type = f"{short_label} Only"
         crossover_score = 1
     else:
         crossover_type = "No Crossover"
@@ -230,7 +260,7 @@ def analyze_stock_tq(ticker: str, market: str | None, nifty_data: pd.DataFrame) 
         "signal": "TQ_SIGNAL",
         "score": round(total_score, 2),
         "date": latest.name.strftime("%Y-%m-%d"),
-        "timeframe": "weekly",
+        "timeframe": tf,
     }
 
 
@@ -411,6 +441,7 @@ def run_tq_worker_count(max_workers: int | None, job_count: int) -> int:
 def run_tq_strategy(
     universe: pd.DataFrame,
     *,
+    timeframe: str = "weekly",
     limit: int | None = None,
     max_workers: int | None = None,
     progress_callback=None,
@@ -423,12 +454,13 @@ def run_tq_strategy(
     if not listings:
         return pd.DataFrame()
 
-    nifty_data = get_nifty_data()
+    tf = safe_str(timeframe).lower() or "weekly"
+    nifty_data = get_nifty_data_daily() if tf == "daily" else get_nifty_data()
     if nifty_data.empty:
         return pd.DataFrame()
 
     meta = _meta_lookup(universe)
-    jobs = [(ticker, market, nifty_data) for ticker, market in listings]
+    jobs = [(ticker, market, nifty_data, tf) for ticker, market in listings]
     results = _run_parallel_scan(
         jobs,
         analyze_stock_tq,
@@ -446,7 +478,13 @@ def run_tq_strategy(
     if df.empty:
         return df
 
-    priority = {"Both 52W & 13W": 0, "52W Only": 1, "13W Only": 2}
+    long_key = "52P" if tf == "daily" else "52W"
+    short_key = "13P" if tf == "daily" else "13W"
+    priority = {
+        f"Both {long_key} & {short_key}": 0,
+        f"{long_key} Only": 1,
+        f"{short_key} Only": 2,
+    }
     df["_crossover_priority"] = df["crossover_type"].map(priority).fillna(3)
     df = df.sort_values(["_crossover_priority", "score"], ascending=[True, False])
     return df.drop(columns=["_crossover_priority"]).reset_index(drop=True)

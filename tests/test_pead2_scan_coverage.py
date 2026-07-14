@@ -5,6 +5,7 @@ import pandas as pd
 from stocks.core.config import PEAD2_CALC_VERSION
 from stocks.strategies.pead2.service import (
     Pead2ScanCoverage,
+    expand_pead_candidates_to_universe,
     pead2_scan_coverage,
     run_pead2_scan,
 )
@@ -34,6 +35,7 @@ def test_pead2_scan_coverage_counts_cached_stale_and_missing():
         cached=1,
         stale=1,
         missing=1,
+        scorable=1,
     )
     assert coverage.pending_count("all") == 2
     assert coverage.pending_count("missing") == 1
@@ -130,3 +132,62 @@ def test_run_pead2_batch_tombstones_failed_fetch_so_queue_drops():
     assert result["cleared"] == 2
     assert result["coverage"].missing == 0
     assert store["BBB"]["no_pead_data"] is True
+
+
+def test_pead2_scan_coverage_counts_scorable_and_no_data():
+    universe = _universe("AAA", "BBB")
+    cached = {
+        "AAA": {"ticker": "AAA", "calc_version": PEAD2_CALC_VERSION, "lags": {"0": {}}},
+        "BBB": {"ticker": "BBB", "calc_version": PEAD2_CALC_VERSION, "no_pead_data": True, "lags": {}},
+    }
+    with patch("stocks.strategies.pead2.service.load_pead2_cache", return_value=cached):
+        coverage = pead2_scan_coverage(universe)
+    assert coverage.scorable == 1
+    assert coverage.no_data == 1
+    assert coverage.pending_count("no_data") == 1
+
+
+def test_expand_pead_candidates_to_universe_includes_all_tickers():
+    universe = _universe("AAA", "BBB", "CCC")
+    candidates = pd.DataFrame(
+        {
+            "ticker": ["AAA"],
+            "name": ["Alpha"],
+            "market": ["NSE"],
+            "sector": ["Industrials"],
+            "pead_score": [42.5],
+        }
+    )
+    cached = {
+        "AAA": {"ticker": "AAA", "calc_version": PEAD2_CALC_VERSION, "lags": {"0": {}}},
+        "BBB": {"ticker": "BBB", "calc_version": PEAD2_CALC_VERSION, "no_pead_data": True, "lags": {}},
+    }
+    with patch("stocks.strategies.pead2.service.load_pead2_cache", return_value=cached):
+        out = expand_pead_candidates_to_universe(universe, candidates)
+    assert len(out) == 3
+    assert out.loc[out["ticker"] == "AAA", "pead_score"].iloc[0] == 42.5
+    assert pd.isna(out.loc[out["ticker"] == "BBB", "pead_score"].iloc[0])
+    assert out.loc[out["ticker"] == "BBB", "pead_status"].iloc[0] == "No PEAD data"
+    assert out.loc[out["ticker"] == "CCC", "pead_status"].iloc[0] == "Not scanned"
+
+
+def test_run_pead2_scan_pending_mode_no_data_only():
+    universe = _universe("AAA", "BBB")
+    cached = {
+        "AAA": {"ticker": "AAA", "calc_version": PEAD2_CALC_VERSION, "lags": {"0": {}}},
+        "BBB": {"ticker": "BBB", "calc_version": PEAD2_CALC_VERSION, "no_pead_data": True, "lags": {}},
+    }
+
+    def _fake_analyze(ticker, market, **kwargs):
+        return {"ticker": ticker, "market": market, "calc_version": PEAD2_CALC_VERSION, "lags": {"0": {}}}
+
+    with patch("stocks.strategies.pead2.service.load_pead2_cache", return_value=cached):
+        with patch(
+            "stocks.strategies.pead2.service.analyze_pead2_ticker",
+            side_effect=_fake_analyze,
+        ) as analyze:
+            with patch("stocks.strategies.pead2.service.save_pead2_cache"):
+                result = run_pead2_scan(universe, only_pending=True, pending_mode="no_data")
+    analyze.assert_called_once()
+    assert analyze.call_args.args[0] == "BBB"
+    assert result["pending_mode"] == "no_data"

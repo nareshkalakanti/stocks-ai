@@ -149,6 +149,49 @@ def init_db() -> None:
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS spinoffs (
+                ticker TEXT PRIMARY KEY,
+                market TEXT,
+                name TEXT,
+                parent_ticker TEXT,
+                parent_company TEXT,
+                ex_date TEXT,
+                sector TEXT,
+                industry TEXT,
+                sub_sector TEXT,
+                snapshot_price REAL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS parents (
+                ticker TEXT PRIMARY KEY,
+                market TEXT,
+                name TEXT,
+                demerged_ticker TEXT,
+                demerged_company TEXT,
+                ex_date TEXT,
+                sector TEXT,
+                industry TEXT,
+                sub_sector TEXT,
+                snapshot_price REAL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS demerger_stocks (
+                ticker TEXT PRIMARY KEY,
+                role TEXT NOT NULL,
+                peer_ticker TEXT,
+                peer_company TEXT,
+                ex_date TEXT,
+                market TEXT,
+                name TEXT,
+                sector TEXT,
+                industry TEXT,
+                sub_sector TEXT,
+                snapshot_price REAL,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS pead2_cache (
                 ticker TEXT PRIMARY KEY,
                 market TEXT,
@@ -355,7 +398,7 @@ def init_db() -> None:
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 payload_json TEXT NOT NULL,
                 fetched_at TEXT NOT NULL,
-                lookback_years INTEGER NOT NULL DEFAULT 4
+                lookback_years INTEGER NOT NULL DEFAULT 15
             );
 
             CREATE TABLE IF NOT EXISTS merger_demerger_enrich_cache (
@@ -370,10 +413,163 @@ def init_db() -> None:
         )
         _ensure_stocks_columns(conn)
         _ensure_holdings_columns(conn)
+        _ensure_spinoffs_columns(conn)
+        _ensure_parents_columns(conn)
+        _ensure_demerger_stocks_columns(conn)
         _ensure_stock_metrics_columns(conn)
         _ensure_business_group_members_columns(conn)
         _ensure_intrinsic_value_cache_columns(conn)
+        _ensure_superstar_holdings_columns(conn)
+        _migrate_strategy_tq_timeframe(conn)
         _migrate_headwind_scan_cache(conn)
+        _migrate_legacy_parents_spinoffs_to_demerger_stocks(conn)
+
+
+def _ensure_superstar_holdings_columns(conn) -> None:
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(superstar_holdings)")}
+    for col in ("sector", "sub_sector", "industry", "screener_slug"):
+        if col not in cols:
+            conn.execute(f"ALTER TABLE superstar_holdings ADD COLUMN {col} TEXT")
+
+
+def _migrate_legacy_parents_spinoffs_to_demerger_stocks(conn) -> None:
+    """One-time merge of legacy parents/spinoffs watchlists into demerger_stocks."""
+    try:
+        n_parents = int(conn.execute("SELECT COUNT(*) FROM parents").fetchone()[0])
+        n_spinoffs = int(conn.execute("SELECT COUNT(*) FROM spinoffs").fetchone()[0])
+    except sqlite3.OperationalError:
+        return
+    if n_parents == 0 and n_spinoffs == 0:
+        return
+
+    now = _utc_now()
+    for row in conn.execute(
+        """
+        SELECT ticker, market, name, demerged_ticker, demerged_company, ex_date,
+               sector, industry, sub_sector, snapshot_price
+        FROM parents
+        """
+    ).fetchall():
+        ticker = safe_str(row["ticker"]).upper()
+        if not ticker:
+            continue
+        conn.execute(
+            """
+            INSERT INTO demerger_stocks (
+                ticker, role, peer_ticker, peer_company, ex_date,
+                market, name, sector, industry, sub_sector, snapshot_price, updated_at
+            )
+            VALUES (?, 'Parent', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(ticker) DO UPDATE SET
+                role='Parent',
+                peer_ticker=excluded.peer_ticker,
+                peer_company=excluded.peer_company,
+                ex_date=COALESCE(excluded.ex_date, demerger_stocks.ex_date),
+                market=COALESCE(excluded.market, demerger_stocks.market),
+                name=COALESCE(excluded.name, demerger_stocks.name),
+                sector=COALESCE(excluded.sector, demerger_stocks.sector),
+                industry=COALESCE(excluded.industry, demerger_stocks.industry),
+                sub_sector=COALESCE(excluded.sub_sector, demerger_stocks.sub_sector),
+                snapshot_price=COALESCE(excluded.snapshot_price, demerger_stocks.snapshot_price),
+                updated_at=excluded.updated_at
+            """,
+            (
+                ticker,
+                safe_str(row["demerged_ticker"]).upper() or None,
+                row["demerged_company"],
+                row["ex_date"],
+                safe_str(row["market"]).upper() or "NSE",
+                row["name"],
+                row["sector"],
+                row["industry"],
+                row["sub_sector"],
+                row["snapshot_price"],
+                now,
+            ),
+        )
+
+    for row in conn.execute(
+        """
+        SELECT ticker, market, name, parent_ticker, parent_company, ex_date,
+               sector, industry, sub_sector, snapshot_price
+        FROM spinoffs
+        """
+    ).fetchall():
+        ticker = safe_str(row["ticker"]).upper()
+        if not ticker:
+            continue
+        conn.execute(
+            """
+            INSERT INTO demerger_stocks (
+                ticker, role, peer_ticker, peer_company, ex_date,
+                market, name, sector, industry, sub_sector, snapshot_price, updated_at
+            )
+            VALUES (?, 'Spin-off', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(ticker) DO UPDATE SET
+                role='Spin-off',
+                peer_ticker=excluded.peer_ticker,
+                peer_company=excluded.peer_company,
+                ex_date=COALESCE(excluded.ex_date, demerger_stocks.ex_date),
+                market=COALESCE(excluded.market, demerger_stocks.market),
+                name=COALESCE(excluded.name, demerger_stocks.name),
+                sector=COALESCE(excluded.sector, demerger_stocks.sector),
+                industry=COALESCE(excluded.industry, demerger_stocks.industry),
+                sub_sector=COALESCE(excluded.sub_sector, demerger_stocks.sub_sector),
+                snapshot_price=COALESCE(excluded.snapshot_price, demerger_stocks.snapshot_price),
+                updated_at=excluded.updated_at
+            """,
+            (
+                ticker,
+                safe_str(row["parent_ticker"]).upper() or None,
+                row["parent_company"],
+                row["ex_date"],
+                safe_str(row["market"]).upper() or "NSE",
+                row["name"],
+                row["sector"],
+                row["industry"],
+                row["sub_sector"],
+                row["snapshot_price"],
+                now,
+            ),
+        )
+
+    conn.execute("DELETE FROM parents")
+    conn.execute("DELETE FROM spinoffs")
+
+
+def _migrate_strategy_tq_timeframe(conn) -> None:
+    """Add timeframe to strategy_tq_signals (weekly + daily caches)."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(strategy_tq_signals)")}
+    if "timeframe" in cols:
+        return
+    conn.execute(
+        """
+        CREATE TABLE strategy_tq_signals_v2 (
+            ticker TEXT NOT NULL,
+            timeframe TEXT NOT NULL DEFAULT 'weekly',
+            market TEXT,
+            score REAL,
+            crossover_type TEXT,
+            crossover_score INTEGER,
+            signal_date TEXT,
+            fetched_at TEXT NOT NULL,
+            PRIMARY KEY (ticker, timeframe)
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO strategy_tq_signals_v2 (
+            ticker, timeframe, market, score, crossover_type,
+            crossover_score, signal_date, fetched_at
+        )
+        SELECT ticker, 'weekly', market, score, crossover_type,
+               crossover_score, signal_date, fetched_at
+        FROM strategy_tq_signals
+        """
+    )
+    conn.execute("DROP TABLE strategy_tq_signals")
+    conn.execute("ALTER TABLE strategy_tq_signals_v2 RENAME TO strategy_tq_signals")
 
 
 def _migrate_headwind_scan_cache(conn) -> None:
@@ -443,6 +639,24 @@ def _ensure_stock_metrics_columns(conn) -> None:
         conn.execute("ALTER TABLE stock_metrics ADD COLUMN sector TEXT")
 
 
+def _ensure_demerger_stocks_columns(conn) -> None:
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(demerger_stocks)")}
+    if "industry" not in cols:
+        conn.execute("ALTER TABLE demerger_stocks ADD COLUMN industry TEXT")
+
+
+def _ensure_parents_columns(conn) -> None:
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(parents)")}
+    if "industry" not in cols:
+        conn.execute("ALTER TABLE parents ADD COLUMN industry TEXT")
+
+
+def _ensure_spinoffs_columns(conn) -> None:
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(spinoffs)")}
+    if "industry" not in cols:
+        conn.execute("ALTER TABLE spinoffs ADD COLUMN industry TEXT")
+
+
 def _ensure_holdings_columns(conn) -> None:
     cols = {row[1] for row in conn.execute("PRAGMA table_info(holdings)")}
     if "industry" not in cols:
@@ -478,6 +692,9 @@ def db_stats() -> dict[str, int]:
         pead_px = conn.execute("SELECT COUNT(*) FROM pead_prices").fetchone()[0]
         reports = conn.execute("SELECT COUNT(*) FROM research_reports").fetchone()[0]
         holdings = conn.execute("SELECT COUNT(*) FROM holdings").fetchone()[0]
+        spinoffs = conn.execute("SELECT COUNT(*) FROM spinoffs").fetchone()[0]
+        parents = conn.execute("SELECT COUNT(*) FROM parents").fetchone()[0]
+        demerger_stocks = conn.execute("SELECT COUNT(*) FROM demerger_stocks").fetchone()[0]
         business_groups = conn.execute("SELECT COUNT(*) FROM business_groups").fetchone()[0]
         business_group_members = conn.execute(
             "SELECT COUNT(*) FROM business_group_members"
@@ -491,6 +708,9 @@ def db_stats() -> dict[str, int]:
         "pead_prices": pead_px,
         "reports": reports,
         "holdings": holdings,
+        "spinoffs": spinoffs,
+        "parents": parents,
+        "demerger_stocks": demerger_stocks,
         "business_groups": business_groups,
         "business_group_members": business_group_members,
     }
@@ -969,6 +1189,283 @@ def holdings_count() -> int:
         return int(conn.execute("SELECT COUNT(*) FROM holdings").fetchone()[0])
 
 
+def load_spinoffs_from_db() -> pd.DataFrame:
+    init_db()
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT ticker, market, name, parent_ticker, parent_company, ex_date,
+                   sector, industry, sub_sector, snapshot_price
+            FROM spinoffs
+            ORDER BY ex_date DESC, ticker
+            """
+        ).fetchall()
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame([dict(r) for r in rows])
+
+
+def save_spinoffs_to_db(df: pd.DataFrame) -> None:
+    """Legacy API — writes Spin-off rows into demerger_stocks."""
+    if df.empty:
+        return
+    rows: list[dict] = []
+    for _, row in df.iterrows():
+        ticker = safe_str(row.get("ticker")).upper()
+        if not ticker:
+            continue
+        ex_date = row.get("ex_date")
+        if ex_date is not None and pd.notna(ex_date):
+            ex_date = pd.Timestamp(ex_date).strftime("%Y-%m-%d")
+        else:
+            ex_date = None
+        rows.append(
+            {
+                "ticker": ticker,
+                "role": "Spin-off",
+                "peer_ticker": safe_str(row.get("parent_ticker")).upper() or None,
+                "peer_company": row.get("parent_company"),
+                "ex_date": ex_date,
+                "market": safe_str(row.get("market")).upper() or "NSE",
+                "name": row.get("name"),
+                "sector": row.get("sector"),
+                "industry": row.get("industry"),
+                "sub_sector": row.get("sub_sector"),
+                "snapshot_price": row.get("snapshot_price"),
+            }
+        )
+    save_demerger_stocks_to_db(pd.DataFrame(rows))
+    sync_spin_off_tags_from_spinoffs()
+
+
+def replace_spinoffs_in_db(df: pd.DataFrame) -> None:
+    """Legacy API — replace Spin-off rows in demerger_stocks."""
+    init_db()
+    with get_connection() as conn:
+        conn.execute("DELETE FROM demerger_stocks WHERE role = 'Spin-off'")
+    save_spinoffs_to_db(df)
+
+
+def spinoffs_count() -> int:
+    init_db()
+    with get_connection() as conn:
+        return int(
+            conn.execute(
+                "SELECT COUNT(*) FROM demerger_stocks WHERE role = 'Spin-off'"
+            ).fetchone()[0]
+        )
+
+
+def sync_spin_off_tags_from_spinoffs() -> int:
+    """Set business_group_members.spin_off for Spin-off tickers in demerger_stocks."""
+    init_db()
+    df = load_demerger_stocks_from_db()
+    if df.empty or "role" not in df.columns:
+        return 0
+    want = {
+        safe_str(t).upper()
+        for t in df.loc[df["role"].astype(str) == "Spin-off", "ticker"]
+        if safe_str(t)
+    }
+    if not want:
+        return 0
+    updated = 0
+    with get_connection() as conn:
+        for ticker in sorted(want):
+            cur = conn.execute(
+                """
+                UPDATE business_group_members
+                SET spin_off = 1
+                WHERE UPPER(ticker) = ? AND COALESCE(spin_off, 0) != 1
+                """,
+                (ticker,),
+            )
+            updated += cur.rowcount
+    return updated
+
+
+def load_parents_from_db() -> pd.DataFrame:
+    init_db()
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT ticker, market, name, demerged_ticker, demerged_company, ex_date,
+                   sector, industry, sub_sector, snapshot_price
+            FROM parents
+            ORDER BY ex_date DESC, ticker
+            """
+        ).fetchall()
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame([dict(r) for r in rows])
+
+
+def save_parents_to_db(df: pd.DataFrame) -> None:
+    """Legacy API — writes Parent rows into demerger_stocks."""
+    if df.empty:
+        return
+    rows: list[dict] = []
+    for _, row in df.iterrows():
+        ticker = safe_str(row.get("ticker")).upper()
+        if not ticker:
+            continue
+        ex_date = row.get("ex_date")
+        if ex_date is not None and pd.notna(ex_date):
+            ex_date = pd.Timestamp(ex_date).strftime("%Y-%m-%d")
+        else:
+            ex_date = None
+        rows.append(
+            {
+                "ticker": ticker,
+                "role": "Parent",
+                "peer_ticker": safe_str(row.get("demerged_ticker")).upper() or None,
+                "peer_company": row.get("demerged_company"),
+                "ex_date": ex_date,
+                "market": safe_str(row.get("market")).upper() or "NSE",
+                "name": row.get("name"),
+                "sector": row.get("sector"),
+                "industry": row.get("industry"),
+                "sub_sector": row.get("sub_sector"),
+                "snapshot_price": row.get("snapshot_price"),
+            }
+        )
+    save_demerger_stocks_to_db(pd.DataFrame(rows))
+    sync_demerger_tags_from_parents()
+
+
+def replace_parents_in_db(df: pd.DataFrame) -> None:
+    """Legacy API — replace Parent rows in demerger_stocks."""
+    init_db()
+    with get_connection() as conn:
+        conn.execute("DELETE FROM demerger_stocks WHERE role = 'Parent'")
+    save_parents_to_db(df)
+
+
+def parents_count() -> int:
+    init_db()
+    with get_connection() as conn:
+        return int(
+            conn.execute(
+                "SELECT COUNT(*) FROM demerger_stocks WHERE role = 'Parent'"
+            ).fetchone()[0]
+        )
+
+
+def sync_demerger_tags_from_parents() -> int:
+    """Set business_group_members.demerger for Parent tickers in demerger_stocks."""
+    init_db()
+    df = load_demerger_stocks_from_db()
+    if df.empty or "role" not in df.columns:
+        return 0
+    want = {
+        safe_str(t).upper()
+        for t in df.loc[df["role"].astype(str) == "Parent", "ticker"]
+        if safe_str(t)
+    }
+    if not want:
+        return 0
+    updated = 0
+    with get_connection() as conn:
+        for ticker in sorted(want):
+            cur = conn.execute(
+                """
+                UPDATE business_group_members
+                SET demerger = 1
+                WHERE UPPER(ticker) = ? AND COALESCE(demerger, 0) != 1
+                """,
+                (ticker,),
+            )
+            updated += cur.rowcount
+    return updated
+
+
+def sync_corp_tags_from_demerger_stocks() -> int:
+    """Sync demerger + spin_off flags on business_group_members from demerger_stocks."""
+    return sync_demerger_tags_from_parents() + sync_spin_off_tags_from_spinoffs()
+
+
+def load_demerger_stocks_from_db() -> pd.DataFrame:
+    init_db()
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT ticker, role, peer_ticker, peer_company, ex_date,
+                   market, name, sector, industry, sub_sector, snapshot_price
+            FROM demerger_stocks
+            ORDER BY ex_date DESC, role, ticker
+            """
+        ).fetchall()
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame([dict(r) for r in rows])
+
+
+def save_demerger_stocks_to_db(df: pd.DataFrame) -> None:
+    if df.empty:
+        return
+    init_db()
+    now = _utc_now()
+    with get_connection() as conn:
+        for _, row in df.iterrows():
+            ticker = str(row.get("ticker", "")).strip().upper()
+            if not ticker:
+                continue
+            ex_date = row.get("ex_date")
+            if ex_date is not None and pd.notna(ex_date):
+                ex_date = pd.Timestamp(ex_date).strftime("%Y-%m-%d")
+            else:
+                ex_date = None
+            conn.execute(
+                """
+                INSERT INTO demerger_stocks (
+                    ticker, role, peer_ticker, peer_company, ex_date,
+                    market, name, sector, industry, sub_sector, snapshot_price, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(ticker) DO UPDATE SET
+                    role=excluded.role,
+                    peer_ticker=excluded.peer_ticker,
+                    peer_company=excluded.peer_company,
+                    ex_date=excluded.ex_date,
+                    market=excluded.market,
+                    name=excluded.name,
+                    sector=excluded.sector,
+                    industry=excluded.industry,
+                    sub_sector=excluded.sub_sector,
+                    snapshot_price=excluded.snapshot_price,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    ticker,
+                    row.get("role"),
+                    row.get("peer_ticker"),
+                    row.get("peer_company"),
+                    ex_date,
+                    row.get("market"),
+                    row.get("name"),
+                    row.get("sector"),
+                    row.get("industry"),
+                    row.get("sub_sector"),
+                    row.get("snapshot_price"),
+                    now,
+                ),
+            )
+
+
+def replace_demerger_stocks_in_db(df: pd.DataFrame) -> None:
+    init_db()
+    with get_connection() as conn:
+        conn.execute("DELETE FROM demerger_stocks")
+    save_demerger_stocks_to_db(df)
+    sync_corp_tags_from_demerger_stocks()
+
+
+def demerger_stocks_count() -> int:
+    init_db()
+    with get_connection() as conn:
+        return int(conn.execute("SELECT COUNT(*) FROM demerger_stocks").fetchone()[0])
+
+
 def load_pead2_cache(tickers: list[str], *, max_hours: int) -> dict[str, dict]:
     """Fresh PEAD2 scan rows keyed by ticker."""
     if not tickers:
@@ -1322,7 +1819,7 @@ def save_merger_demerger_cache(
     df: pd.DataFrame,
     *,
     fetched_at: str | None = None,
-    lookback_years: int = 4,
+    lookback_years: int = 15,
 ) -> None:
     if df.empty:
         return
@@ -1898,6 +2395,10 @@ def save_superstar_holdings(
                     safe_str(row.get("change_type")),
                     row.get("holding_value_cr"),
                     row.get("price"),
+                    safe_str(row.get("sector")) or None,
+                    safe_str(row.get("sub_sector")) or None,
+                    safe_str(row.get("industry")) or None,
+                    safe_str(row.get("screener_slug")) or None,
                     now,
                 )
             )
@@ -1907,13 +2408,43 @@ def save_superstar_holdings(
             """
             INSERT INTO superstar_holdings (
                 investor, symbol, exchange, company_name, holding_percent,
-                change_qtr, change_type, holding_value_cr, price, fetched_at
+                change_qtr, change_type, holding_value_cr, price,
+                sector, sub_sector, industry, screener_slug, fetched_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
     return len(rows)
+
+
+def load_all_superstar_holdings_df() -> pd.DataFrame:
+    """All persisted superstar holdings (latest snapshot per investor)."""
+    init_db()
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT investor, symbol, exchange, company_name, holding_percent,
+                   change_qtr, change_type, holding_value_cr, price,
+                   sector, sub_sector, industry, screener_slug, fetched_at
+            FROM superstar_holdings
+            ORDER BY investor COLLATE NOCASE, holding_percent DESC
+            """
+        ).fetchall()
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame([dict(r) for r in rows])
+
+
+def load_superstar_fetched_at() -> str | None:
+    init_db()
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT MAX(fetched_at) AS ts FROM superstar_holdings"
+        ).fetchone()
+    if row is None or not row["ts"]:
+        return None
+    return str(row["ts"])
 
 
 def load_superstar_holdings_map(tickers: list[str]) -> dict[str, list[dict]]:
@@ -1959,12 +2490,16 @@ def superstar_holdings_db_stats() -> dict[str, int]:
     return {"rows": int(rows), "investors": int(investors), "symbols": int(symbols)}
 
 
-def save_strategy_tq_signals(df: pd.DataFrame) -> int:
-    """Replace TQ breakout cache from a Strategy scan."""
+def save_strategy_tq_signals(df: pd.DataFrame, *, timeframe: str = "weekly") -> int:
+    """Replace TQ breakout cache for one timeframe from a Strategy scan."""
     init_db()
+    tf = safe_str(timeframe) or "weekly"
     now = _utc_now()
     with get_connection() as conn:
-        conn.execute("DELETE FROM strategy_tq_signals")
+        conn.execute(
+            "DELETE FROM strategy_tq_signals WHERE timeframe = ?",
+            (tf,),
+        )
         if df is None or df.empty:
             return 0
         rows: list[tuple] = []
@@ -1975,6 +2510,7 @@ def save_strategy_tq_signals(df: pd.DataFrame) -> int:
             rows.append(
                 (
                     ticker,
+                    safe_str(row.get("timeframe")) or tf,
                     safe_str(row.get("market")) or None,
                     row.get("score"),
                     safe_str(row.get("crossover_type")),
@@ -1988,10 +2524,10 @@ def save_strategy_tq_signals(df: pd.DataFrame) -> int:
         conn.executemany(
             """
             INSERT INTO strategy_tq_signals (
-                ticker, market, score, crossover_type, crossover_score,
+                ticker, timeframe, market, score, crossover_type, crossover_score,
                 signal_date, fetched_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
@@ -2055,10 +2591,13 @@ def load_strategy_breakout_map(tickers: list[str]) -> dict[str, dict]:
     with get_connection() as conn:
         tq_rows = conn.execute(
             f"""
-            SELECT ticker, market, score, crossover_type, crossover_score,
+            SELECT ticker, timeframe, market, score, crossover_type, crossover_score,
                    signal_date, fetched_at
             FROM strategy_tq_signals
             WHERE ticker IN ({placeholders})
+            ORDER BY
+                CASE timeframe WHEN 'weekly' THEN 0 WHEN 'daily' THEN 1 ELSE 2 END,
+                score DESC
             """,
             uniq,
         ).fetchall()
@@ -2077,7 +2616,7 @@ def load_strategy_breakout_map(tickers: list[str]) -> dict[str, dict]:
     for row in tq_rows:
         rec = dict(row)
         sym = safe_str(rec.get("ticker")).upper()
-        if sym:
+        if sym and "tq" not in out.get(sym, {}):
             out.setdefault(sym, {})["tq"] = rec
     for row in bb_rows:
         rec = dict(row)
@@ -2100,7 +2639,12 @@ def strategy_signals_summary() -> dict[str, object]:
     init_db()
     with get_connection() as conn:
         tq_row = conn.execute(
-            "SELECT COUNT(*) AS n, MAX(fetched_at) AS ts FROM strategy_tq_signals"
+            """
+            SELECT COUNT(*) AS n, MAX(fetched_at) AS ts,
+                   (SELECT timeframe FROM strategy_tq_signals
+                    ORDER BY fetched_at DESC LIMIT 1) AS tf
+            FROM strategy_tq_signals
+            """
         ).fetchone()
         bb_row = conn.execute(
             """
@@ -2113,6 +2657,7 @@ def strategy_signals_summary() -> dict[str, object]:
     return {
         "tq_count": int(tq_row["n"] or 0),
         "tq_fetched_at": tq_row["ts"],
+        "tq_timeframe": safe_str(tq_row["tf"]) or "weekly",
         "bb_count": int(bb_row["n"] or 0),
         "bb_fetched_at": bb_row["ts"],
         "bb_timeframe": safe_str(bb_row["tf"]) or "weekly",
@@ -2206,7 +2751,77 @@ def save_business_group(
         return group_id
 
 
-def load_assigned_group_tickers() -> set[str]:
+def upsert_business_group(
+    name: str,
+    members: list[dict],
+    *,
+    token: str,
+) -> int:
+    """Insert or replace a business group keyed by token (usually parent ticker)."""
+    init_db()
+    token_u = safe_str(token).upper()
+    group_name = safe_str(name) or token_u
+    now = _utc_now()
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT id FROM business_groups
+            WHERE UPPER(COALESCE(token, '')) = ?
+            """,
+            (token_u,),
+        ).fetchone()
+        if row is None:
+            row = conn.execute(
+                "SELECT id FROM business_groups WHERE name = ?",
+                (group_name,),
+            ).fetchone()
+        if row:
+            group_id = int(row["id"])
+            conn.execute(
+                """
+                UPDATE business_groups
+                SET name = ?, token = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (group_name, token_u, now, group_id),
+            )
+            conn.execute("DELETE FROM business_group_members WHERE group_id = ?", (group_id,))
+        else:
+            cur = conn.execute(
+                """
+                INSERT INTO business_groups (name, token, created_at, updated_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (group_name, token_u, now, now),
+            )
+            group_id = int(cur.lastrowid)
+        for member in members:
+            ticker = safe_str(member.get("ticker")).upper()
+            if not ticker:
+                continue
+            conn.execute(
+                """
+                INSERT INTO business_group_members (group_id, ticker, market, name, demerger, spin_off)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    group_id,
+                    ticker,
+                    safe_str(member.get("market")).upper() or "NSE",
+                    member.get("name"),
+                    1 if member.get("demerger") else 0,
+                    1 if member.get("spin_off") else 0,
+                ),
+            )
+        return group_id
+
+
+def business_groups_count() -> int:
+    init_db()
+    with get_connection() as conn:
+        return int(conn.execute("SELECT COUNT(*) FROM business_groups").fetchone()[0])
+
+
     init_db()
     with get_connection() as conn:
         rows = conn.execute(
@@ -2230,20 +2845,17 @@ def load_ticker_group_map() -> dict[str, str]:
 
 
 def load_ticker_demerger_map() -> dict[str, bool]:
-    """Map ticker -> True when flagged as a demerger spin-off within its group."""
+    """Map ticker -> True when saved as a Parent in demerger_stocks."""
     init_db()
     with get_connection() as conn:
         rows = conn.execute(
             """
-            SELECT UPPER(ticker) AS ticker, demerger
-            FROM business_group_members
+            SELECT UPPER(ticker) AS ticker
+            FROM demerger_stocks
+            WHERE role = 'Parent'
             """
         ).fetchall()
-    return {
-        str(row["ticker"]).upper(): bool(row["demerger"])
-        for row in rows
-        if row["ticker"] and bool(row["demerger"])
-    }
+    return {str(row["ticker"]).upper(): True for row in rows if row["ticker"]}
 
 
 def sync_group_demerger_tags(group_id: int, demerger_tickers: set[str]) -> int:
@@ -2278,20 +2890,17 @@ def sync_group_demerger_tags(group_id: int, demerger_tickers: set[str]) -> int:
 
 
 def load_ticker_spin_off_map() -> dict[str, bool]:
-    """Map ticker -> True when flagged as a subsidiary spin-off within its group."""
+    """Map ticker -> True when saved as a Spin-off in demerger_stocks."""
     init_db()
     with get_connection() as conn:
         rows = conn.execute(
             """
-            SELECT UPPER(ticker) AS ticker, spin_off
-            FROM business_group_members
+            SELECT UPPER(ticker) AS ticker
+            FROM demerger_stocks
+            WHERE role = 'Spin-off'
             """
         ).fetchall()
-    return {
-        str(row["ticker"]).upper(): bool(row["spin_off"])
-        for row in rows
-        if row["ticker"] and bool(row["spin_off"])
-    }
+    return {str(row["ticker"]).upper(): True for row in rows if row["ticker"]}
 
 
 def sync_group_spin_off_tags(group_id: int, spin_off_tickers: set[str]) -> int:

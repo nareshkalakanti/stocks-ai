@@ -7,6 +7,7 @@ import pandas as pd
 from stocks.core.config import DEFAULT_CAP_TIER
 from stocks.scans.scan_universe import cap_tier_min_mcap_cr, resolve_cap_tier_id
 from stocks.scans.holdings_playlist import HOLDINGS_PLAYLIST_LABEL
+from stocks.scans.ds_playlist import DS_PLAYLIST_LABEL
 from stocks.strategies.tq_bb.service import prepare_strategy_universe
 
 
@@ -14,8 +15,9 @@ def test_default_cap_tier_is_all():
     assert DEFAULT_CAP_TIER == "all"
 
 
-def test_holdings_resolves_to_all_caps():
-    assert resolve_cap_tier_id(HOLDINGS_PLAYLIST_LABEL, "range_100_3000") == "all"
+def test_holdings_respects_cap_tier_ds_uses_all_caps():
+    assert resolve_cap_tier_id(HOLDINGS_PLAYLIST_LABEL, "micro") == "micro"
+    assert resolve_cap_tier_id(DS_PLAYLIST_LABEL, "range_100_3000") == "all"
     assert cap_tier_min_mcap_cr("all") is None
 
 

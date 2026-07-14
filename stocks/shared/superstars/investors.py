@@ -25,10 +25,9 @@ TRENDLYNE_PORTFOLIO_URL = (
     "{portfolio_id}/latest/{portfolio_slug}/"
 )
 
-_PORTFOLIO_PAGE_ROW_RE = re.compile(
-    r'title="([^"]+?)\s+Share Price[^"]*"[^>]*class="nolb stockrow"[^>]*>\s*'
-    r"([^<]+?)\s*</a>(.*?)</tr>",
-    re.S,
+_STOCKROW_TR_RE = re.compile(
+    r'<tr>\s*<td[^>]*>.*?class="nolb stockrow"[^>]*>.*?</tr>',
+    re.S | re.I,
 )
 
 SUPERSTAR_INVESTORS = [
@@ -584,101 +583,217 @@ def _append_trendlyne_row(
     )
 
 
-def _parse_trendlyne_html(html: str) -> list[dict[str, Any]]:
+def _cells_from_tr(tr_html: str) -> list[str]:
+    tds = re.findall(r"<td[^>]*>(.*?)</td>", tr_html, re.S | re.I)
+    cells: list[str] = []
+    for raw in tds:
+        text = unescape(re.sub(r"<[^>]+>", " ", str(raw or "")))
+        cells.append(re.sub(r"\s+", " ", text).strip())
+    return cells
+
+
+def _parse_qty(value: str) -> int | None:
+    try:
+        return int(str(value).strip().replace(",", ""))
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_price(value: str) -> float | None:
+    try:
+        return float(str(value).strip().replace(",", ""))
+    except (TypeError, ValueError):
+        return None
+
+
+def _holding_row(
+    *,
+    company_name: str,
+    holder_name: str,
+    price: float | None,
+    quantity: int | None,
+    holding_percent: float | None,
+    change_qtr: float | None,
+    change_type: str,
+    holding_value_cr: float,
+) -> dict[str, Any]:
+    return {
+        "company_name": company_name,
+        "holder_name": holder_name,
+        "price": price,
+        "quantity": quantity,
+        "holding_percent": holding_percent,
+        "change_qtr": change_qtr,
+        "change_type": change_type,
+        "holding_value_cr": holding_value_cr,
+    }
+
+
+def _row_from_search_cells(
+    cells: list[str], holder_name: str
+) -> dict[str, Any] | None:
+    """Custom search page: company, holder, price, qty, holding %, qtr change, value."""
+    if len(cells) < 7 or not cells[0]:
+        return None
+    change_num, change_type = _parse_change(cells[5])
+    return _holding_row(
+        company_name=cells[0],
+        holder_name=cells[1] or holder_name,
+        price=_parse_price(cells[2]),
+        quantity=_parse_qty(cells[3]),
+        holding_percent=_parse_percent(cells[4]),
+        change_qtr=change_num,
+        change_type=change_type,
+        holding_value_cr=_parse_value_cr(cells[6]),
+    )
+
+
+def _row_from_portfolio_cells(
+    cells: list[str], holder_name: str
+) -> dict[str, Any] | None:
+    """Curated portfolio page: company, value, qty, latest qtr change %, holding % columns."""
+    if len(cells) < 5 or not cells[0]:
+        return None
+    value_cr = _parse_value_cr(cells[1])
+    qty = _parse_qty(cells[2])
+    change_num, change_type = _parse_change(cells[3].replace("%", ""))
+    holding_pct = None
+    for cell in cells[4:]:
+        if cell and cell != "-" and "%" in cell:
+            holding_pct = _parse_percent(cell)
+            break
+    price = None
+    if qty and value_cr:
+        price = (value_cr * 1e7) / qty
+    return _holding_row(
+        company_name=cells[0],
+        holder_name=holder_name,
+        price=price,
+        quantity=qty,
+        holding_percent=holding_pct,
+        change_qtr=change_num,
+        change_type=change_type,
+        holding_value_cr=value_cr,
+    )
+
+
+def _detect_stockrow_layout(cells: list[str]) -> str:
+    # Curated portfolio pages have many quarterly % columns.
+    if len(cells) >= 10:
+        return "portfolio"
+    if len(cells) >= 7:
+        if (
+            _parse_price(cells[2]) is not None
+            and _parse_qty(cells[3]) is not None
+            and len(cells) <= 9
+        ):
+            return "search"
+        if "cr" in cells[1].lower():
+            return "portfolio"
+    if len(cells) >= 4 and "cr" in cells[1].lower():
+        return "portfolio"
+    return "search"
+
+
+def _merge_change_overrides(
+    rows: list[dict[str, Any]], html: str
+) -> list[dict[str, Any]]:
+    """Fill change/holding gaps from legacy row regex (e.g. Filing Awaited cells)."""
+    if not rows:
+        return rows
+    by_company = {_norm_name(row["company_name"]): row for row in rows}
+    for regex in (_ROW_RE_V2, _ROW_RE):
+        for match in regex.finditer(html):
+            company = unescape(match.group(2).strip())
+            key = _norm_name(company)
+            target = by_company.get(key)
+            if target is None:
+                continue
+            holding_pct, change_from_holding, change_type_holding = _parse_holding_cell(
+                match.group(6)
+            )
+            change_num, change_type = _parse_change(match.group(7))
+            if change_num is None and change_from_holding is not None:
+                change_num = change_from_holding
+            if change_type == "unchanged" and change_type_holding != "unchanged":
+                change_type = change_type_holding
+            if holding_pct is not None and target.get("holding_percent") is None:
+                target["holding_percent"] = holding_pct
+            if change_type != "unchanged" or change_num not in (None, 0.0):
+                target["change_qtr"] = change_num
+                target["change_type"] = change_type
+    return rows
+
+
+def _parse_trendlyne_stockrows(
+    html: str, holder_name: str = ""
+) -> list[dict[str, Any]]:
+    """Parse all superstar holdings from Trendlyne search or portfolio HTML."""
     if "No Results Found" in html and "publicly holds" not in html:
         return []
 
-    rows: list[dict[str, Any]] = []
-    for match in _ROW_RE.finditer(html):
-        _append_trendlyne_row(
-            rows,
-            company_name=unescape(match.group(2).strip()),
-            holder=unescape(match.group(3).strip()),
-            price_raw=match.group(4),
-            qty_raw=match.group(5),
-            holding_cell=match.group(6),
-            change_cell=match.group(7),
-            value_cell=match.group(8),
+    by_company: dict[str, dict[str, Any]] = {}
+    for tr_html in _STOCKROW_TR_RE.findall(html):
+        cells = _cells_from_tr(tr_html)
+        if not cells:
+            continue
+        layout = _detect_stockrow_layout(cells)
+        row = (
+            _row_from_search_cells(cells, holder_name)
+            if layout == "search"
+            else _row_from_portfolio_cells(cells, holder_name)
         )
+        if not row:
+            continue
+        key = _norm_name(row["company_name"])
+        prev = by_company.get(key)
+        if not prev or row["holding_value_cr"] >= prev["holding_value_cr"]:
+            by_company[key] = row
+
+    rows = list(by_company.values())
+    return _merge_change_overrides(rows, html)
+
+
+def _parse_trendlyne_html(html: str, holder_name: str = "") -> list[dict[str, Any]]:
+    rows = _parse_trendlyne_stockrows(html, holder_name)
     if rows:
         return rows
 
+    # Legacy fallback if Trendlyne markup changes again.
+    legacy: list[dict[str, Any]] = []
     for match in _ROW_RE_V2.finditer(html):
         _append_trendlyne_row(
-            rows,
+            legacy,
             company_name=unescape(match.group(2).strip()),
-            holder=unescape(match.group(3).strip()),
+            holder=unescape(match.group(3).strip()) or holder_name,
             price_raw=match.group(4),
             qty_raw=match.group(5),
             holding_cell=match.group(6),
             change_cell=match.group(7),
             value_cell=match.group(8),
         )
-    return rows
+    if legacy:
+        return legacy
+
+    for match in _ROW_RE.finditer(html):
+        _append_trendlyne_row(
+            legacy,
+            company_name=unescape(match.group(2).strip()),
+            holder=unescape(match.group(3).strip()) or holder_name,
+            price_raw=match.group(4),
+            qty_raw=match.group(5),
+            holding_cell=match.group(6),
+            change_cell=match.group(7),
+            value_cell=match.group(8),
+        )
+    return legacy
 
 
 def _parse_superstar_portfolio_page(
     html: str, holder_name: str
 ) -> list[dict[str, Any]]:
     """Parse Trendlyne curated superstar portfolio page (by portfolio id)."""
-    rows: list[dict[str, Any]] = []
-    for match in _PORTFOLIO_PAGE_ROW_RE.finditer(html):
-        company_name = unescape(match.group(2).strip())
-        rest = match.group(3)
-
-        value_cr = 0.0
-        value_m = re.search(
-            r"data-order\s*=\s*[\d.]+\s*>\s*([\d.]+)\s*Cr",
-            rest,
-            re.I,
-        )
-        if value_m:
-            value_cr = float(value_m.group(1))
-
-        quantity = None
-        qty_m = re.search(
-            r'<td class="rightAlgn[^"]*">\s*([\d,]+)\s*</td>',
-            rest,
-        )
-        if qty_m:
-            try:
-                quantity = int(qty_m.group(1).replace(",", ""))
-            except ValueError:
-                quantity = None
-
-        holding_pct = None
-        pct_m = re.search(
-            r"bg-superstar[^>]*data-order=([\d.]+)>\s*([\d.]+)%",
-            rest,
-        )
-        if pct_m:
-            holding_pct = float(pct_m.group(2))
-
-        price = None
-        if quantity and value_cr:
-            price = (value_cr * 1e7) / quantity
-
-        rows.append(
-            {
-                "company_name": company_name,
-                "holder_name": holder_name,
-                "price": price,
-                "quantity": quantity,
-                "holding_percent": holding_pct,
-                "change_qtr": None,
-                "change_type": "unchanged",
-                "holding_value_cr": value_cr,
-            }
-        )
-
-    # Portfolio pages repeat rows per quarter column — keep latest/largest value.
-    by_company: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        key = row["company_name"]
-        prev = by_company.get(key)
-        if not prev or row["holding_value_cr"] >= prev["holding_value_cr"]:
-            by_company[key] = row
-    return list(by_company.values())
+    return _parse_trendlyne_stockrows(html, holder_name)
 
 
 def fetch_investor_portfolio(
@@ -703,7 +818,7 @@ def fetch_investor_portfolio(
     url = TRENDLYNE_SEARCH_URL.format(query=requests.utils.quote(query))
     response = requests.get(url, headers=headers, timeout=timeout)
     response.raise_for_status()
-    return _parse_trendlyne_html(response.text)
+    return _parse_trendlyne_html(response.text, holder_name or query)
 
 
 def enrich_holdings(

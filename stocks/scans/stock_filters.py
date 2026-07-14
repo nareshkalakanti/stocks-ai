@@ -7,7 +7,12 @@ from dataclasses import dataclass
 import pandas as pd
 import streamlit as st
 
-from stocks.scans.scan_playlists import is_scan_playlist, scan_playlist_listings
+from stocks.scans.scan_playlists import (
+    format_market_option,
+    is_scan_playlist,
+    scan_playlist_listings,
+)
+from stocks.scans.ds_playlist import DS_PLAYLIST_LABEL
 from stocks.listings.stocks_data import (
     filter_stocks,
     industry_options,
@@ -151,6 +156,8 @@ def render_stock_filters(
 
     if key_market not in st.session_state:
         st.session_state[key_market] = "All"
+    elif st.session_state[key_market] in {"Parents", "Spinoffs"}:
+        st.session_state[key_market] = DS_PLAYLIST_LABEL
     for key in (key_industries, key_sectors):
         if key not in st.session_state:
             st.session_state[key] = []
@@ -171,7 +178,12 @@ def render_stock_filters(
         market_opts = market_options(stocks, include_scan_playlists=include_scan_playlists)
         if st.session_state[key_market] not in market_opts:
             st.session_state[key_market] = "All"
-        market = st.selectbox("Market", market_opts, key=key_market)
+        market = st.selectbox(
+            "Market",
+            market_opts,
+            key=key_market,
+            format_func=lambda m: format_market_option(stocks, m),
+        )
 
     mframe = _market_frame(stocks, market)
     industry_opts = industry_options(stocks, mframe)[1:]

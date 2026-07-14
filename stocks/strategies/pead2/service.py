@@ -54,7 +54,6 @@ from stocks.strategies.pead2.quarters import (
 )
 from stocks.strategies.pead2.technicals import build_price_snapshot
 from stocks.strategies.pead.service import estimate_result_date, prepare_pead_universe
-from stocks.strategies.formula_100x.strategy import compute_100x_cfo_checks
 from stocks.market.company_profile import hydrate_blob_profile, merge_company_profile
 from stocks.market.price_service import to_yfinance_symbol
 from stocks.shared.links import attach_research_links
@@ -166,8 +165,13 @@ def _newest_legacy_cache(all_cached: dict[str, dict]) -> dict[str, dict]:
     return legacy
 
 
-PendingFetchMode = Literal["all", "missing", "stale"]
-PEAD2_PENDING_FETCH_MODES: tuple[PendingFetchMode, ...] = ("all", "missing", "stale")
+PendingFetchMode = Literal["all", "missing", "stale", "no_data"]
+PEAD2_PENDING_FETCH_MODES: tuple[PendingFetchMode, ...] = (
+    "all",
+    "missing",
+    "stale",
+    "no_data",
+)
 
 
 @dataclass(frozen=True)
@@ -178,10 +182,15 @@ class Pead2ScanCoverage:
     cached: int
     stale: int
     missing: int
+    scorable: int = 0
 
     @property
     def pending(self) -> int:
         return self.stale + self.missing
+
+    @property
+    def no_data(self) -> int:
+        return max(self.cached - self.scorable, 0)
 
     @property
     def complete(self) -> bool:
@@ -192,6 +201,8 @@ class Pead2ScanCoverage:
             return self.missing
         if mode == "stale":
             return self.stale
+        if mode == "no_data":
+            return self.no_data
         return self.pending
 
 
@@ -245,9 +256,15 @@ def _filter_pending_tickers(
 ) -> list[tuple[str, str | None]]:
     pending: list[tuple[str, str | None]] = []
     for ticker, market in zip(tickers, markets):
+        raw = all_cached.get(ticker)
+        if mode == "no_data":
+            blob = cached.get(ticker)
+            if blob is None or _pead2_scorable_blob(blob):
+                continue
+            pending.append((ticker, market))
+            continue
         if ticker in cached:
             continue
-        raw = all_cached.get(ticker)
         if mode == "missing" and raw is not None:
             continue
         if mode == "stale" and raw is None:
@@ -264,7 +281,7 @@ def _partition_pead2_universe_cache(
     """Split universe into fresh SQLite rows vs tickers that still need Yahoo."""
     tickers, markets, universe_keys = _universe_ticker_lists(universe)
     if not tickers:
-        empty = Pead2ScanCoverage(0, 0, 0, 0)
+        empty = Pead2ScanCoverage(0, 0, 0, 0, 0)
         return {}, [], empty, {}
 
     all_cached = load_pead2_cache(tickers, max_hours=999999)
@@ -293,11 +310,15 @@ def _partition_pead2_universe_cache(
         mode=pending_mode,
     )
 
+    scorable = sum(
+        1 for ticker in tickers if ticker in cached and _pead2_scorable_blob(cached[ticker])
+    )
     coverage = Pead2ScanCoverage(
         universe_total=len(tickers),
         cached=len(cached),
         stale=stale,
         missing=missing,
+        scorable=scorable,
     )
     return cached, pending, coverage, legacy_by_ticker
 
@@ -306,6 +327,53 @@ def pead2_scan_coverage(universe: pd.DataFrame) -> Pead2ScanCoverage:
     """DB-only count of cached vs remaining tickers for the current universe."""
     _, _, coverage, _ = _partition_pead2_universe_cache(universe)
     return coverage
+
+
+def expand_pead_candidates_to_universe(
+    universe: pd.DataFrame,
+    candidates: pd.DataFrame,
+) -> pd.DataFrame:
+    """Show every universe ticker; scored rows keep PEAD fields, others show as no-data."""
+    if universe.empty or "ticker" not in universe.columns:
+        return candidates
+
+    meta_cols = ["ticker", "name", "market", "sector"]
+    for col in ("industry", "sub_sector"):
+        if col in universe.columns:
+            meta_cols.append(col)
+    base = universe[meta_cols].drop_duplicates("ticker").copy()
+    base["ticker"] = base["ticker"].astype(str).str.strip().str.upper()
+
+    score_df = pd.DataFrame()
+    if candidates is not None and not candidates.empty:
+        drop_meta = [c for c in meta_cols if c != "ticker" and c in candidates.columns]
+        score_df = candidates.drop(columns=drop_meta, errors="ignore").copy()
+        score_df["ticker"] = score_df["ticker"].astype(str).str.strip().str.upper()
+
+    if score_df.empty:
+        out = base.copy()
+    else:
+        out = base.merge(score_df, on="ticker", how="left")
+
+    tickers = base["ticker"].tolist()
+    all_cached = load_pead2_cache(tickers, max_hours=999999)
+
+    def _status(ticker: str) -> str:
+        blob = all_cached.get(ticker) or {}
+        if blob.get("calc_version") != PEAD2_CALC_VERSION:
+            return "Not scanned"
+        if _pead2_scorable_blob(blob):
+            return ""
+        reason = safe_str(blob.get("no_pead_data_reason")).strip()
+        return reason or "No PEAD data"
+
+    out["pead_status"] = out["ticker"].map(_status)
+    out = out.sort_values(
+        by=["pead_score", "ticker"],
+        ascending=[False, True],
+        na_position="last",
+    )
+    return out.reset_index(drop=True)
 
 
 def _pead2_scan_result_shell(
@@ -594,7 +662,6 @@ def analyze_pead2_ticker(
 
         hist = yt.history(period="6y", interval="1d", auto_adjust=True)
         price_val = _info_price(info, hist)
-        cfo_checks = compute_100x_cfo_checks(yt.cashflow, yt.financials) or {}
         comfort = comfort_buy_fields(
             price=price_val,
             info=info,
@@ -624,13 +691,6 @@ def analyze_pead2_ticker(
             if lag_row:
                 if lag == 0:
                     lag_row.update(comfort)
-                    lag_row.update(
-                        {
-                            "pass_rising_cfo": bool(cfo_checks.get("pass_rising_cfo")),
-                            "pass_cfo_ebit": bool(cfo_checks.get("pass_cfo_ebit")),
-                            "cfo_ebit_pct": cfo_checks.get("cfo_ebit_pct"),
-                        }
-                    )
                 lags[str(lag)] = lag_row
 
         if "0" not in lags:
@@ -687,7 +747,7 @@ def run_pead2_recent_scan(
 
     if universe.empty:
         return _pead2_scan_result_shell(
-            coverage=Pead2ScanCoverage(0, 0, 0, 0),
+            coverage=Pead2ScanCoverage(0, 0, 0, 0, 0),
             recent_days=recent_days,
         )
 
@@ -813,7 +873,7 @@ def run_pead2_scan(
     fetch_mode: PendingFetchMode = pending_mode if only_pending else "all"
     tickers, markets, universe_keys = _universe_ticker_lists(universe)
     if not tickers:
-        return _pead2_scan_result_shell(coverage=Pead2ScanCoverage(0, 0, 0, 0))
+        return _pead2_scan_result_shell(coverage=Pead2ScanCoverage(0, 0, 0, 0, 0))
 
     workers = yfinance_worker_count(
         len(tickers),
@@ -924,6 +984,7 @@ __all__ = [
     "Pead2ScanCoverage",
     "PendingFetchMode",
     "PEAD2_PENDING_FETCH_MODES",
+    "expand_pead_candidates_to_universe",
     "pead2_scan_coverage",
     "prepare_pead_universe",
     "run_pead2_scan",

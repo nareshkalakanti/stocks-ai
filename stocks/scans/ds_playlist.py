@@ -1,35 +1,36 @@
-"""Business Groups — scan universe from saved corporate groups."""
+"""D&S — unified demerger + spin-off scan playlist."""
 
 from __future__ import annotations
 
 import pandas as pd
 
-from stocks.shared.business_groups import load_business_group_members
 from stocks.core.text_utils import safe_str
 
-BUSINESS_GROUPS_PLAYLIST_LABEL = "Business Groups"
+DS_PLAYLIST_LABEL = "D&S"
 
 
-def _load_members(*, seed_if_empty: bool = True) -> pd.DataFrame:
-    return load_business_group_members(seed_if_empty=seed_if_empty)
+def _load_stocks() -> pd.DataFrame:
+    from stocks.shared.demerger_stocks import load_demerger_stocks
+
+    return load_demerger_stocks()
 
 
-def is_business_groups_playlist(market: str) -> bool:
-    return safe_str(market) == BUSINESS_GROUPS_PLAYLIST_LABEL
+def is_ds_playlist(market: str) -> bool:
+    return safe_str(market) == DS_PLAYLIST_LABEL
 
 
-def business_groups_playlist_tickers(*, seed_if_empty: bool = True) -> set[str]:
-    members = _load_members(seed_if_empty=seed_if_empty)
-    if members.empty:
+def ds_playlist_tickers() -> set[str]:
+    stocks = _load_stocks()
+    if stocks.empty:
         return set()
-    return {safe_str(t).upper() for t in members["ticker"] if safe_str(t)}
+    return {safe_str(t).upper() for t in stocks["ticker"] if safe_str(t)}
 
 
-def business_groups_playlist_count(*, seed_if_empty: bool = True) -> int:
-    return len(business_groups_playlist_tickers(seed_if_empty=seed_if_empty))
+def ds_playlist_count() -> int:
+    return len(ds_playlist_tickers())
 
 
-def business_groups_playlist_listings(
+def ds_playlist_listings(
     stocks: pd.DataFrame,
     *,
     sector: str | list[str] = "All",
@@ -37,12 +38,12 @@ def business_groups_playlist_listings(
     industry: str | list[str] = "All",
     sub_sector: str | list[str] = "All",
 ) -> pd.DataFrame:
-    """Listings for saved business groups, merged with India dataset metadata."""
-    members = _load_members()
-    if members.empty:
+    """All parent + spin-off tickers from the saved D&S watchlist."""
+    watchlist = _load_stocks()
+    if watchlist.empty:
         return stocks.iloc[0:0].copy()
 
-    tickers = business_groups_playlist_tickers()
+    tickers = ds_playlist_tickers()
     if not tickers:
         return stocks.iloc[0:0].copy()
 
@@ -50,7 +51,7 @@ def business_groups_playlist_listings(
     matched_tickers = set(matched["ticker"].astype(str).str.upper())
     missing = tickers - matched_tickers
     if missing:
-        lookup = members.set_index(members["ticker"].astype(str).str.upper())
+        lookup = watchlist.set_index(watchlist["ticker"].astype(str).str.upper())
         extra_rows: list[dict] = []
         for ticker in sorted(missing):
             row = lookup.loc[ticker] if ticker in lookup.index else None
@@ -63,7 +64,7 @@ def business_groups_playlist_listings(
                     "ticker": ticker,
                     "market": safe_str(row.get("market")).upper() or "NSE",
                     "name": safe_str(row.get("name")) or "",
-                    "sector": "",
+                    "sector": safe_str(row.get("sector")) or "",
                 }
             )
         if extra_rows:

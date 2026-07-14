@@ -15,6 +15,9 @@ from stocks.market.merger_demerger_supplements import apply_merger_demerger_supp
 from stocks.shared.links import attach_research_links
 
 
+from stocks.shared.demerger_stocks import persist_demerger_stocks_from_feed
+
+
 def _enrich_table(df: pd.DataFrame, *, refresh: bool) -> pd.DataFrame:
     if df.empty:
         return df
@@ -183,14 +186,21 @@ def load_merger_demerger_table(
     if not refresh:
         cached = load_merger_demerger_cache(max_hours=MERGER_DEMERGER_CACHE_HOURS)
         if cached is not None and not cached.empty:
-            label = cached.attrs.get("fetched_at")
-            out = cached.drop(columns=["fetched_at"], errors="ignore")
-            out = apply_merger_demerger_supplements(out)
-            return _enrich_table(out, refresh=False), label
+            cached_years = int(cached.attrs.get("lookback_years") or 0)
+            if cached_years >= years:
+                label = cached.attrs.get("fetched_at")
+                out = cached.drop(columns=["fetched_at"], errors="ignore")
+                out = apply_merger_demerger_supplements(out)
+                out = _enrich_table(out, refresh=False)
+                persist_demerger_stocks_from_feed(out)
+                return out, label
 
     df = fetch_merger_demerger_actions(lookback_years=years)
     fetched_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     if not df.empty:
         save_merger_demerger_cache(df, fetched_at=fetched_at, lookback_years=years)
     out = apply_merger_demerger_supplements(attach_research_links(df))
-    return _enrich_table(out, refresh=refresh), fetched_at if not df.empty else None
+    out = _enrich_table(out, refresh=refresh)
+    if not out.empty:
+        persist_demerger_stocks_from_feed(out)
+    return out, fetched_at if not df.empty else None

@@ -17,7 +17,6 @@ from stocks.dashboards.expand_panel_html import EXPAND_PANEL_JS
 from stocks.strategies.pead2.strategy import enrich_pead_candidates
 from stocks.strategies.pead2.quarters import sanitize_quarter_panel
 from stocks.shared.links import screener_url, tradingview_url
-from stocks.core.config import FORMULA_100X_CFO_EBIT_MIN
 from stocks.core.text_utils import safe_str
 
 
@@ -488,15 +487,6 @@ _PEAD2_DASHBOARD_CSS = """
     line-height: 1.4;
   }
   .links-inline a:hover { text-decoration: underline; }
-  .x100-cfo-dot {
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border-radius: 3px;
-    flex-shrink: 0;
-    vertical-align: middle;
-  }
-  .x100-cfo-dot.pass { background: var(--green); }
   .sub { color: var(--muted); font-size: 11px; }
   .num { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
   .g-high { color: var(--green); font-weight: 700; }
@@ -1744,9 +1734,6 @@ def _rows_for_json(df: pd.DataFrame) -> list[dict]:
                 "ebidt_yoy": json_safe_scalar(row.get("ebidt_yoy")),
                 "ebidt_qoq": json_safe_scalar(row.get("ebidt_qoq")),
                 "cf_profit": json_safe_scalar(row.get("cf_profit")),
-                "pass_rising_cfo": bool(row.get("pass_rising_cfo")),
-                "pass_cfo_ebit": bool(row.get("pass_cfo_ebit")),
-                "cfo_ebit_pct": json_safe_scalar(row.get("cfo_ebit_pct")),
                 "sales_bust": bool(row.get("sales_bust")),
                 "sales_streak": json_safe_scalar(row.get("sales_streak")),
             }
@@ -1804,6 +1791,8 @@ def build_pead2_dashboard_html(
     *,
     df_previous: pd.DataFrame | None = None,
     title: str = "Top PEAD Candidates",
+    list_label: str = "PEAD candidates",
+    show_scored_split: bool = False,
     standalone: bool = True,
     default_sort_col: str = "result_date",
     default_sort_dir: int = -1,
@@ -1811,7 +1800,8 @@ def build_pead2_dashboard_html(
     recent_day_options: tuple[int, ...] | None = None,
 ) -> str:
     del recent_filter_days, recent_day_options
-    cfo_ebit_min = int(FORMULA_100X_CFO_EBIT_MIN)
+    list_label_js = json_dumps(list_label)
+    show_scored_split_js = "true" if show_scored_split else "false"
     updated = _scan_generated_ist(df)
     data_current = json_dumps(_rows_for_json(df), separators=(",", ":"))
     prev_df = df_previous if df_previous is not None else pd.DataFrame()
@@ -1840,7 +1830,6 @@ def build_pead2_dashboard_html(
     <div class="toolbar">
       <div class="count" id="count-label">0 companies</div>
       <div class="col-toggle">
-        <button type="button" class="quarter-btn cfo-filter-btn" id="btn-cfo-100x" title="Rising CFO + CFO/EBIT&gt;{cfo_ebit_min}%">100X CFO</button>
         <button type="button" id="btn-cols" title="Show growth / CF columns">Columns (<span id="col-visible">6</span>/<span id="col-total">13</span>)</button>
       </div>
     </div>
@@ -1857,6 +1846,8 @@ def build_pead2_dashboard_html(
 const DATA_CURRENT = {data_current};
 const DATA_PREVIOUS = {data_previous};
 const HAS_PREVIOUS = {"true" if has_previous else "false"};
+const LIST_LABEL = {list_label_js};
+const SHOW_SCORED_SPLIT = {show_scored_split_js};
 let quarterMode = "current";
 const COLS = [
   {{id:"company", label:"Company", fmt:"company", def:true}},
@@ -1874,19 +1865,6 @@ const COLS = [
   {{id:"cf_profit", label:"CF/Profit", fmt:"cf", def:false}},
 ];
 let showAllCols = false;
-let cfo100xOnly = false;
-const CFO_EBIT_MIN = {cfo_ebit_min};
-
-function passes100xCfo(r) {{
-  return r.pass_rising_cfo === true && r.pass_cfo_ebit === true;
-}}
-
-function fmt100xCfoDot(r) {{
-  if (!passes100xCfo(r)) return "";
-  return (
-  `<span class="x100-cfo-dot pass" title="100X CFO pass: rising cash flow & CFO/EBIT>${{CFO_EBIT_MIN}}%"></span>`
-  );
-}}
 
 function visibleCols() {{
   return COLS.filter(c => c.def || showAllCols);
@@ -1907,17 +1885,6 @@ updateColBtn();
 let sortCol = {json.dumps(default_sort_col)};
 let sortDir = {default_sort_dir};
 let expandedTicker = null;
-
-function passesCfoFilters(r) {{
-  if (cfo100xOnly && !passes100xCfo(r)) return false;
-  return true;
-}}
-
-document.getElementById("btn-cfo-100x").onclick = () => {{
-  cfo100xOnly = !cfo100xOnly;
-  document.getElementById("btn-cfo-100x").classList.toggle("on", cfo100xOnly);
-  render();
-}};
 
 function colById(id) {{
   return COLS.find(c => c.id === id) || COLS[0];
@@ -2047,13 +2014,6 @@ function fmtCheck(pass) {{
   if (pass === false) return `<span class="g-neg">✗</span>`;
   return "—";
 }}
-function fmtCfoEbit(r) {{
-  const pct = num(r.cfo_ebit_pct);
-  if (pct === null || isNaN(pct)) return "—";
-  const ok = r.pass_cfo_ebit === true;
-  const cls = ok ? "g-pos" : "g-neg";
-  return `<span class="${{cls}}">${{pct.toFixed(1)}}%</span>`;
-}}
 function fmtDateIso(v) {{
   if (!v) return "—";
   return String(v).slice(0, 10);
@@ -2113,7 +2073,6 @@ function fmtCompany(r) {{
     `<div class="company-top">` +
     `<div class="company-name-wrap">` +
     `<span class="company-name" title="${{esc(name)}}">${{esc(name)}}</span>` +
-    fmt100xCfoDot(r) +
     `</div>` +
     `<span class="company-actions">` +
     `<span class="expand-hint" title="Click row for price, quarterly data &amp; news"></span>` +
@@ -2132,7 +2091,6 @@ function cell(col, r) {{
     case "fpe": return fmtFpe(r.forward_pe);
     case "cf": return fmtCf(r.cf_profit);
     case "check": return fmtCheck(r[col.id]);
-    case "cfo_ebit": return fmtCfoEbit(r);
     case "pct": return fmtPct(r[col.id]);
     case "daily": return fmtDaily(r.daily_ret_pct);
     default: return r[col.id] ?? "—";
@@ -2193,12 +2151,17 @@ function renderHead() {{
 
 function render() {{
   const DATA = activeData();
-  let rows = DATA.filter(passesCfoFilters);
+  let rows = DATA.slice();
   const sortColumn = colById(sortCol);
   rows.sort((a, b) => compareRows(a, b, sortColumn));
-  const cfoNote = cfo100xOnly ? " · 100X CFO pass only" : "";
-  document.getElementById("count-label").textContent =
-    `PEAD Candidates (${{rows.length}} companies · ${{quarterMode === "previous" ? "Previous" : "Current"}} quarter · latest results first${{cfoNote}})`;
+  const quarterLabel = quarterMode === "previous" ? "Previous" : "Current";
+  const scored = rows.filter(r => num(r.pead_score) !== null).length;
+  let countText = `${{LIST_LABEL}} (${{rows.length}}`;
+  if (SHOW_SCORED_SPLIT && scored < rows.length) {{
+    countText += ` · ${{scored}} with PEAD scores`;
+  }}
+  countText += ` · ${{quarterLabel}} quarter · latest results first)`;
+  document.getElementById("count-label").textContent = countText;
   renderHead();
   const tb = document.getElementById("tbody");
   tb.innerHTML = "";

@@ -7,9 +7,16 @@ import time
 import pandas as pd
 import yfinance as yf
 
-from stocks.market.indicators_utils import flatten_ohlcv_columns, normalize_price_index, prepare_weekly_ohlcv
+from stocks.core.text_utils import safe_str
+from stocks.market.indicators_utils import (
+    flatten_ohlcv_columns,
+    normalize_price_index,
+    prepare_daily_ohlcv,
+    prepare_weekly_ohlcv,
+)
 
 _NIFTY_CACHE: tuple[float, pd.DataFrame] | None = None
+_NIFTY_DAILY_CACHE: tuple[float, pd.DataFrame] | None = None
 _NIFTY500_CACHE: tuple[float, pd.DataFrame, str] | None = None
 _NIFTY_CACHE_SECONDS = 3600
 
@@ -139,6 +146,52 @@ def align_weekly_with_nifty(stock_df: pd.DataFrame, nifty_df: pd.DataFrame, min_
     return stock.loc[common_dates], nifty.loc[common_dates]
 
 
+def align_daily_with_nifty(stock_df: pd.DataFrame, nifty_df: pd.DataFrame, min_days: int = 65):
+    stock = prepare_daily_ohlcv(stock_df)
+    nifty = prepare_daily_ohlcv(nifty_df)
+    common_dates = stock.index.intersection(nifty.index)
+    if len(common_dates) < min_days:
+        return None, None
+    return stock.loc[common_dates], nifty.loc[common_dates]
+
+
+def align_ohlcv_with_nifty(
+    stock_df: pd.DataFrame,
+    nifty_df: pd.DataFrame,
+    *,
+    timeframe: str = "weekly",
+    min_bars: int = 65,
+):
+    if safe_str(timeframe).lower() == "daily":
+        return align_daily_with_nifty(stock_df, nifty_df, min_days=min_bars)
+    return align_weekly_with_nifty(stock_df, nifty_df, min_weeks=min_bars)
+
+
+def _fetch_index_daily(symbols: list[str], period: str = "2y") -> pd.DataFrame:
+    for symbol in symbols:
+        for attempt in range(2):
+            try:
+                df = yf.Ticker(symbol).history(period=period, interval="1d", auto_adjust=True)
+                if isinstance(df, pd.DataFrame) and not df.empty:
+                    return prepare_daily_ohlcv(df)
+            except Exception:
+                pass
+            try:
+                df = yf.download(
+                    tickers=symbol,
+                    period=period,
+                    interval="1d",
+                    progress=False,
+                    auto_adjust=True,
+                )
+                if isinstance(df, pd.DataFrame) and not df.empty:
+                    return prepare_daily_ohlcv(flatten_ohlcv_columns(df))
+            except Exception:
+                pass
+            time.sleep(0.5 + attempt)
+    return pd.DataFrame()
+
+
 def get_nifty_data() -> pd.DataFrame:
     global _NIFTY_CACHE
     now = time.time()
@@ -171,6 +224,21 @@ def get_nifty_data() -> pd.DataFrame:
             except Exception:
                 pass
         time.sleep(1 + attempt)
+    return pd.DataFrame()
+
+
+def get_nifty_data_daily() -> pd.DataFrame:
+    global _NIFTY_DAILY_CACHE
+    now = time.time()
+    if _NIFTY_DAILY_CACHE and now - _NIFTY_DAILY_CACHE[0] < _NIFTY_CACHE_SECONDS:
+        return _NIFTY_DAILY_CACHE[1].copy()
+
+    for period in ("2y", "1y", "6mo"):
+        prepared = _fetch_index_daily(["^NSEI"], period=period)
+        if not prepared.empty:
+            _NIFTY_DAILY_CACHE = (time.time(), prepared)
+            return prepared.copy()
+        time.sleep(0.5)
     return pd.DataFrame()
 
 

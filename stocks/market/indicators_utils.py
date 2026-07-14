@@ -44,3 +44,17 @@ def prepare_weekly_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
     out = out.groupby(weeks, group_keys=False).last()
     out.index = out.index.to_timestamp(how="end")
     return out
+
+
+def prepare_daily_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize daily OHLCV; drop today's incomplete bar when present."""
+    if df is None or df.empty:
+        return df
+    out = flatten_ohlcv_columns(normalize_price_index(df))
+    if len(out) < 2:
+        return out
+    last_ts = pd.Timestamp(out.index[-1])
+    now = pd.Timestamp.now(tz=last_ts.tz) if last_ts.tzinfo else pd.Timestamp.now()
+    if last_ts.normalize() == now.normalize():
+        return out.iloc[:-1].copy()
+    return out

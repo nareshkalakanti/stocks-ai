@@ -27,10 +27,10 @@ from stocks.scans.scan_universe import resolve_cap_tier_id
 from stocks.scans.stock_filters import apply_stock_filters
 from stocks.listings.stocks_data import load_india_stocks
 from stocks.strategies.tq_bb.service import (
-    BB_TIMEFRAMES,
     prepare_strategy_universe,
     run_bb_strategy,
     run_tq_strategy,
+    strategy_timeframe_options,
 )
 
 
@@ -38,8 +38,8 @@ STRATEGY_OPTIONS = ("Both", "TQ", "Bollinger Bands")
 
 
 def render_strategy() -> None:
-    tab_scan, tab_recovery, tab_pead, tab_100x, tab_valuation = st.tabs(
-        ["TQ / Bollinger Bands", "TQ W52 Recovery", "PEAD", "100X", "Valuation FW"]
+    tab_scan, tab_recovery, tab_pead = st.tabs(
+        ["TQ / Bollinger Bands", "TQ W52 Recovery", "PEAD"]
     )
     with tab_scan:
         render_strategy_scan()
@@ -51,14 +51,6 @@ def render_strategy() -> None:
         from stocks.pages.pead2 import render_pead2
 
         render_pead2(show_title=False)
-    with tab_100x:
-        from stocks.pages.formula_100x import render_100x
-
-        render_100x(show_title=False)
-    with tab_valuation:
-        from stocks.pages.valuation_framework import render_valuation_framework
-
-        render_valuation_framework(show_title=False)
 
 
 def render_strategy_scan() -> None:
@@ -91,15 +83,17 @@ def render_strategy_scan() -> None:
                 "Strategy",
                 STRATEGY_OPTIONS,
                 key="strat_choice",
-                help="TQ = weekly trend quality · BB = Bollinger breakout",
+                help="TQ = trend quality + RS vs NIFTY · BB = Bollinger breakout",
             )
         with row[6]:
-            bb_timeframe = st.selectbox(
-                "BB timeframe",
-                BB_TIMEFRAMES,
-                index=0,
-                key="strat_bb_timeframe",
-                disabled=strategy_choice == "TQ",
+            tf_options = strategy_timeframe_options(strategy_choice)
+            if st.session_state.get("strat_timeframe") not in tf_options:
+                st.session_state["strat_timeframe"] = tf_options[0]
+            scan_timeframe = st.selectbox(
+                "Timeframe",
+                tf_options,
+                key="strat_timeframe",
+                help="Applies to TQ and BB when both run (TQ: daily/weekly only)",
             )
         with row[7]:
             st.number_input(
@@ -163,11 +157,12 @@ def render_strategy_scan() -> None:
             def _tq_progress(done: int, total: int) -> None:
                 progress.progress(
                     done / total,
-                    text=f"TQ {done}/{total}...",
+                    text=f"TQ {done}/{total} ({scan_timeframe})...",
                 )
 
             tq_df = run_tq_strategy(
                 universe,
+                timeframe=scan_timeframe,
                 max_workers=max_workers,
                 progress_callback=_tq_progress,
                 should_stop=should_stop,
@@ -190,12 +185,12 @@ def render_strategy_scan() -> None:
             def _bb_progress(done: int, total: int) -> None:
                 progress.progress(
                     done / total,
-                    text=f"BB {done}/{total} ({bb_timeframe})...",
+                    text=f"BB {done}/{total} ({scan_timeframe})...",
                 )
 
             bb_df = run_bb_strategy(
                 universe,
-                timeframe=bb_timeframe,
+                timeframe=scan_timeframe,
                 max_workers=max_workers,
                 progress_callback=_bb_progress,
                 should_stop=should_stop,
@@ -220,36 +215,36 @@ def render_strategy_scan() -> None:
         st.warning("No TQ or Bollinger Bands signals in the current selection.")
         return
     if has_tq and not has_bb and tq_result.empty:
-        st.warning("No TQ signals in the current selection.")
+        st.warning(f"No TQ ({scan_timeframe}) signals in the current selection.")
         return
     if has_bb and not has_tq and bb_result.empty:
-        st.warning(f"No Bollinger Bands ({bb_timeframe}) signals in the current selection.")
+        st.warning(f"No Bollinger Bands ({scan_timeframe}) signals in the current selection.")
         return
 
     if has_tq and not tq_result.empty:
         with st.spinner("Loading price snapshot & quarterly data for TQ signals..."):
             tq_result = enrich_strategy_dataframe(tq_result, max_workers=max_workers)
-        saved_tq = save_strategy_tq_signals(tq_result)
+        saved_tq = save_strategy_tq_signals(tq_result, timeframe=scan_timeframe)
     else:
         saved_tq = 0
     if has_bb and not bb_result.empty:
         with st.spinner("Loading price snapshot & quarterly data for BB signals..."):
             bb_result = enrich_strategy_dataframe(bb_result, max_workers=max_workers)
-        saved_bb = save_strategy_bb_signals(bb_result, timeframe=bb_timeframe)
+        saved_bb = save_strategy_bb_signals(bb_result, timeframe=scan_timeframe)
     else:
         saved_bb = 0
 
     if saved_tq or saved_bb:
         parts = []
         if saved_tq:
-            parts.append(f"**{saved_tq}** TQ")
+            parts.append(f"**{saved_tq}** TQ ({scan_timeframe})")
         if saved_bb:
-            parts.append(f"**{saved_bb}** BB ({bb_timeframe})")
+            parts.append(f"**{saved_bb}** BB ({scan_timeframe})")
         st.success(f"Saved {' + '.join(parts)} signals to SQLite — available on the **PEAD** tab.")
     embed_html = build_strategy_dashboard_html(
         tq_df=tq_result,
         bb_df=bb_result,
-        bb_timeframe=bb_timeframe,
+        timeframe=scan_timeframe,
         include_tq=has_tq,
         include_bb=has_bb,
         title="",
@@ -268,17 +263,17 @@ def render_strategy_scan() -> None:
 
     if has_tq and not tq_result.empty:
         st.download_button(
-            "Download TQ CSV",
+            f"Download TQ ({scan_timeframe}) CSV",
             data=tq_result.to_csv(index=False).encode("utf-8"),
-            file_name="strategy_tq.csv",
+            file_name=f"strategy_tq_{scan_timeframe}.csv",
             mime="text/csv",
             key="download_tq_csv",
         )
     if has_bb and not bb_result.empty:
         st.download_button(
-            f"Download BB ({bb_timeframe}) CSV",
+            f"Download BB ({scan_timeframe}) CSV",
             data=bb_result.to_csv(index=False).encode("utf-8"),
-            file_name=f"strategy_bb_{bb_timeframe}.csv",
+            file_name=f"strategy_bb_{scan_timeframe}.csv",
             mime="text/csv",
             key="download_bb_csv",
         )

@@ -4,9 +4,98 @@ from __future__ import annotations
 
 import pandas as pd
 
-from stocks.core.database import load_superstar_holdings_map
+from stocks.core.database import (
+    load_all_superstar_holdings_df,
+    load_superstar_fetched_at,
+    load_superstar_holdings_map,
+)
 from stocks.core.text_utils import safe_str
 from stocks.listings.classification_service import enrich_stocks_classification
+
+
+def hydrate_superstar_display_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Add display columns used by the Superstars UI."""
+    if df is None or df.empty:
+        return pd.DataFrame()
+    work = df.copy()
+    if "change_display" not in work.columns:
+        work["change_display"] = work.apply(
+            lambda row: (
+                "NEW"
+                if safe_str(row.get("change_type")).lower() == "new"
+                else (
+                    f"{float(row['change_qtr']):+.2f}%"
+                    if row.get("change_qtr") is not None
+                    and not pd.isna(row.get("change_qtr"))
+                    else "0.00%"
+                )
+            ),
+            axis=1,
+        )
+    if "holding_value_display" not in work.columns:
+        work["holding_value_display"] = work["holding_value_cr"].apply(
+            lambda v: f"₹{v:.1f} Cr" if v is not None and not pd.isna(v) and v else ""
+        )
+    if "price_display" not in work.columns:
+        work["price_display"] = work["price"].apply(
+            lambda p: f"₹{p:,.2f}" if pd.notna(p) and p else ""
+        )
+    return work
+
+
+def portfolio_dict_from_df(df: pd.DataFrame) -> dict[str, pd.DataFrame | str | int]:
+    if df is None or df.empty or "change_type" not in df.columns:
+        return {
+            "all": df if df is not None else pd.DataFrame(),
+            "new_picks": pd.DataFrame(),
+            "increased": pd.DataFrame(),
+            "decreased": pd.DataFrame(),
+            "unchanged": pd.DataFrame(),
+            "count": 0,
+            "error": "",
+        }
+    work = hydrate_superstar_display_df(df)
+    return {
+        "all": work,
+        "new_picks": work[work["change_type"] == "new"].copy(),
+        "increased": work[work["change_type"] == "increased"].copy(),
+        "decreased": work[work["change_type"] == "decreased"].copy(),
+        "unchanged": work[work["change_type"] == "unchanged"].copy(),
+        "count": len(work),
+        "error": "",
+    }
+
+
+def portfolios_from_db(
+    investor_names: list[str],
+) -> tuple[dict[str, dict], dict[str, str], str | None]:
+    """Rebuild session portfolios from persisted superstar_holdings rows."""
+    raw = load_all_superstar_holdings_df()
+    if raw.empty:
+        return {}, {}, None
+
+    work = enrich_superstar_classification(raw)
+    work = hydrate_superstar_display_df(work)
+    fetched_ts = load_superstar_fetched_at() or ""
+
+    portfolios: dict[str, dict] = {}
+    fetched_at: dict[str, str] = {}
+    for name in investor_names:
+        chunk = work[work["investor"] == name].copy()
+        if chunk.empty:
+            portfolios[name] = portfolio_dict_from_df(pd.DataFrame())
+            continue
+        chunk = chunk.drop(columns=["investor"], errors="ignore")
+        chunk = chunk.sort_values(
+            ["holding_value_cr", "holding_percent"],
+            ascending=[False, False],
+            na_position="last",
+        ).reset_index(drop=True)
+        portfolios[name] = portfolio_dict_from_df(chunk)
+        if fetched_ts:
+            fetched_at[name] = fetched_ts
+
+    return portfolios, fetched_at, fetched_ts or None
 
 
 def _holder_badge(change_type: str, change_qtr: float | None) -> str:
@@ -108,7 +197,10 @@ def aggregate_all_portfolios(portfolios: dict) -> pd.DataFrame:
         frames.append(row)
     if not frames:
         return pd.DataFrame()
-    return enrich_superstar_classification(pd.concat(frames, ignore_index=True))
+    merged = pd.concat(frames, ignore_index=True)
+    if "sector" in merged.columns and merged["sector"].astype(str).str.strip().ne("").any():
+        return merged
+    return enrich_superstar_classification(merged)
 
 
 def all_investors_summary(df: pd.DataFrame) -> dict:
