@@ -1494,6 +1494,24 @@ def load_pead2_cache(tickers: list[str], *, max_hours: int) -> dict[str, dict]:
     return out
 
 
+def load_pead2_fetched_at(tickers: list[str]) -> dict[str, str]:
+    """``fetched_at`` ISO timestamps keyed by ticker (no freshness filter)."""
+    if not tickers:
+        return {}
+    init_db()
+    placeholders = ",".join("?" * len(tickers))
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT ticker, fetched_at
+            FROM pead2_cache
+            WHERE ticker IN ({placeholders})
+            """,
+            tickers,
+        ).fetchall()
+    return {str(row["ticker"]).upper(): row["fetched_at"] for row in rows}
+
+
 def load_all_pead2_cache_payloads(*, max_hours: int = 999999) -> list[dict]:
     """All fresh PEAD2 cache payloads (for universe scoring / demo)."""
     init_db()

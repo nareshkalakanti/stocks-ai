@@ -22,7 +22,7 @@ from stocks.core.config import (
     STRATEGY_YFINANCE_MAX_INFLIGHT,
     yfinance_worker_count,
 )
-from stocks.core.database import load_pead2_cache, save_market_cap_to_db, save_pead2_cache
+from stocks.core.database import load_pead2_cache, load_pead2_fetched_at, save_market_cap_to_db, save_pead2_cache
 from stocks.strategies.earnings.quality import cap_eps_yoy_pct, cap_growth_qoq_pct, passes_earnings_quality
 from stocks.strategies.earnings.strategy import EBIDT_FIELDS, EPS_FIELDS
 from stocks.strategies.valuation_formula.strategy import comfort_buy_fields
@@ -165,11 +165,12 @@ def _newest_legacy_cache(all_cached: dict[str, dict]) -> dict[str, dict]:
     return legacy
 
 
-PendingFetchMode = Literal["all", "missing", "stale", "no_data"]
+PendingFetchMode = Literal["all", "missing", "stale", "aged", "no_data"]
 PEAD2_PENDING_FETCH_MODES: tuple[PendingFetchMode, ...] = (
     "all",
     "missing",
     "stale",
+    "aged",
     "no_data",
 )
 
@@ -183,10 +184,16 @@ class Pead2ScanCoverage:
     stale: int
     missing: int
     scorable: int = 0
+    aged: int = 0
 
     @property
     def pending(self) -> int:
         return self.stale + self.missing
+
+    @property
+    def refreshable(self) -> int:
+        """Tickers that can be batch-refreshed (missing, old formula, or aged cache)."""
+        return self.stale + self.missing + self.aged
 
     @property
     def no_data(self) -> int:
@@ -194,16 +201,18 @@ class Pead2ScanCoverage:
 
     @property
     def complete(self) -> bool:
-        return self.universe_total > 0 and self.pending == 0
+        return self.universe_total > 0 and self.refreshable == 0
 
     def pending_count(self, mode: PendingFetchMode = "all") -> int:
         if mode == "missing":
             return self.missing
         if mode == "stale":
             return self.stale
+        if mode == "aged":
+            return self.aged
         if mode == "no_data":
             return self.no_data
-        return self.pending
+        return self.refreshable
 
 
 def _pead2_scorable_blob(blob: dict) -> bool:
@@ -246,11 +255,24 @@ def _universe_ticker_lists(
     return tickers, markets, set(tickers)
 
 
+def _should_tombstone_failed_fetch(mode: PendingFetchMode) -> bool:
+    return mode in ("missing", "no_data")
+
+
+def _is_pead2_cache_aged(fetched_at: str | None) -> bool:
+    from stocks.core.database import _is_fresh
+
+    if not fetched_at:
+        return False
+    return not _is_fresh(fetched_at, PEAD2_CACHE_HOURS)
+
+
 def _filter_pending_tickers(
     tickers: list[str],
     markets: list[str | None],
     cached: dict[str, dict],
     all_cached: dict[str, dict],
+    fetched_at: dict[str, str],
     *,
     mode: PendingFetchMode = "all",
 ) -> list[tuple[str, str | None]]:
@@ -263,7 +285,16 @@ def _filter_pending_tickers(
                 continue
             pending.append((ticker, market))
             continue
+        if mode == "aged":
+            if ticker not in cached:
+                continue
+            if not _is_pead2_cache_aged(fetched_at.get(ticker)):
+                continue
+            pending.append((ticker, market))
+            continue
         if ticker in cached:
+            if mode == "all" and _is_pead2_cache_aged(fetched_at.get(ticker)):
+                pending.append((ticker, market))
             continue
         if mode == "missing" and raw is not None:
             continue
@@ -281,15 +312,17 @@ def _partition_pead2_universe_cache(
     """Split universe into fresh SQLite rows vs tickers that still need Yahoo."""
     tickers, markets, universe_keys = _universe_ticker_lists(universe)
     if not tickers:
-        empty = Pead2ScanCoverage(0, 0, 0, 0, 0)
+        empty = Pead2ScanCoverage(0, 0, 0, 0, 0, 0)
         return {}, [], empty, {}
 
     all_cached = load_pead2_cache(tickers, max_hours=999999)
+    fetched_at = load_pead2_fetched_at(tickers)
     legacy_by_ticker = _newest_legacy_cache(all_cached)
 
     cached: dict[str, dict] = {}
     stale = 0
     missing = 0
+    aged = 0
     for ticker in tickers:
         raw = all_cached.get(ticker)
         if raw is None:
@@ -301,12 +334,15 @@ def _partition_pead2_universe_cache(
         cached[ticker] = hydrate_blob_profile(
             _backfill_blob_from_legacy(raw, legacy_by_ticker.get(ticker))
         )
+        if _is_pead2_cache_aged(fetched_at.get(ticker)):
+            aged += 1
 
     pending = _filter_pending_tickers(
         tickers,
         markets,
         cached,
         all_cached,
+        fetched_at,
         mode=pending_mode,
     )
 
@@ -319,6 +355,7 @@ def _partition_pead2_universe_cache(
         stale=stale,
         missing=missing,
         scorable=scorable,
+        aged=aged,
     )
     return cached, pending, coverage, legacy_by_ticker
 
@@ -747,7 +784,7 @@ def run_pead2_recent_scan(
 
     if universe.empty:
         return _pead2_scan_result_shell(
-            coverage=Pead2ScanCoverage(0, 0, 0, 0, 0),
+            coverage=Pead2ScanCoverage(0, 0, 0, 0, 0, 0),
             recent_days=recent_days,
         )
 
@@ -797,7 +834,8 @@ def run_pead2_recent_scan(
                         rows.append(result)
                 else:
                     fetch_failed += 1
-                    tombstone_rows.append(_pead2_no_data_blob(ticker, market))
+                    if ticker not in cached:
+                        tombstone_rows.append(_pead2_no_data_blob(ticker, market))
                 done += 1
                 if progress_callback:
                     progress_callback(done, fetch_total)
@@ -873,7 +911,7 @@ def run_pead2_scan(
     fetch_mode: PendingFetchMode = pending_mode if only_pending else "all"
     tickers, markets, universe_keys = _universe_ticker_lists(universe)
     if not tickers:
-        return _pead2_scan_result_shell(coverage=Pead2ScanCoverage(0, 0, 0, 0, 0))
+        return _pead2_scan_result_shell(coverage=Pead2ScanCoverage(0, 0, 0, 0, 0, 0))
 
     workers = yfinance_worker_count(
         len(tickers),
@@ -929,7 +967,7 @@ def run_pead2_scan(
                         rows.append(result)
                 else:
                     fetch_failed += 1
-                    if only_pending:
+                    if _should_tombstone_failed_fetch(fetch_mode):
                         tombstone_rows.append(_pead2_no_data_blob(ticker, market))
                 done += 1
                 if progress_callback:
