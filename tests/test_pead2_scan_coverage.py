@@ -327,3 +327,72 @@ def test_run_pead2_full_scan_refetches_aged_cache():
     analyze.assert_called_once()
     assert analyze.call_args.args[0] == "AAA"
     assert result["fetched"] == 1
+
+
+def test_run_pead2_full_scan_retries_no_data_tombstone():
+    universe = _universe("AAA")
+    cached = {
+        "AAA": {
+            "ticker": "AAA",
+            "market": "NSE",
+            "calc_version": PEAD2_CALC_VERSION,
+            "no_pead_data": True,
+            "lags": {},
+        },
+    }
+
+    def _fake_analyze(ticker, market, **kwargs):
+        return {
+            "ticker": ticker,
+            "market": market,
+            "calc_version": PEAD2_CALC_VERSION,
+            "lags": {
+                "0": {
+                    "result_date": "2025-05-15",
+                    "sales_yoy": 10.0,
+                    "np_yoy": 5.0,
+                    "eps_yoy": 5.0,
+                },
+                "1": {"result_date": "2025-02-15"},
+            },
+        }
+
+    with patch_pead_cache(cached):
+        with patch(
+            "stocks.strategies.pead2.service.analyze_pead2_ticker",
+            side_effect=_fake_analyze,
+        ) as analyze:
+            with patch("stocks.strategies.pead2.service.save_pead2_cache"):
+                result = run_pead2_scan(universe, only_pending=False)
+    analyze.assert_called_once_with("AAA", "NSE", min_mcap_cr=None)
+    assert result["fetched"] == 1
+
+
+def test_pead2_ebidt_series_falls_back_to_pretax_income():
+    import pandas as pd
+
+    from stocks.strategies.pead2.service import _pead2_ebidt_series
+
+    income = pd.DataFrame(
+        {
+            pd.Timestamp("2024-03-31"): [100.0],
+            pd.Timestamp("2024-06-30"): [110.0],
+            pd.Timestamp("2024-09-30"): [120.0],
+            pd.Timestamp("2024-12-31"): [130.0],
+        },
+        index=["Pretax Income"],
+    )
+    series = _pead2_ebidt_series(income)
+    assert series is not None
+    assert len(series) == 4
+
+
+def test_pead2_passes_earnings_quality_allows_short_eps_history():
+    import pandas as pd
+
+    from stocks.strategies.pead2.service import _pead2_passes_earnings_quality
+
+    idx = pd.date_range("2024-03-31", periods=3, freq="QE")
+    net_profit = pd.Series([10.0, 11.0, 12.0], index=idx)
+    eps = pd.Series([1.0, 1.1, 1.2], index=idx)
+    assert _pead2_passes_earnings_quality(net_profit, eps) is True

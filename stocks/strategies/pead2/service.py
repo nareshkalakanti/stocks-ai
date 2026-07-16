@@ -65,6 +65,13 @@ REVENUE_FIELDS = (
     "Revenue",
 )
 
+# Banks and some industrials omit EBIT/EBITDA on Yahoo — fall back before skipping.
+_PEAD2_EBIDT_FALLBACK_FIELDS = (
+    "Pretax Income",
+    "Net Interest Income",
+    "Net Income Continuous Operations",
+)
+
 
 def _series_from_income(income: pd.DataFrame, fields: tuple[str, ...]) -> pd.Series | None:
     if income is None or income.empty:
@@ -75,6 +82,24 @@ def _series_from_income(income: pd.DataFrame, fields: tuple[str, ...]) -> pd.Ser
             if not series.empty:
                 return series.astype(float)
     return None
+
+
+def _pead2_ebidt_series(income: pd.DataFrame) -> pd.Series | None:
+    series = _series_from_income(income, EBIDT_FIELDS)
+    if series is not None and not series.empty:
+        return series
+    return _series_from_income(income, _PEAD2_EBIDT_FALLBACK_FIELDS)
+
+
+def _pead2_passes_earnings_quality(net_profit: pd.Series, eps: pd.Series) -> bool:
+    """PEAD2 earnings gate — allow shorter EPS history when YoY base check cannot run."""
+    ok, reason = passes_earnings_quality(net_profit, eps)
+    if ok:
+        return True
+    ep = eps.dropna()
+    if reason.startswith("Need 5+") and len(ep) >= 3:
+        return True
+    return False
 
 
 def _cache_market_cap(
@@ -292,7 +317,10 @@ def _filter_pending_tickers(
             pending.append((ticker, market))
             continue
         if ticker in cached:
-            if mode == "all" and _is_pead2_cache_aged(fetched_at.get(ticker)):
+            if mode == "all" and (
+                _is_pead2_cache_aged(fetched_at.get(ticker))
+                or not _pead2_scorable_blob(cached[ticker])
+            ):
                 pending.append((ticker, market))
             continue
         if mode == "missing" and raw is not None:
@@ -714,7 +742,7 @@ def analyze_pead2_ticker(
         income = yt.quarterly_income_stmt
         cashflow = yt.quarterly_cashflow
         revenue = _series_from_income(income, REVENUE_FIELDS)
-        ebidt = _series_from_income(income, EBIDT_FIELDS)
+        ebidt = _pead2_ebidt_series(income)
         net_profit = _series_from_income(income, NET_INCOME_FIELDS)
         eps = _series_from_income(income, EPS_FIELDS)
         cfo = _series_from_income(cashflow, CFO_FIELDS) if cashflow is not None else None
@@ -727,17 +755,20 @@ def analyze_pead2_ticker(
             cfo = trim_reported_quarters(cfo)
 
         if (
-            revenue.empty
+            revenue is None
+            or revenue.empty
+            or ebidt is None
             or ebidt.empty
+            or net_profit is None
             or net_profit.empty
+            or eps is None
             or eps.empty
         ):
             return None
         if len(revenue) < PEAD2_MIN_QUARTERS:
             return None
 
-        ok, _reason = passes_earnings_quality(net_profit, eps)
-        if not ok:
+        if not _pead2_passes_earnings_quality(net_profit, eps):
             return None
 
         hist = yt.history(period="6y", interval="1d", auto_adjust=True)

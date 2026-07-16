@@ -57,8 +57,13 @@ def pead_missing_reason(ticker: str, market: str | None) -> str:
     from stocks.market.price_service import to_yfinance_symbol
     from stocks.market.yfinance_limits import call_fast
     from stocks.strategies.earnings.quality import passes_earnings_quality
-    from stocks.strategies.earnings.strategy import EBIDT_FIELDS, EPS_FIELDS, NET_INCOME_FIELDS
-    from stocks.strategies.pead2.service import REVENUE_FIELDS, _series_from_income
+    from stocks.strategies.earnings.strategy import EPS_FIELDS, NET_INCOME_FIELDS
+    from stocks.strategies.pead2.service import (
+        REVENUE_FIELDS,
+        _pead2_ebidt_series,
+        _pead2_passes_earnings_quality,
+        _series_from_income,
+    )
 
     symbol = to_yfinance_symbol(ticker, market)
 
@@ -74,10 +79,13 @@ def pead_missing_reason(ticker: str, market: str | None) -> str:
             return f"Needs {PEAD2_MIN_QUARTERS}+ quarters (has {len(revenue)})"
         net_profit = _series_from_income(income, NET_INCOME_FIELDS)
         eps = _series_from_income(income, EPS_FIELDS)
+        ebidt = _pead2_ebidt_series(income)
         if net_profit is None or eps is None:
             return "Incomplete earnings data on Yahoo"
-        ok, reason = passes_earnings_quality(net_profit, eps)
-        if not ok:
+        if ebidt is None or ebidt.empty:
+            return "No operating profit / EBITDA on Yahoo"
+        if not _pead2_passes_earnings_quality(net_profit, eps):
+            ok, reason = passes_earnings_quality(net_profit, eps)
             return reason or "Earnings quality check failed"
         return "Insufficient quarterly data"
 
