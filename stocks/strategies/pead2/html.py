@@ -234,7 +234,24 @@ _PEAD2_DASHBOARD_CSS = """
     margin-bottom: 8px;
     flex-wrap: wrap;
   }
-  .count { color: var(--muted); font-size: 12px; font-weight: 600; }
+  .pead-search {
+    flex: 1 1 180px;
+    max-width: 300px;
+    min-width: 140px;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  .pead-search::placeholder { color: var(--muted); }
+  .pead-search:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+  .count { color: var(--muted); font-size: 12px; font-weight: 600; flex: 1 1 auto; }
   .col-toggle button {
     padding: 4px 8px;
     border-radius: 6px;
@@ -1828,6 +1845,7 @@ def build_pead2_dashboard_html(
       </div>
     </div>
     <div class="toolbar">
+      <input class="pead-search" id="pead-search" type="search" placeholder="Search ticker or name…" autocomplete="off" />
       <div class="count" id="count-label">0 companies</div>
       <div class="col-toggle">
         <button type="button" id="btn-cols" title="Show growth / CF columns">Columns (<span id="col-visible">6</span>/<span id="col-total">13</span>)</button>
@@ -1885,6 +1903,7 @@ updateColBtn();
 let sortCol = {json.dumps(default_sort_col)};
 let sortDir = {default_sort_dir};
 let expandedTicker = null;
+let searchQuery = "";
 
 function colById(id) {{
   return COLS.find(c => c.id === id) || COLS[0];
@@ -2149,14 +2168,28 @@ function renderHead() {{
   }});
 }}
 
+function rowMatchesSearch(r, q) {{
+  const hay = [r.ticker, r.name, r.sector, r.industry, r.sub_sector]
+    .map(v => String(v || "").toLowerCase())
+    .join(" ");
+  return hay.includes(q);
+}}
+
 function render() {{
   const DATA = activeData();
   let rows = DATA.slice();
+  if (searchQuery) {{
+    rows = rows.filter(r => rowMatchesSearch(r, searchQuery));
+  }}
   const sortColumn = colById(sortCol);
   rows.sort((a, b) => compareRows(a, b, sortColumn));
   const quarterLabel = quarterMode === "previous" ? "Previous" : "Current";
   const scored = rows.filter(r => num(r.pead_score) !== null).length;
-  let countText = `${{LIST_LABEL}} (${{rows.length}}`;
+  const total = DATA.length;
+  let countText = searchQuery && rows.length !== total
+    ? `${{rows.length}} of ${{total}}`
+    : `${{rows.length}}`;
+  countText = `${{LIST_LABEL}} (${{countText}}`;
   if (SHOW_SCORED_SPLIT && scored < rows.length) {{
     countText += ` · ${{scored}} with PEAD scores`;
   }}
@@ -2195,6 +2228,11 @@ function render() {{
   }});
   syncExpandPanelWidth();
 }}
+
+document.getElementById("pead-search").oninput = (e) => {{
+  searchQuery = e.target.value.trim().toLowerCase();
+  render();
+}};
 
 render();
 window.addEventListener("resize", () => syncExpandPanelWidth());

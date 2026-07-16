@@ -285,12 +285,14 @@ def render_pead2(*, show_title: bool = True) -> None:
             f"{len(candidates)} holdings{tier_note} · **{scored_n:,}** with PEAD scores · "
             f"**{no_data_n:,}** without quarterly data · "
             f"{cache_hits:,} loaded from DB · "
+            f"**search** in the results table · "
             f"**click a row** to expand the detail panel."
         )
     else:
         st.caption(
             f"{len(candidates)} stocks · {cache_hits:,} from DB · "
             f"sorted by **latest result date** · "
+            f"**search** in the results table · "
             f"**click a row** to expand the detail panel."
         )
     embed_html_iframe(embed_html, height=pead2_iframe_height(len(candidates)))
