@@ -89,14 +89,30 @@ def estimate_result_date(
     quarter_end: pd.Timestamp,
     *,
     result_lag_days: int | None = None,
+    ticker: str | None = None,
+    market: str | None = None,
+    as_of: pd.Timestamp | None = None,
 ) -> pd.Timestamp:
-    """Earnings announcement date — Yahoo calendar in [q_end, today], else q_end + lag."""
+    """Earnings date — NSE filing, then Yahoo calendar in [q_end, today], else q_end + lag."""
     from stocks.core.config import PEAD_RESULT_LAG_DAYS
 
     lag = PEAD_RESULT_LAG_DAYS if result_lag_days is None else result_lag_days
     q_end = _ts_naive(quarter_end)
-    today = _ts_naive(pd.Timestamp.now())
+    today = _ts_naive(as_of or pd.Timestamp.now())
     fallback = min(q_end + timedelta(days=lag), today)
+
+    if ticker:
+        from stocks.market.nse_result_dates import nse_result_date_for_quarter
+
+        nse_date = nse_result_date_for_quarter(
+            ticker,
+            q_end,
+            market=market,
+            as_of=today,
+        )
+        if nse_date is not None:
+            return _ts_naive(nse_date)
+
     try:
         earnings_dates = yt.get_earnings_dates(limit=24)
     except Exception:
@@ -483,7 +499,7 @@ def analyze_pead_stock(
             return None
 
         quarter_end = pd.Timestamp(revenue.index[-1])
-        result_date = estimate_result_date(yt, quarter_end)
+        result_date = estimate_result_date(yt, quarter_end, ticker=ticker, market=market)
         hist = yt.history(period="6mo", interval="1d", auto_adjust=True)
         price = evaluate_price_volume(hist, result_date, scan)
         signal = classify_signal(fund, price, require_price=scan.require_price)

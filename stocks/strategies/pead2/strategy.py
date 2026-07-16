@@ -268,6 +268,23 @@ def _pct_change(series: pd.Series, lag: int) -> float | None:
     return ((latest / prev) - 1.0) * 100.0
 
 
+def _yoy_pct_change(series: pd.Series) -> float | None:
+    """Same calendar quarter one year ago; falls back to four-quarter lag."""
+    s = series.dropna().sort_index().astype(float)
+    if len(s) < 2:
+        return None
+    latest = float(s.iloc[-1])
+    q0 = pd.Timestamp(s.index[-1]).tz_localize(None).normalize()
+    for idx in s.index[:-1]:
+        q = pd.Timestamp(idx).tz_localize(None).normalize()
+        if q.quarter == q0.quarter and q.year == q0.year - 1:
+            prev = float(s.loc[idx])
+            if prev == 0:
+                return None
+            return ((latest / prev) - 1.0) * 100.0
+    return _pct_change(series, 4)
+
+
 def compute_growth_metrics(
     revenue: pd.Series,
     net_profit: pd.Series,
@@ -275,15 +292,15 @@ def compute_growth_metrics(
     eps: pd.Series | None = None,
 ) -> dict:
     metrics = {
-        "sales_yoy": _pct_change(revenue, 4),
+        "sales_yoy": _yoy_pct_change(revenue),
         "sales_qoq": _pct_change(revenue, 1),
-        "np_yoy": _pct_change(net_profit, 4),
+        "np_yoy": _yoy_pct_change(net_profit),
         "np_qoq": _pct_change(net_profit, 1),
-        "ebidt_yoy": _pct_change(ebidt, 4),
+        "ebidt_yoy": _yoy_pct_change(ebidt),
         "ebidt_qoq": _pct_change(ebidt, 1),
     }
     if eps is not None:
-        metrics["eps_yoy"] = _pct_change(eps, 4)
+        metrics["eps_yoy"] = _yoy_pct_change(eps)
         metrics["eps_qoq"] = _pct_change(eps, 1)
     return metrics
 
@@ -381,6 +398,9 @@ def unannounced_latest_offset(
     yt: yf.Ticker | None,
     *,
     as_of: pd.Timestamp | None = None,
+    ticker: str | None = None,
+    market: str | None = None,
+    announced_dates: list[pd.Timestamp] | None = None,
 ) -> int:
     """Lag offset so the chosen quarter-end matches ``result_quarter_end``."""
     if series is None or series.empty:
@@ -388,7 +408,14 @@ def unannounced_latest_offset(
     s = trim_reported_quarters(series, as_of=as_of)
     if len(s) < 2:
         return 0
-    target = result_quarter_end(series, yt, as_of=as_of)
+    target = result_quarter_end(
+        series,
+        yt,
+        as_of=as_of,
+        ticker=ticker,
+        market=market,
+        announced_dates=announced_dates,
+    )
     target_ts = pd.Timestamp(target).tz_localize(None).normalize()
     for offset in range(len(s)):
         q_end = pd.Timestamp(s.index[-1 - offset]).tz_localize(None).normalize()
@@ -402,10 +429,14 @@ def result_quarter_end(
     yt: yf.Ticker | None,
     *,
     as_of: pd.Timestamp | None = None,
+    ticker: str | None = None,
+    market: str | None = None,
+    announced_dates: list[pd.Timestamp] | None = None,
 ) -> pd.Timestamp:
     """
-    Latest quarter-end with a Yahoo earnings date in [q_end, q_end + 120 days].
+    Latest quarter-end with an earnings date in [q_end, q_end + 120 days].
 
+    Uses NSE result filings when available, then Yahoo earnings dates.
     Walks back through period-ends when the leading column is an unannounced
     placeholder (e.g. Mar 2026 with no 2026 earnings on record).
     """
@@ -417,6 +448,14 @@ def result_quarter_end(
         today = today.tz_convert(None)
     today = today.normalize()
     announced: list[pd.Timestamp] = []
+    if announced_dates:
+        announced.extend(
+            pd.Timestamp(d).tz_localize(None).normalize() for d in announced_dates
+        )
+    if ticker and not announced_dates:
+        from stocks.market.nse_result_dates import nse_announced_dates
+
+        announced.extend(nse_announced_dates(ticker, market=market, as_of=today))
     if yt is not None:
         try:
             earnings_dates = yt.get_earnings_dates(limit=24)
@@ -427,8 +466,8 @@ def result_quarter_end(
                         ed_ts = ed_ts.tz_convert(None)
                     announced.append(ed_ts.normalize())
         except Exception:
-            announced = []
-    announced.sort()
+            pass
+    announced = sorted(set(announced))
 
     for q_end_raw in reversed(s.index):
         q_end = pd.Timestamp(q_end_raw).tz_localize(None).normalize()
@@ -514,6 +553,7 @@ def compute_returns_pct(
     result_date: pd.Timestamp,
     *,
     drift_days: int = 0,
+    current_price: float | None = None,
 ) -> float | None:
     """
     Post-earnings return from the first trading close after ``result_date``.
@@ -521,6 +561,7 @@ def compute_returns_pct(
     ``drift_days=0``: through the latest available close (open-ended drift).
     ``drift_days>0``: through the N-th trading day after entry when enough
     history exists; otherwise through the latest close (recent results).
+    ``current_price``: live quote exit (FinanciallyFree Returns column).
     """
     if hist is None or hist.empty:
         return None
@@ -535,7 +576,9 @@ def compute_returns_pct(
     entry = float(after.iloc[0]["Close"])
     if entry <= 0:
         return None
-    if drift_days > 0 and len(after) >= drift_days:
+    if current_price is not None:
+        exit_price = float(current_price)
+    elif drift_days > 0 and len(after) >= drift_days:
         exit_price = float(after.iloc[drift_days - 1]["Close"])
     else:
         exit_price = float(after.iloc[-1]["Close"])
@@ -709,6 +752,30 @@ def _ff_signed_pe(pe: float | None, *, ideal: float = 15.0, bad: float = 50.0) -
     if pe_f <= 0 or pe_f >= 500:
         return -100.0
     return 100.0 - (pe_f - ideal) / (bad - ideal) * 100.0
+
+
+def _apply_ff_forward_pe_when_yoy_missing(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    FinanciallyFree scoring: when both sales_yoy and np_yoy are unavailable,
+    treat forward_pe as 999 (same as the dashboard sentinel for missing run-rate PE).
+    """
+    if df.empty or "forward_pe" not in df.columns:
+        return df
+    out = df.copy()
+    sales = (
+        pd.to_numeric(out["sales_yoy"], errors="coerce")
+        if "sales_yoy" in out.columns
+        else pd.Series(np.nan, index=out.index)
+    )
+    np_y = (
+        pd.to_numeric(out["np_yoy"], errors="coerce")
+        if "np_yoy" in out.columns
+        else pd.Series(np.nan, index=out.index)
+    )
+    missing_yoy = sales.isna() & np_y.isna()
+    if missing_yoy.any():
+        out.loc[missing_yoy, "forward_pe"] = 999.0
+    return out
 
 
 def score_pead2_ff(

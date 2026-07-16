@@ -11,12 +11,26 @@ from stocks.strategies.pead2.quarters import append_valuation_rows, sanitize_qua
 from stocks.strategies.pead2.strategy import (
     PEAD_HIGH_SCORE_MIN,
     compute_forward_pe,
+    compute_growth_metrics,
     compute_trailing_pe,
     eps_yoy_from_quarters,
     score_pead2_candidates,
+    score_pead2_ff,
     trim_reported_quarters,
     result_quarter_end,
 )
+
+
+def test_compute_growth_metrics_uses_calendar_yoy():
+    idx = pd.to_datetime(
+        ["2024-03-31", "2024-06-30", "2024-09-30", "2024-12-31", "2025-03-31"]
+    )
+    revenue = pd.Series([100, 110, 120, 130, 150], index=idx)
+    net_profit = revenue * 0.1
+    ebidt = revenue * 0.2
+    eps = net_profit / 10
+    growth = compute_growth_metrics(revenue, net_profit, ebidt, eps)
+    assert growth["sales_yoy"] == 50.0
 
 
 def test_trim_reported_quarters_drops_future_columns():
@@ -138,8 +152,17 @@ def test_score_pead2_candidates_caps_extreme_np_qoq():
     assert spike < 100.0 or low <= spike
 
 
-def test_pead2_row_for_lag_builds_without_name_error():
+def test_pead2_row_for_lag_builds_without_name_error(monkeypatch):
     import yfinance as yf
+
+    monkeypatch.setattr(
+        "stocks.market.nse_result_dates.nse_announced_dates",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "stocks.market.nse_result_dates.nse_result_date_for_quarter",
+        lambda *args, **kwargs: None,
+    )
 
     idx = pd.to_datetime(
         ["2024-03-31", "2024-06-30", "2024-09-30", "2024-12-31", "2025-03-31"]

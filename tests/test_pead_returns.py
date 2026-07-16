@@ -19,6 +19,22 @@ def _hist(closes: list[tuple[str, float]]) -> pd.DataFrame:
     return pd.DataFrame({"Close": [c for _, c in closes]}, index=idx)
 
 
+def test_compute_returns_pct_uses_current_price_exit():
+    hist = _hist(
+        [
+            ("2026-05-08", 100.0),
+            ("2026-05-11", 110.0),
+            ("2026-05-12", 115.0),
+        ]
+    )
+    ret = compute_returns_pct(
+        hist,
+        pd.Timestamp("2026-05-09"),
+        current_price=125.0,
+    )
+    assert ret == 13.64  # 125 / 110 - 1
+
+
 def test_compute_returns_pct_open_ended_drift():
     hist = _hist(
         [

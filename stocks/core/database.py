@@ -407,6 +407,15 @@ def init_db() -> None:
                 fetched_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS nse_result_dates_cache (
+                ticker TEXT PRIMARY KEY,
+                payload_json TEXT NOT NULL,
+                fetched_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_nse_result_dates_cache_fetched
+                ON nse_result_dates_cache(fetched_at);
+
             CREATE INDEX IF NOT EXISTS idx_google_news_cache_fetched
                 ON google_news_cache(fetched_at);
             """
@@ -1916,6 +1925,65 @@ def save_merger_demerger_enrich_cache(rows: list[dict]) -> None:
             conn.execute(
                 """
                 INSERT INTO merger_demerger_enrich_cache (ticker, payload_json, fetched_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(ticker) DO UPDATE SET
+                    payload_json=excluded.payload_json,
+                    fetched_at=excluded.fetched_at
+                """,
+                (ticker, json.dumps(payload, default=str), row.get("fetched_at") or now),
+            )
+
+
+def load_nse_result_dates_cache(
+    tickers: list[str],
+    *,
+    max_hours: int | None,
+) -> dict[str, dict]:
+    if not tickers:
+        return {}
+    init_db()
+    keys = [safe_str(t).upper() for t in tickers if safe_str(t)]
+    if not keys:
+        return {}
+    placeholders = ",".join("?" for _ in keys)
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT ticker, payload_json, fetched_at
+            FROM nse_result_dates_cache
+            WHERE ticker IN ({placeholders})
+            """,
+            keys,
+        ).fetchall()
+    out: dict[str, dict] = {}
+    for row in rows:
+        ticker = safe_str(row["ticker"]).upper()
+        if max_hours is not None and not _is_fresh(row["fetched_at"], max_hours):
+            continue
+        try:
+            payload = json.loads(row["payload_json"])
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict):
+            payload.setdefault("fetched_at", row["fetched_at"])
+            out[ticker] = payload
+    return out
+
+
+def save_nse_result_dates_cache(rows: list[dict]) -> None:
+    if not rows:
+        return
+    init_db()
+    now = _utc_now()
+    with get_connection() as conn:
+        for row in rows:
+            ticker = safe_str(row.get("ticker")).upper()
+            if not ticker:
+                continue
+            payload = {"announcements": row.get("announcements") or []}
+            conn.execute(
+                """
+                INSERT INTO nse_result_dates_cache (ticker, payload_json, fetched_at)
                 VALUES (?, ?, ?)
                 ON CONFLICT(ticker) DO UPDATE SET
                     payload_json=excluded.payload_json,

@@ -37,7 +37,6 @@ from stocks.strategies.pead2.strategy import (
     compute_forward_pe,
     compute_growth_metrics,
     compute_returns_pct,
-    compute_return_since_result,
     compute_trailing_pe,
     score_pead2_candidates,
     series_through_lag,
@@ -522,11 +521,61 @@ def _pead2_row_for_lag(
     if lag == 0 and not _has_usable_revenue(rev):
         return None
 
-    quarter_end = pd.Timestamp(rev.index[-1])
-    result_q_end = result_quarter_end(revenue, yt) if lag == 0 else quarter_end
-    result_date = estimate_result_date(yt, result_q_end)
+    nse_announced: list[pd.Timestamp] | None = None
+    if lag == 0 and ticker:
+        from stocks.market.nse_result_dates import nse_announced_dates
+
+        nse_announced = nse_announced_dates(ticker, market=market)
+
+    result_q_end = (
+        result_quarter_end(
+            revenue,
+            yt,
+            ticker=ticker,
+            market=market,
+            announced_dates=nse_announced,
+        )
+        if lag == 0
+        else pd.Timestamp(rev.index[-1])
+    )
+    result_date = estimate_result_date(
+        yt,
+        result_q_end,
+        ticker=ticker,
+        market=market,
+    )
+    growth_offset = 0
+    if lag == 0:
+        growth_offset = unannounced_latest_offset(
+            revenue,
+            yt,
+            ticker=ticker,
+            market=market,
+            announced_dates=nse_announced,
+        )
+        min_growth_quarters = min(4, PEAD2_QUARTER_PANEL)
+        while growth_offset > 0:
+            probe = series_through_lag(revenue, growth_offset)
+            if probe is not None and len(probe) >= min_growth_quarters:
+                break
+            growth_offset -= 1
+        rev_g = series_through_lag(revenue, growth_offset)
+        eb_g = series_through_lag(ebidt, growth_offset)
+        np_g = series_through_lag(net_profit, growth_offset)
+        ep_g = series_through_lag(eps, growth_offset)
+        cf_g = series_through_lag(cfo, growth_offset) if cfo is not None else None
+        rev_g = rev_g if rev_g is not None else rev
+        eb_g = eb_g if eb_g is not None else eb
+        np_g = np_g if np_g is not None else np_s
+        ep_g = ep_g if ep_g is not None else ep
+        if cf_g is None:
+            cf_g = cf
+        quarter_end = pd.Timestamp(rev_g.index[-1])
+    else:
+        rev_g, eb_g, np_g, ep_g, cf_g = rev, eb, np_s, ep, cf
+        quarter_end = pd.Timestamp(rev.index[-1])
     if price_val is not None:
-        returns_pct = compute_return_since_result(
+        returns_pct = compute_returns_pct(
             hist, result_date, current_price=price_val
         )
     else:
@@ -536,7 +585,7 @@ def _pead2_row_for_lag(
             drift_days=PEAD2_DRIFT_DAYS,
         )
     daily_ret_pct = compute_daily_ret_ff(hist, result_date)
-    growth = compute_growth_metrics(rev, np_s, eb, ep)
+    growth = compute_growth_metrics(rev_g, np_g, eb_g, ep_g)
     if growth.get("eps_yoy") is not None:
         growth["eps_yoy"] = cap_eps_yoy_pct(growth["eps_yoy"])
     if growth.get("np_yoy") is not None:
@@ -544,13 +593,7 @@ def _pead2_row_for_lag(
     for qoq_key in ("sales_qoq", "np_qoq", "eps_qoq", "ebidt_qoq"):
         if growth.get(qoq_key) is not None:
             growth[qoq_key] = cap_growth_qoq_pct(growth[qoq_key])
-    panel_lag = unannounced_latest_offset(revenue, yt) if lag == 0 else 0
-    min_panel_quarters = min(4, PEAD2_QUARTER_PANEL)
-    while panel_lag > 0:
-        probe = series_through_lag(revenue, panel_lag)
-        if probe is not None and len(probe) >= min_panel_quarters:
-            break
-        panel_lag -= 1
+    panel_lag = growth_offset if lag == 0 else 0
     rev_p = series_through_lag(revenue, panel_lag)
     eb_p = series_through_lag(ebidt, panel_lag)
     np_p = series_through_lag(net_profit, panel_lag)
@@ -576,13 +619,13 @@ def _pead2_row_for_lag(
         "result_date": pd.Timestamp(result_date).strftime("%Y-%m-%d"),
         "quarter_end": quarter_end.strftime("%Y-%m-%d"),
         "price": round(price_val, 2) if price_val is not None else None,
-        "forward_pe": compute_forward_pe(price_val, ep, info),
-        "pe_ratio": compute_trailing_pe(price_val, ep, info)
+        "forward_pe": compute_forward_pe(price_val, ep_g, info),
+        "pe_ratio": compute_trailing_pe(price_val, ep_g, info)
         if lag == 0
-        else compute_forward_pe(price_val, ep, info),
+        else compute_forward_pe(price_val, ep_g, info),
         "returns_pct": returns_pct,
         "daily_ret_pct": daily_ret_pct,
-        "cf_profit": compute_cf_profit(cf, np_s),
+        "cf_profit": compute_cf_profit(cf_g, np_g),
         **{k: round(v, 2) if v is not None else None for k, v in growth.items()},
         "sales_bust": sales_bust,
         "sales_streak": sales_streak,

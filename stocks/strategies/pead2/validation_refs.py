@@ -139,9 +139,9 @@ def live_returns_vs_ff(
     )
     if hist is None or hist.empty:
         return None, row.get("returns_pct")
-    from stocks.strategies.pead2.strategy import compute_return_since_result
+    from stocks.strategies.pead2.strategy import compute_returns_pct
 
-    live = compute_return_since_result(hist, rd, current_price=float(price))
+    live = compute_returns_pct(hist, rd, current_price=float(price))
     return live, row.get("returns_pct")
 
 
