@@ -115,8 +115,60 @@ def enrich_pead_candidates(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def apply_breakout_map(
+    df: pd.DataFrame,
+    bmap: dict[str, dict],
+    *,
+    overwrite: bool = True,
+) -> pd.DataFrame:
+    """Apply TQ/BB breakout map onto PEAD rows."""
+    if df is None or df.empty or "ticker" not in df.columns or not bmap:
+        return df
+
+    out = df.copy()
+    for col, default in (
+        ("has_tq", False),
+        ("has_bb", False),
+        ("tq_score", pd.NA),
+        ("tq_crossover", ""),
+        ("tq_timeframe", ""),
+        ("bb_signal", ""),
+        ("bb_timeframe", ""),
+    ):
+        if col not in out.columns:
+            out[col] = default
+
+    for idx, row in out.iterrows():
+        ticker = str(row.get("ticker") or "").strip().upper()
+        rec = bmap.get(ticker)
+        if not rec:
+            continue
+        tq = rec.get("tq")
+        if tq and (overwrite or not bool(out.at[idx, "has_tq"])):
+            out.at[idx, "has_tq"] = True
+            if tq.get("score") is not None:
+                out.at[idx, "tq_score"] = float(tq["score"])
+            out.at[idx, "tq_crossover"] = str(
+                tq.get("crossover_type") or tq.get("tq_crossover") or ""
+            )
+            out.at[idx, "tq_timeframe"] = str(
+                tq.get("timeframe") or tq.get("tq_timeframe") or ""
+            )
+        bb = rec.get("bb")
+        if bb and (overwrite or not bool(out.at[idx, "has_bb"])):
+            out.at[idx, "has_bb"] = True
+            out.at[idx, "bb_signal"] = str(
+                bb.get("signal") or bb.get("bb_signal") or "ABOVE_BAND"
+            )
+            out.at[idx, "bb_timeframe"] = str(
+                bb.get("timeframe") or bb.get("bb_timeframe") or ""
+            )
+
+    return out
+
+
 def attach_strategy_breakout_signals(df: pd.DataFrame) -> pd.DataFrame:
-    """Merge latest TQ / BB rows from SQLite (Strategy scan cache)."""
+    """Merge latest TQ / BB rows from SQLite (Strategy / PEAD scan cache)."""
     if df is None or df.empty or "ticker" not in df.columns:
         return df
 
@@ -137,28 +189,8 @@ def attach_strategy_breakout_signals(df: pd.DataFrame) -> pd.DataFrame:
 
     tickers = out["ticker"].astype(str).str.strip().str.upper().unique().tolist()
     bmap = load_strategy_breakout_map(tickers)
-    if not bmap:
-        return out
-
-    for idx, row in out.iterrows():
-        ticker = str(row.get("ticker") or "").strip().upper()
-        rec = bmap.get(ticker)
-        if not rec:
-            continue
-        tq = rec.get("tq")
-        if tq:
-            out.at[idx, "has_tq"] = True
-            if tq.get("score") is not None:
-                out.at[idx, "tq_score"] = float(tq["score"])
-            out.at[idx, "tq_crossover"] = str(tq.get("crossover_type") or "")
-            out.at[idx, "tq_timeframe"] = str(tq.get("timeframe") or "")
-        bb = rec.get("bb")
-        if bb:
-            out.at[idx, "has_bb"] = True
-            out.at[idx, "bb_signal"] = str(bb.get("signal") or "ABOVE_BAND")
-            out.at[idx, "bb_timeframe"] = str(bb.get("timeframe") or "")
-
-    return out
+    # Prefer live scan columns already on the frame; fill gaps from SQLite.
+    return apply_breakout_map(out, bmap, overwrite=False)
 
 
 def format_pead_export_df(df: pd.DataFrame) -> pd.DataFrame:

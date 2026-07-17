@@ -32,6 +32,8 @@ def test_rows_for_json_serializes_tq_na():
         ]
     )
     payload = _rows_for_json(df)
+    assert payload[0]["has_tq"] is False
+    assert payload[0]["has_bb"] is False
     json.dumps(payload)
 
 

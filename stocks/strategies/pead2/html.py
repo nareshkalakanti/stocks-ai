@@ -14,13 +14,13 @@ from stocks.shared.corp_tags import corp_tags_dict_for_ticker
 from stocks.shared.superstars.holdings import superstar_pead_map
 from stocks.shared.stock_notes import attach_stock_notes, sync_stock_notes_from_file
 from stocks.dashboards.expand_panel_html import EXPAND_PANEL_JS
-from stocks.strategies.pead2.strategy import enrich_pead_candidates
+from stocks.strategies.pead2.strategy import enrich_pead_candidates, attach_strategy_breakout_signals
 from stocks.strategies.pead2.quarters import sanitize_quarter_panel
 from stocks.shared.links import screener_url, tradingview_url
 from stocks.core.text_utils import safe_str
 
 
-_PEAD2_UI_BUILD = "2026-07-13s"
+_PEAD2_UI_BUILD = "2026-07-17a"
 
 _PEAD2_FONT_LINKS = """
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -234,6 +234,39 @@ _PEAD2_DASHBOARD_CSS = """
     margin-bottom: 8px;
     flex-wrap: wrap;
   }
+  .signal-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .signal-filter-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    margin-right: 2px;
+  }
+  .signal-btn {
+    padding: 5px 9px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--btn-bg);
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .signal-btn.on {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .signal-btn.tq.on { background: #1d4ed8; border-color: #1d4ed8; }
+  .signal-btn.bb.on { background: #b45309; border-color: #b45309; }
+  .signal-btn.both.on { background: #7c3aed; border-color: #7c3aed; }
   .pead-search {
     flex: 1 1 180px;
     max-width: 300px;
@@ -477,6 +510,8 @@ _PEAD2_DASHBOARD_CSS = """
   [data-theme="dark"] .corp-tag-hold { color: #bfdbfe; background: #1e3a8a; }
   [data-theme="dark"] .corp-tag-dem { color: #fde68a; background: #78350f; }
   [data-theme="dark"] .corp-tag-spin { color: #a5f3fc; background: #155e75; }
+  [data-theme="dark"] .corp-tag-tq { color: #bfdbfe; background: #1e3a8a; }
+  [data-theme="dark"] .corp-tag-bb { color: #fde68a; background: #78350f; }
   .bg-tag {
     color: #a78bfa;
     font-size: 10px;
@@ -1717,7 +1752,7 @@ def _rows_for_json(df: pd.DataFrame) -> list[dict]:
         else []
     )
     rows: list[dict] = []
-    for _, row in enrich_pead_candidates(work).iterrows():
+    for _, row in attach_strategy_breakout_signals(enrich_pead_candidates(work)).iterrows():
         ticker = safe_str(row.get("ticker"))
         market = safe_str(row.get("market")) or None
         row_data = {
@@ -1753,6 +1788,13 @@ def _rows_for_json(df: pd.DataFrame) -> list[dict]:
                 "cf_profit": json_safe_scalar(row.get("cf_profit")),
                 "sales_bust": bool(row.get("sales_bust")),
                 "sales_streak": json_safe_scalar(row.get("sales_streak")),
+                "has_tq": bool(row.get("has_tq")),
+                "has_bb": bool(row.get("has_bb")),
+                "tq_score": json_safe_scalar(row.get("tq_score")),
+                "tq_crossover": safe_str(row.get("tq_crossover")) or None,
+                "tq_timeframe": safe_str(row.get("tq_timeframe")) or None,
+                "bb_signal": safe_str(row.get("bb_signal")) or None,
+                "bb_timeframe": safe_str(row.get("bb_timeframe")) or None,
             }
         note = row.get("stock_note")
         if isinstance(note, dict) and (
@@ -1846,6 +1888,13 @@ def build_pead2_dashboard_html(
     </div>
     <div class="toolbar">
       <input class="pead-search" id="pead-search" type="search" placeholder="Search ticker or name…" autocomplete="off" />
+      <div class="signal-filter" id="signal-filter">
+        <span class="signal-filter-label">Show</span>
+        <button type="button" class="signal-btn on" data-signal="all">All</button>
+        <button type="button" class="signal-btn tq" data-signal="tq">TQ weekly</button>
+        <button type="button" class="signal-btn bb" data-signal="bb">BB weekly</button>
+        <button type="button" class="signal-btn both" data-signal="both">TQ + BB</button>
+      </div>
       <div class="count" id="count-label">0 companies</div>
       <div class="col-toggle">
         <button type="button" id="btn-cols" title="Show growth / CF columns">Columns (<span id="col-visible">6</span>/<span id="col-total">13</span>)</button>
@@ -1904,6 +1953,29 @@ let sortCol = {json.dumps(default_sort_col)};
 let sortDir = {default_sort_dir};
 let expandedTicker = null;
 let searchQuery = "";
+let signalFilter = "all";
+
+function rowMatchesSignal(r) {{
+  if (signalFilter === "all") return true;
+  const tq = !!r.has_tq;
+  const bb = !!r.has_bb;
+  if (signalFilter === "tq") return tq;
+  if (signalFilter === "bb") return bb;
+  if (signalFilter === "both") return tq && bb;
+  return true;
+}}
+
+function setSignalFilter(mode) {{
+  signalFilter = mode;
+  document.querySelectorAll("#signal-filter .signal-btn").forEach(btn => {{
+    btn.classList.toggle("on", btn.dataset.signal === mode);
+  }});
+  render();
+}}
+
+document.querySelectorAll("#signal-filter .signal-btn").forEach(btn => {{
+  btn.onclick = () => setSignalFilter(btn.dataset.signal || "all");
+}});
 
 function colById(id) {{
   return COLS.find(c => c.id === id) || COLS[0];
@@ -2178,6 +2250,9 @@ function rowMatchesSearch(r, q) {{
 function render() {{
   const DATA = activeData();
   let rows = DATA.slice();
+  if (signalFilter !== "all") {{
+    rows = rows.filter(r => rowMatchesSignal(r));
+  }}
   if (searchQuery) {{
     rows = rows.filter(r => rowMatchesSearch(r, searchQuery));
   }}
@@ -2186,12 +2261,17 @@ function render() {{
   const quarterLabel = quarterMode === "previous" ? "Previous" : "Current";
   const scored = rows.filter(r => num(r.pead_score) !== null).length;
   const total = DATA.length;
-  let countText = searchQuery && rows.length !== total
+  const filtered = signalFilter !== "all" || searchQuery;
+  let countText = filtered && rows.length !== total
     ? `${{rows.length}} of ${{total}}`
     : `${{rows.length}}`;
   countText = `${{LIST_LABEL}} (${{countText}}`;
   if (SHOW_SCORED_SPLIT && scored < rows.length) {{
     countText += ` · ${{scored}} with PEAD scores`;
+  }}
+  if (signalFilter !== "all") {{
+    const sigLabel = signalFilter === "tq" ? "TQ weekly" : signalFilter === "bb" ? "BB weekly" : "TQ + BB";
+    countText += ` · ${{sigLabel}} only`;
   }}
   countText += ` · ${{quarterLabel}} quarter · latest results first)`;
   document.getElementById("count-label").textContent = countText;

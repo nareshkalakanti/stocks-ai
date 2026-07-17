@@ -31,6 +31,7 @@ from stocks.strategies.pead2.strategy import (
     CFO_FIELDS,
     NET_INCOME_FIELDS,
     Pead2AbsoluteWeights,
+    apply_breakout_map,
     compute_cf_profit,
     compute_daily_ret_ff,
     compute_daily_ret_pct,
@@ -393,6 +394,105 @@ def pead2_scan_coverage(universe: pd.DataFrame) -> Pead2ScanCoverage:
     return coverage
 
 
+def _breakout_map_from_frames(
+    *,
+    tq_df: pd.DataFrame | None,
+    bb_df: pd.DataFrame | None,
+) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    if tq_df is not None and not tq_df.empty:
+        for _, row in tq_df.iterrows():
+            ticker = safe_str(row.get("ticker")).upper()
+            if not ticker:
+                continue
+            out.setdefault(ticker, {})["tq"] = {
+                "score": row.get("score"),
+                "crossover_type": row.get("crossover_type"),
+                "timeframe": row.get("timeframe") or "weekly",
+            }
+    if bb_df is not None and not bb_df.empty:
+        for _, row in bb_df.iterrows():
+            ticker = safe_str(row.get("ticker")).upper()
+            if not ticker:
+                continue
+            out.setdefault(ticker, {})["bb"] = {
+                "signal": row.get("signal") or "ABOVE_BAND",
+                "timeframe": row.get("timeframe") or "weekly",
+            }
+    return out
+
+
+def attach_weekly_breakouts_to_pead(
+    df: pd.DataFrame,
+    *,
+    max_workers: int | None = None,
+    progress_callback: Callable[[int, int], None] | None = None,
+    persist: bool = True,
+) -> pd.DataFrame:
+    """Check BB weekly + TQ weekly on PEAD rows; flag breakouts and optionally cache."""
+    if df is None or df.empty or "ticker" not in df.columns:
+        return df
+
+    work = df
+    if "pead_score" in df.columns:
+        scored = df[df["pead_score"].notna()]
+        if not scored.empty:
+            work = scored
+
+    meta_cols = [c for c in ("ticker", "name", "market", "sector", "industry", "sub_sector") if c in work.columns]
+    universe = work[meta_cols].drop_duplicates("ticker").copy()
+    if universe.empty:
+        return df
+
+    from stocks.strategies.tq_bb.service import run_bb_strategy, run_tq_strategy
+
+    bb_done = 0
+    tq_done = 0
+    bb_total = len(universe)
+    tq_total = len(universe)
+
+    def _bb_progress(done: int, total: int) -> None:
+        nonlocal bb_done
+        bb_done = done
+        if progress_callback:
+            progress_callback(bb_done + tq_done, bb_total + tq_total)
+
+    def _tq_progress(done: int, total: int) -> None:
+        nonlocal tq_done
+        tq_done = done
+        if progress_callback:
+            progress_callback(bb_done + tq_done, bb_total + tq_total)
+
+    bb_df = run_bb_strategy(
+        universe,
+        timeframe="weekly",
+        progress_callback=_bb_progress if progress_callback else None,
+    )
+    tq_df = run_tq_strategy(
+        universe,
+        timeframe="weekly",
+        max_workers=max_workers,
+        progress_callback=_tq_progress if progress_callback else None,
+    )
+
+    if persist:
+        from stocks.core.database import (
+            clear_strategy_breakouts_for_tickers,
+            upsert_strategy_bb_signals,
+            upsert_strategy_tq_signals,
+        )
+
+        checked = universe["ticker"].astype(str).str.strip().str.upper().tolist()
+        clear_strategy_breakouts_for_tickers(checked, timeframe="weekly")
+        if bb_df is not None and not bb_df.empty:
+            upsert_strategy_bb_signals(bb_df, timeframe="weekly")
+        if tq_df is not None and not tq_df.empty:
+            upsert_strategy_tq_signals(tq_df, timeframe="weekly")
+
+    bmap = _breakout_map_from_frames(tq_df=tq_df, bb_df=bb_df)
+    return apply_breakout_map(df, bmap, overwrite=True)
+
+
 def expand_pead_candidates_to_universe(
     universe: pd.DataFrame,
     candidates: pd.DataFrame,
@@ -432,6 +532,8 @@ def expand_pead_candidates_to_universe(
         return reason or "No PEAD data"
 
     out["pead_status"] = out["ticker"].map(_status)
+    if "pead_score" not in out.columns:
+        out["pead_score"] = pd.NA
     out = out.sort_values(
         by=["pead_score", "ticker"],
         ascending=[False, True],
@@ -972,6 +1074,7 @@ def run_pead2_scan(
     only_pending: bool = False,
     pending_mode: PendingFetchMode = "all",
     max_fetch: int | None = None,
+    check_breakouts: bool | None = None,
 ) -> dict:
     """
     Load PEAD rows from SQLite, then fetch Yahoo for tickers not cached at the
@@ -979,6 +1082,8 @@ def run_pead2_scan(
     Use ``pending_mode`` with ``only_pending`` to fetch only never-scanned or stale rows.
     When ``only_pending`` is true, Yahoo fetches are capped by ``max_fetch`` (default
     ``PEAD2_RECENT_MAX_FETCH``) so Remaining runs proceed in batches.
+    When ``check_breakouts`` is true (default on real scans), also run BB weekly +
+    TQ weekly on scored candidates and attach breakout signals.
     """
     from stocks.core.config import PEAD2_RECENT_MAX_FETCH
 
@@ -1071,6 +1176,29 @@ def run_pead2_scan(
     df = _score_pead_frame(current_rows, meta, weights=weights)
     df_prev = _score_pead_frame(previous_rows, meta, weights=weights)
 
+    do_breakouts = check_breakouts
+    if do_breakouts is None:
+        # Skip live TQ/BB on DB-only loads (e.g. holdings expand with max_fetch=0).
+        do_breakouts = not (only_pending and (max_fetch == 0))
+
+    tq_hits = 0
+    bb_hits = 0
+    if do_breakouts and not df.empty:
+        df = attach_weekly_breakouts_to_pead(
+            df,
+            max_workers=max_workers,
+            progress_callback=progress_callback,
+            persist=True,
+        )
+        if "has_tq" in df.columns:
+            tq_hits = int(df["has_tq"].fillna(False).astype(bool).sum())
+        if "has_bb" in df.columns:
+            bb_hits = int(df["has_bb"].fillna(False).astype(bool).sum())
+        if not df_prev.empty:
+            from stocks.strategies.pead2.strategy import attach_strategy_breakout_signals
+
+            df_prev = attach_strategy_breakout_signals(df_prev)
+
     return {
         "candidates": df,
         "candidates_previous": df_prev,
@@ -1089,6 +1217,9 @@ def run_pead2_scan(
         "cleared": len(fresh_rows) + len(tombstone_rows),
         "coverage": coverage,
         "pending_mode": fetch_mode,
+        "tq_hits": tq_hits,
+        "bb_hits": bb_hits,
+        "checked_breakouts": bool(do_breakouts),
     }
 
 
@@ -1096,6 +1227,7 @@ __all__ = [
     "Pead2ScanCoverage",
     "PendingFetchMode",
     "PEAD2_PENDING_FETCH_MODES",
+    "attach_weekly_breakouts_to_pead",
     "expand_pead_candidates_to_universe",
     "pead2_scan_coverage",
     "prepare_pead_universe",

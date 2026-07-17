@@ -414,6 +414,17 @@ function fmtCorpTags(r) {
     const ssShow = (r.ss_best ? "★ " : "") + ssLabel;
     parts.push(`<div class="corp-tag corp-tag-ss" title="${esc(ssLabel)}">${esc(ssShow)}</div>`);
   }
+  if (r.has_tq) {
+    const tqBits = ["TQ weekly"];
+    if (r.tq_crossover) tqBits.push(String(r.tq_crossover));
+    if (r.tq_score != null && isFinite(Number(r.tq_score))) tqBits.push("score " + Number(r.tq_score).toFixed(0));
+    parts.push(`<div class="corp-tag corp-tag-tq" title="${esc(tqBits.join(" · "))}">TQ</div>`);
+  }
+  if (r.has_bb) {
+    const bbSig = String(r.bb_signal || "ABOVE_BAND");
+    const bbLabel = bbSig === "NEW_BREAKOUT" ? "BB NEW" : "BB";
+    parts.push(`<div class="corp-tag corp-tag-bb" title="${esc("BB weekly · " + bbSig)}">${esc(bbLabel)}</div>`);
+  }
   if (!parts.length) return "";
   return `<div class="corp-tags">${parts.join("")}</div>`;
 }

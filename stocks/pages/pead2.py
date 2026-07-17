@@ -16,6 +16,7 @@ from stocks.strategies.pead2.service import (
     run_pead2_scan,
 )
 from stocks.strategies.pead2.strategy import (
+    attach_strategy_breakout_signals,
     enrich_pead_candidates,
     format_pead_export_df,
 )
@@ -109,7 +110,7 @@ def _run_scan(
             return
         progress.progress(
             min(done / total, 1.0),
-            text=f"PEAD scanning {done:,}/{total:,}...",
+            text=f"PEAD / BB+TQ weekly {done:,}/{total:,}...",
         )
 
     try:
@@ -182,7 +183,7 @@ def render_pead2(*, show_title: bool = True) -> None:
                 key="pead2_scan",
                 help=(
                     f"Fetch missing or cache older than {PEAD2_CACHE_HOURS}h from Yahoo, "
-                    "then score all matches."
+                    "score PEAD, then check BB weekly + TQ weekly breakouts."
                 ),
             )
 
@@ -256,14 +257,19 @@ def render_pead2(*, show_title: bool = True) -> None:
         return
 
     candidates = enrich_pead_candidates(candidates)
+    candidates = attach_strategy_breakout_signals(candidates)
 
     prev_df = (
         candidates_previous
         if candidates_previous is not None and not candidates_previous.empty
         else pd.DataFrame()
     )
+    if not prev_df.empty:
+        prev_df = attach_strategy_breakout_signals(enrich_pead_candidates(prev_df))
     cache_hits = int(st.session_state.get("pead2_cache_hits") or 0)
     scored_n = int(candidates["pead_score"].notna().sum()) if "pead_score" in candidates.columns else len(candidates)
+    tq_n = int(candidates["has_tq"].fillna(False).astype(bool).sum()) if "has_tq" in candidates.columns else 0
+    bb_n = int(candidates["has_bb"].fillna(False).astype(bool).sum()) if "has_bb" in candidates.columns else 0
     embed_html = build_pead2_dashboard_html(
         candidates,
         df_previous=prev_df,
@@ -284,15 +290,19 @@ def render_pead2(*, show_title: bool = True) -> None:
         st.caption(
             f"{len(candidates)} holdings{tier_note} · **{scored_n:,}** with PEAD scores · "
             f"**{no_data_n:,}** without quarterly data · "
+            f"TQ **{tq_n}** · BB **{bb_n}** · "
             f"{cache_hits:,} loaded from DB · "
             f"**search** in the results table · "
+            f"filter **TQ / BB weekly** in the toolbar · "
             f"**click a row** to expand the detail panel."
         )
     else:
         st.caption(
             f"{len(candidates)} stocks · {cache_hits:,} from DB · "
+            f"TQ weekly **{tq_n}** · BB weekly **{bb_n}** · "
             f"sorted by **latest result date** · "
             f"**search** in the results table · "
+            f"filter **TQ / BB weekly** in the toolbar · "
             f"**click a row** to expand the detail panel."
         )
     embed_html_iframe(embed_html, height=pead2_iframe_height(len(candidates)))

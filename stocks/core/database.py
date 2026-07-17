@@ -2664,6 +2664,125 @@ def save_strategy_bb_signals(df: pd.DataFrame, *, timeframe: str) -> int:
     return len(rows)
 
 
+def upsert_strategy_tq_signals(df: pd.DataFrame, *, timeframe: str = "weekly") -> int:
+    """Insert/replace TQ rows for the given tickers only (does not wipe other tickers)."""
+    init_db()
+    tf = safe_str(timeframe) or "weekly"
+    if df is None or df.empty:
+        return 0
+    now = _utc_now()
+    rows: list[tuple] = []
+    tickers: list[str] = []
+    for _, row in df.iterrows():
+        ticker = safe_str(row.get("ticker")).upper()
+        if not ticker:
+            continue
+        tickers.append(ticker)
+        rows.append(
+            (
+                ticker,
+                safe_str(row.get("timeframe")) or tf,
+                safe_str(row.get("market")) or None,
+                row.get("score"),
+                safe_str(row.get("crossover_type")),
+                row.get("crossover_score"),
+                safe_str(row.get("date")),
+                now,
+            )
+        )
+    if not rows:
+        return 0
+    uniq = list(dict.fromkeys(tickers))
+    placeholders = ",".join("?" * len(uniq))
+    with get_connection() as conn:
+        conn.execute(
+            f"DELETE FROM strategy_tq_signals WHERE timeframe = ? AND ticker IN ({placeholders})",
+            (tf, *uniq),
+        )
+        conn.executemany(
+            """
+            INSERT INTO strategy_tq_signals (
+                ticker, timeframe, market, score, crossover_type, crossover_score,
+                signal_date, fetched_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+    return len(rows)
+
+
+def upsert_strategy_bb_signals(df: pd.DataFrame, *, timeframe: str = "weekly") -> int:
+    """Insert/replace BB rows for the given tickers only (does not wipe other tickers)."""
+    init_db()
+    tf = safe_str(timeframe) or "weekly"
+    if df is None or df.empty:
+        return 0
+    now = _utc_now()
+    rows: list[tuple] = []
+    tickers: list[str] = []
+    for _, row in df.iterrows():
+        ticker = safe_str(row.get("ticker")).upper()
+        if not ticker:
+            continue
+        tickers.append(ticker)
+        rows.append(
+            (
+                ticker,
+                safe_str(row.get("market")) or None,
+                safe_str(row.get("signal")) or "ABOVE_BAND",
+                safe_str(row.get("timeframe")) or tf,
+                row.get("price"),
+                row.get("upper_band"),
+                safe_str(row.get("date")),
+                now,
+            )
+        )
+    if not rows:
+        return 0
+    uniq = list(dict.fromkeys(tickers))
+    placeholders = ",".join("?" * len(uniq))
+    with get_connection() as conn:
+        conn.execute(
+            f"DELETE FROM strategy_bb_signals WHERE timeframe = ? AND ticker IN ({placeholders})",
+            (tf, *uniq),
+        )
+        conn.executemany(
+            """
+            INSERT INTO strategy_bb_signals (
+                ticker, market, signal, timeframe, price, upper_band,
+                signal_date, fetched_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+    return len(rows)
+
+
+def clear_strategy_breakouts_for_tickers(
+    tickers: list[str],
+    *,
+    timeframe: str = "weekly",
+) -> None:
+    """Drop cached TQ/BB rows for tickers after a fresh weekly check."""
+    init_db()
+    tf = safe_str(timeframe) or "weekly"
+    uniq = list(dict.fromkeys(safe_str(t).upper() for t in tickers if safe_str(t)))
+    if not uniq:
+        return
+    placeholders = ",".join("?" * len(uniq))
+    with get_connection() as conn:
+        conn.execute(
+            f"DELETE FROM strategy_tq_signals WHERE timeframe = ? AND ticker IN ({placeholders})",
+            (tf, *uniq),
+        )
+        conn.execute(
+            f"DELETE FROM strategy_bb_signals WHERE timeframe = ? AND ticker IN ({placeholders})",
+            (tf, *uniq),
+        )
+
+
 def load_strategy_breakout_map(tickers: list[str]) -> dict[str, dict]:
     """TQ + BB breakout rows per ticker for PEAD cross-reference."""
     if not tickers:

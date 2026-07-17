@@ -246,6 +246,16 @@ def test_expand_pead_candidates_to_universe_includes_all_tickers():
     assert out.loc[out["ticker"] == "CCC", "pead_status"].iloc[0] == "Not scanned"
 
 
+def test_expand_pead_candidates_to_universe_empty_candidates():
+    universe = _universe("AAA", "BBB")
+    with patch_pead_cache({}):
+        out = expand_pead_candidates_to_universe(universe, pd.DataFrame())
+    assert len(out) == 2
+    assert "pead_score" in out.columns
+    assert out["pead_score"].isna().all()
+    assert (out["pead_status"] == "Not scanned").all()
+
+
 def test_run_pead2_scan_pending_mode_no_data_only():
     universe = _universe("AAA", "BBB")
     cached = {
