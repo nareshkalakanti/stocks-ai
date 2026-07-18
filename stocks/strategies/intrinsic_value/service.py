@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import numpy as np
 import pandas as pd
 import yfinance as yf
 
@@ -15,7 +16,7 @@ from stocks.core.config import (
     YFINANCE_REQUEST_DELAY,
     yfinance_worker_count,
 )
-from stocks.core.database import load_market_cap_from_db, save_market_cap_to_db
+from stocks.core.database import load_market_cap_from_db, patch_intrinsic_value_pcf, save_market_cap_to_db
 from stocks.core.log_service import METRICS_ERROR, log_error
 from stocks.market.fundamentals_service import apply_market_cap_filter
 from stocks.strategies.intrinsic_value.cache import (
@@ -26,6 +27,7 @@ from stocks.strategies.intrinsic_value.cache import (
 from stocks.strategies.intrinsic_value.strategy import (
     pe_ratio_and_forward,
     price_to_book,
+    price_to_cash_flow,
     rank_intrinsic_value,
     roce_3y_average,
     sales_growth_3y_cagr,
@@ -224,6 +226,7 @@ def analyze_intrinsic_value_stock(
         pe_ratio, forward_pe = pe_ratio_and_forward(
             price, info, yt.quarterly_income_stmt
         )
+        pcf = price_to_cash_flow(info, price=price, cashflow=yt.cashflow)
         if growth is None or roce is None or pb is None:
             return None
 
@@ -238,6 +241,7 @@ def analyze_intrinsic_value_stock(
             "pb": pb,
             "pe_ratio": pe_ratio,
             "forward_pe": forward_pe,
+            "pcf": pcf,
         }
 
     def _log(exc: Exception) -> None:
@@ -252,6 +256,28 @@ def analyze_intrinsic_value_stock(
     return call_throttled(_fetch, delay=YFINANCE_REQUEST_DELAY, on_error=_log)
 
 
+def resolve_scan_group_col(
+    ranked: pd.DataFrame,
+    *,
+    min_coverage: float = 0.5,
+    min_tagged: int = 20,
+    force_display_sector: bool = False,
+) -> str:
+    """Pick sector-board grouping column — avoid sparse industry tags (holdings-only)."""
+    if ranked is None or ranked.empty:
+        return "sector"
+    if force_display_sector and "sector" in ranked.columns:
+        return "sector"
+    n = len(ranked)
+    for col in ("sub_sector", "industry"):
+        if col not in ranked.columns:
+            continue
+        tagged = int(ranked[col].astype(str).str.strip().ne("").sum())
+        if tagged >= min_tagged and tagged / n >= min_coverage:
+            return col
+    return "sector" if "sector" in ranked.columns else "industry"
+
+
 def _merge_listing_meta(result: dict, src: pd.Series) -> dict:
     ticker = safe_str(result.get("ticker") or src.get("ticker")).upper()
     result["name"] = resolve_company_name(
@@ -264,6 +290,103 @@ def _merge_listing_meta(result: dict, src: pd.Series) -> dict:
         if val and not result.get(field):
             result[field] = safe_str(val)
     return result
+
+
+def fetch_stock_pcf(
+    ticker: str,
+    market: str | None,
+    *,
+    price: float | None = None,
+) -> float | None:
+    """Lightweight yfinance fetch for price ÷ operating cash flow per share."""
+    symbol = to_yfinance_symbol(ticker, market)
+
+    def _fetch() -> float | None:
+        yt = yf.Ticker(symbol)
+        info = yt.info or {}
+        px = price
+        if px is None:
+            raw = info.get("regularMarketPrice") or info.get("currentPrice")
+            px = float(raw) if raw is not None and not pd.isna(raw) else None
+        return price_to_cash_flow(info, price=px, cashflow=yt.cashflow)
+
+    try:
+        return call_throttled(_fetch, delay=YFINANCE_REQUEST_DELAY)
+    except Exception:
+        return None
+
+
+def ensure_pcf_values(
+    frame: pd.DataFrame,
+    *,
+    max_hours: int,
+    fetch_missing: bool = False,
+    max_workers: int | None = None,
+) -> pd.DataFrame:
+    """Fill missing P/CF from IV cache, optionally backfill via yfinance."""
+    if frame is None or frame.empty or "ticker" not in frame.columns:
+        return frame if frame is not None else pd.DataFrame()
+
+    out = frame.copy()
+    if "pcf" not in out.columns:
+        out["pcf"] = pd.NA
+    out["pcf"] = pd.to_numeric(out["pcf"], errors="coerce")
+
+    missing = out["pcf"].isna()
+    if not missing.any():
+        return out
+
+    tickers = (
+        out.loc[missing, "ticker"].astype(str).str.strip().str.upper().unique().tolist()
+    )
+    cached = load_cached_iv_rows(tickers, max_hours=max_hours)
+    if not cached.empty and "pcf" in cached.columns:
+        by_ticker = cached.copy()
+        by_ticker["ticker"] = by_ticker["ticker"].astype(str).str.upper()
+        by_ticker = by_ticker.drop_duplicates("ticker").set_index("ticker")
+        keys = out["ticker"].astype(str).str.strip().str.upper()
+        mapped = keys.map(by_ticker["pcf"])
+        fill = missing & mapped.notna()
+        if fill.any():
+            out.loc[fill, "pcf"] = mapped.loc[fill].to_numpy(dtype=float, na_value=np.nan)
+        missing = out["pcf"].isna()
+
+    if not fetch_missing or not missing.any():
+        return out
+
+    workers = max_workers or yfinance_worker_count(int(missing.sum()), 8)
+    jobs: list[tuple[int, str, str | None, float | None]] = []
+    for idx, row in out.loc[missing].iterrows():
+        ticker = safe_str(row.get("ticker")).upper()
+        if not ticker:
+            continue
+        market = safe_str(row.get("market")) or None
+        price = row.get("price")
+        price_f = float(price) if price is not None and not pd.isna(price) else None
+        jobs.append((idx, ticker, market, price_f))
+
+    updates: dict[str, float] = {}
+    if jobs:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(fetch_stock_pcf, ticker, market, price=price): (idx, ticker)
+                for idx, ticker, market, price in jobs
+            }
+            for fut in as_completed(futures):
+                idx, ticker = futures[fut]
+                try:
+                    pcf = fut.result()
+                except Exception:
+                    pcf = None
+                if pcf is None or pd.isna(pcf):
+                    continue
+                out.at[idx, "pcf"] = float(pcf)
+                updates[ticker] = float(pcf)
+
+    if updates:
+        patch_intrinsic_value_pcf(updates)
+
+    return out
 
 
 def _finalize_intrinsic_value_scan(
@@ -290,12 +413,15 @@ def _finalize_intrinsic_value_scan(
             "with_data": len(raw),
         }
 
-    industry_col = "industry" if ranked["industry"].astype(str).str.strip().ne("").any() else "sub_sector"
-    if industry_col not in ranked.columns or ranked[industry_col].astype(str).str.strip().eq("").all():
-        industry_col = "sector" if "sector" in ranked.columns else "industry"
+    industry_col = resolve_scan_group_col(ranked, force_display_sector=True)
 
     sectors = sector_headwind_tailwind(
         ranked, industry_col=industry_col, min_companies=min_sector_companies
+    )
+    ranked = ensure_pcf_values(
+        ranked,
+        max_hours=INTRINSIC_VALUE_CACHE_HOURS,
+        fetch_missing=False,
     )
     ranked = attach_research_links(ranked)
     return {
@@ -466,8 +592,8 @@ def run_intrinsic_value_scan(
                             persist_iv_rows(persist_batch)
                         persist_batch.clear()
 
-        if use_cache and persist_batch:
-            persist_iv_rows(persist_batch)
+    if use_cache and persist_batch:
+        persist_iv_rows(persist_batch)
 
     return _finalize_intrinsic_value_scan(
         rows,
@@ -481,7 +607,10 @@ __all__ = [
     "filter_universe_by_db_mcap",
     "drop_known_sub_floor",
     "prepare_pead_universe",
+    "resolve_scan_group_col",
     "run_intrinsic_value_scan",
     "analyze_intrinsic_value_stock",
+    "ensure_pcf_values",
+    "fetch_stock_pcf",
     "shrink_universe_by_mcap",
 ]

@@ -624,10 +624,14 @@ def _migrate_headwind_scan_cache(conn) -> None:
 
 def _ensure_intrinsic_value_cache_columns(conn) -> None:
     cols = {row[1] for row in conn.execute("PRAGMA table_info(intrinsic_value_cache)")}
-    if "pe_ratio" not in cols:
-        conn.execute("ALTER TABLE intrinsic_value_cache ADD COLUMN pe_ratio REAL")
-    if "forward_pe" not in cols:
-        conn.execute("ALTER TABLE intrinsic_value_cache ADD COLUMN forward_pe REAL")
+    for col, ddl in (
+        ("pe_ratio", "ALTER TABLE intrinsic_value_cache ADD COLUMN pe_ratio REAL"),
+        ("forward_pe", "ALTER TABLE intrinsic_value_cache ADD COLUMN forward_pe REAL"),
+        ("pcf", "ALTER TABLE intrinsic_value_cache ADD COLUMN pcf REAL"),
+        ("cash_ratio", "ALTER TABLE intrinsic_value_cache ADD COLUMN cash_ratio REAL"),
+    ):
+        if col not in cols:
+            conn.execute(ddl)
 
 
 def _ensure_business_group_members_columns(conn) -> None:
@@ -677,6 +681,7 @@ def _ensure_stocks_columns(conn) -> None:
     for col, ddl in (
         ("industry", "ALTER TABLE stocks ADD COLUMN industry TEXT"),
         ("sub_sector", "ALTER TABLE stocks ADD COLUMN sub_sector TEXT"),
+        ("source_sector", "ALTER TABLE stocks ADD COLUMN source_sector TEXT"),
     ):
         if col not in cols:
             conn.execute(ddl)
@@ -736,7 +741,16 @@ def _normalize_stock_frame(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
     out = df.copy()
-    for col in ("ticker", "name", "market", "sector", "industry", "sub_sector", "reason"):
+    for col in (
+        "ticker",
+        "name",
+        "market",
+        "sector",
+        "source_sector",
+        "industry",
+        "sub_sector",
+        "reason",
+    ):
         if col in out.columns:
             out[col] = out[col].fillna("").astype(str).replace("nan", "")
     return out
@@ -748,7 +762,7 @@ def load_stocks_from_db() -> pd.DataFrame:
         _ensure_stocks_columns(conn)
         rows = conn.execute(
             """
-            SELECT ticker, name, market, sector, industry, sub_sector
+            SELECT ticker, name, market, sector, source_sector, industry, sub_sector
             FROM stocks ORDER BY ticker
             """
         ).fetchall()
@@ -761,12 +775,14 @@ def save_stocks_to_db(stocks: pd.DataFrame) -> int:
     init_db()
     now = _utc_now()
     frame = stocks.copy()
+    if "source_sector" not in frame.columns:
+        frame["source_sector"] = ""
     if "industry" not in frame.columns:
         frame["industry"] = ""
     if "sub_sector" not in frame.columns:
         frame["sub_sector"] = ""
     records = frame[
-        ["ticker", "name", "market", "sector", "industry", "sub_sector"]
+        ["ticker", "name", "market", "sector", "source_sector", "industry", "sub_sector"]
     ].drop_duplicates(subset=["ticker", "market"])
     with get_connection() as conn:
         _ensure_stocks_columns(conn)
@@ -774,9 +790,9 @@ def save_stocks_to_db(stocks: pd.DataFrame) -> int:
         conn.executemany(
             """
             INSERT INTO stocks (
-                ticker, name, market, sector, industry, sub_sector, updated_at
+                ticker, name, market, sector, source_sector, industry, sub_sector, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -784,6 +800,7 @@ def save_stocks_to_db(stocks: pd.DataFrame) -> int:
                     r.name,
                     r.market,
                     r.sector,
+                    r.source_sector,
                     r.industry,
                     r.sub_sector,
                     now,
@@ -2102,7 +2119,8 @@ def load_intrinsic_value_cache(
         rows = conn.execute(
             f"""
             SELECT ticker, market, name, price, market_cap_cr,
-                   sales_growth_3y, roce_3y, pb, pe_ratio, forward_pe, fetched_at
+                   sales_growth_3y, roce_3y, pb, pe_ratio, forward_pe,
+                   pcf, cash_ratio, fetched_at
             FROM intrinsic_value_cache
             WHERE ticker IN ({placeholders})
             """,
@@ -2132,6 +2150,8 @@ def save_intrinsic_value_cache(rows: list[dict]) -> None:
             r.get("pb"),
             r.get("pe_ratio"),
             r.get("forward_pe"),
+            r.get("pcf"),
+            r.get("cash_ratio"),
             now,
         )
         for r in rows
@@ -2140,12 +2160,14 @@ def save_intrinsic_value_cache(rows: list[dict]) -> None:
     if not payload:
         return
     with get_connection() as conn:
+        _ensure_intrinsic_value_cache_columns(conn)
         conn.executemany(
             """
             INSERT INTO intrinsic_value_cache (
                 ticker, market, name, price, market_cap_cr,
-                sales_growth_3y, roce_3y, pb, pe_ratio, forward_pe, fetched_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                sales_growth_3y, roce_3y, pb, pe_ratio, forward_pe,
+                pcf, cash_ratio, fetched_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(ticker) DO UPDATE SET
                 market=excluded.market,
                 name=excluded.name,
@@ -2156,8 +2178,26 @@ def save_intrinsic_value_cache(rows: list[dict]) -> None:
                 pb=excluded.pb,
                 pe_ratio=excluded.pe_ratio,
                 forward_pe=excluded.forward_pe,
+                pcf=excluded.pcf,
+                cash_ratio=excluded.cash_ratio,
                 fetched_at=excluded.fetched_at
             """,
+            payload,
+        )
+
+
+def patch_intrinsic_value_pcf(updates: dict[str, float]) -> None:
+    """Update P/CF on existing IV cache rows."""
+    if not updates:
+        return
+    init_db()
+    payload = [(float(v), safe_str(t).upper()) for t, v in updates.items() if t and v is not None]
+    if not payload:
+        return
+    with get_connection() as conn:
+        _ensure_intrinsic_value_cache_columns(conn)
+        conn.executemany(
+            "UPDATE intrinsic_value_cache SET pcf = ? WHERE ticker = ?",
             payload,
         )
 

@@ -28,7 +28,7 @@ def build_rsi_weekly_html(
     del title, subtitle
     section = build_interactive_section(
         "rsiw",
-        "RSI Weekly — entry cross ≥60 (new cross replaces prior)",
+        "RSI Weekly — entry cross 60–61 (fresh touch only)",
         df,
         RSI_WEEKLY_JS_COLS,
         kind="rsi_weekly",

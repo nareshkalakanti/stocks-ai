@@ -37,6 +37,8 @@ def iv_row_from_cache(row: pd.Series) -> dict:
         "pb": row.get("pb"),
         "pe_ratio": row.get("pe_ratio"),
         "forward_pe": row.get("forward_pe"),
+        "pcf": row.get("pcf"),
+        "cash_ratio": row.get("cash_ratio"),
     }
 
 

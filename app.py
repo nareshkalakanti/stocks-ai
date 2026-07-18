@@ -4,7 +4,6 @@ from stocks.market.yfinance_utils import install_yfinance_noise_filters
 
 install_yfinance_noise_filters()
 from stocks.core.database import init_db
-from stocks.pages.headwind_tailwind import render_headwind_tailwind
 from stocks.pages.holdings import render_holdings
 from stocks.pages.sector_landscape import render_sector_landscape
 from stocks.pages.strategy import render_strategy
@@ -25,7 +24,6 @@ with st.sidebar:
         "Menu",
         [
             "Strategy",
-            "H&T",
             "Sector Landscape",
             "SuperStars",
             "Holdings",
@@ -37,8 +35,6 @@ with st.sidebar:
 
 if page == "Strategy":
     render_strategy()
-elif page == "H&T":
-    render_headwind_tailwind()
 elif page == "Sector Landscape":
     render_sector_landscape()
 elif page == "SuperStars":

@@ -100,7 +100,42 @@ def _download_india_stocks_csv() -> pd.DataFrame:
         repo_type="dataset",
         token=get_hf_token(),
     )
-    return pd.read_csv(path, dtype={"ticker": str, "name": str, "market": str, "sector": str}).fillna("")
+    raw = pd.read_csv(
+        path,
+        dtype={"ticker": str, "name": str, "market": str, "sector": str},
+    ).fillna("")
+    return _prepare_raw_import(raw)
+
+
+def _prepare_raw_import(raw: pd.DataFrame) -> pd.DataFrame:
+    """Normalize HF india.csv and capture raw sector labels before display mapping."""
+    df = raw.copy()
+    if "ticker" not in df.columns:
+        return pd.DataFrame()
+    df = df.dropna(subset=["ticker"])
+    df["source_sector"] = df["sector"].fillna("").astype(str).str.strip()
+    return df
+
+
+def _merge_hf_source_sectors(cached: pd.DataFrame, fresh: pd.DataFrame) -> pd.DataFrame:
+    """Refresh ``source_sector`` from a fresh HF import without dropping cached rows."""
+    if cached.empty or fresh.empty:
+        return cached
+    fresh = _prepare_raw_import(fresh)
+    lookup = fresh[["ticker", "market", "source_sector"]].drop_duplicates(
+        subset=["ticker", "market"],
+        keep="last",
+    )
+    df = cached.copy()
+    if "source_sector" not in df.columns:
+        df["source_sector"] = ""
+    merged = df.drop(columns=["source_sector"], errors="ignore").merge(
+        lookup,
+        on=["ticker", "market"],
+        how="left",
+    )
+    merged["source_sector"] = merged["source_sector"].fillna("").astype(str).str.strip()
+    return merged
 
 
 # Re-run sqlite enrichment when cached industry fill is below this share of unique tickers.
@@ -126,12 +161,25 @@ def _needs_classification_reenrich(cached: pd.DataFrame) -> bool:
         return False
     if _needs_bse_label_fix(cached):
         return True
+
+    if "source_sector" not in cached.columns:
+        return True
+    src = cached["source_sector"].fillna("").astype(str).str.strip()
+    tickers = max(int(cached["ticker"].astype(str).str.upper().nunique()), 1)
+    src_fill = int((src != "").sum()) / tickers
+    if src_fill < 0.85:
+        return True
+
+    # Raw HF labels are present; display/name mapping runs on load. Re-enrich only
+    # when sqlite taxonomy is available but not yet merged into the cache.
+    from stocks.listings.classification_service import classification_sources_ok
+
+    sqlite_ok, _ = classification_sources_ok()
+    if not sqlite_ok:
+        return False
     if "sub_sector" not in cached.columns or cached["sub_sector"].eq("").all():
         return True
     cov = classification_coverage(cached)
-    tickers = cov.get("tickers") or 0
-    if tickers <= 0:
-        return True
     return (cov.get("industry") or 0) / tickers < _CLASSIFICATION_REENRICH_MIN_FILL
 
 
@@ -153,11 +201,8 @@ def load_india_stocks(*, force_refresh: bool = False) -> pd.DataFrame:
         cached = load_stocks_from_db()
         if not cached.empty:
             if _needs_classification_reenrich(cached):
-                base = (
-                    _download_india_stocks_csv()
-                    if _needs_bse_label_fix(cached)
-                    else cached
-                )
+                fresh = _download_india_stocks_csv()
+                base = fresh if _needs_bse_label_fix(cached) else _merge_hf_source_sectors(cached, fresh)
                 return _sync_holdings_listings(_enrich_and_persist(base))
             return _sync_holdings_listings(apply_display_sector_mapping(apply_stock_overrides(cached)))
 
@@ -176,6 +221,17 @@ def load_india_stocks(*, force_refresh: bool = False) -> pd.DataFrame:
             enriched = _sync_holdings_listings(_finalize_stocks(cached))
             return enriched
         raise
+
+
+def rebuild_india_stocks_classification(*, refresh_csv: bool = False) -> pd.DataFrame:
+    """Re-apply HF + sqlite classification for the full cached universe."""
+    init_db()
+    cached = load_stocks_from_db()
+    if refresh_csv or cached.empty:
+        base = _download_india_stocks_csv()
+    else:
+        base = _merge_hf_source_sectors(cached, _download_india_stocks_csv())
+    return _sync_holdings_listings(_enrich_and_persist(base))
 
 
 def normalize_sectors(sector: str | list[str]) -> list[str] | None:
@@ -216,14 +272,16 @@ def apply_classifier_filters(
     industry: str | list[str] = "All",
     sub_sector: str | list[str] = "All",
 ) -> pd.DataFrame:
-    """Filter by industry / sub-sector when columns exist."""
+    """Filter by industry / sub-sector (fine tags + display-sector peers)."""
+    from stocks.listings.sector_display import match_classifier_mask
+
     filtered = frame
     industries = normalize_sectors(industry)
     sub_sectors = normalize_sectors(sub_sector)
-    if industries is not None and "industry" in filtered.columns:
-        filtered = filtered[filtered["industry"].isin(industries)]
-    if sub_sectors is not None and "sub_sector" in filtered.columns:
-        filtered = filtered[filtered["sub_sector"].isin(sub_sectors)]
+    if industries is not None:
+        filtered = filtered.loc[match_classifier_mask(filtered, industries)]
+    if sub_sectors is not None:
+        filtered = filtered.loc[match_classifier_mask(filtered, sub_sectors)]
     return filtered
 
 
@@ -301,7 +359,11 @@ def sector_options(stocks: pd.DataFrame, frame: pd.DataFrame | None = None) -> l
 
 def industry_options(stocks: pd.DataFrame, frame: pd.DataFrame | None = None) -> list[str]:
     source = frame if frame is not None else stocks
-    return ["All"] + _distinct_values(source, "industry")
+    combined = sorted(
+        set(_distinct_values(source, "industry"))
+        | set(_distinct_values(source, "sub_sector"))
+    )
+    return ["All"] + combined
 
 
 def sub_sector_options(stocks: pd.DataFrame, frame: pd.DataFrame | None = None) -> list[str]:

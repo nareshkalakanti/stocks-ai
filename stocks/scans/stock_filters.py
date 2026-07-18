@@ -7,6 +7,8 @@ from dataclasses import dataclass
 import pandas as pd
 import streamlit as st
 
+from stocks.core.text_utils import safe_str
+
 from stocks.scans.scan_playlists import (
     format_market_option,
     is_scan_playlist,
@@ -198,8 +200,10 @@ def render_stock_filters(
         )
     industries = _prune(key_industries, industry_opts)
 
-    if industries and "industry" in mframe.columns:
-        sector_scope = mframe[mframe["industry"].isin(industries)]
+    if industries:
+        from stocks.listings.sector_display import match_classifier_mask
+
+        sector_scope = mframe.loc[match_classifier_mask(mframe, industries)]
     else:
         sector_scope = mframe
     sector_opts = sector_options(stocks, sector_scope)[1:]
@@ -241,7 +245,11 @@ def apply_stock_filters(stocks: pd.DataFrame, filters: StockFilters) -> pd.DataF
     )
 
 
-def filter_caption_suffix(filters: StockFilters) -> str:
+def filter_caption_suffix(
+    filters: StockFilters,
+    *,
+    extra: str = "",
+) -> str:
     """Short human-readable suffix for scan captions."""
     from stocks.listings.stocks_data import classifier_filter_label
 
@@ -254,4 +262,7 @@ def filter_caption_suffix(filters: StockFilters) -> str:
     sector_lbl = classifier_filter_label("sectors", filters.sectors)
     if sector_lbl:
         parts.append(sector_lbl)
+    extra = safe_str(extra).strip()
+    if extra:
+        parts.append(extra.strip(" ·"))
     return " · ".join(parts)

@@ -6,7 +6,7 @@ import pandas as pd
 
 from stocks.market.fundamentals_service import compute_roce_metrics
 from stocks.strategies.earnings.strategy import EPS_FIELDS
-from stocks.strategies.valuation_formula.strategy import REVENUE_FIELDS, _first_row
+from stocks.strategies.valuation_formula.strategy import CFO_FIELDS, REVENUE_FIELDS, _first_row
 
 
 def sales_growth_3y_cagr(financials: pd.DataFrame | None) -> float | None:
@@ -109,6 +109,57 @@ def pe_ratio_and_forward(
                 forward = _pe_from_eps(price, float(eps_q.iloc[-1]) * 4.0)
 
     return pe, forward
+
+
+def price_to_cash_flow(
+    info: dict,
+    *,
+    price: float | None = None,
+    cashflow: pd.DataFrame | None = None,
+) -> float | None:
+    """Price ÷ operating cash flow per share (yfinance or latest annual CFO)."""
+    info = info or {}
+    ptocf = info.get("priceToOperatingCashFlows")
+    if ptocf is not None and not pd.isna(ptocf) and float(ptocf) > 0:
+        return round(float(ptocf), 2)
+
+    px = price
+    if px is None:
+        raw = info.get("regularMarketPrice") or info.get("currentPrice")
+        px = float(raw) if raw is not None and not pd.isna(raw) else None
+    if px is None or px <= 0:
+        return None
+
+    shares = info.get("sharesOutstanding")
+    if shares is None or pd.isna(shares) or float(shares) <= 0:
+        return None
+    shares_f = float(shares)
+
+    op_cf = info.get("operatingCashflow")
+    if op_cf is not None and not pd.isna(op_cf):
+        cfps = float(op_cf) / shares_f
+        if cfps > 0:
+            return round(px / cfps, 2)
+
+    cfo = _first_row(cashflow, CFO_FIELDS)
+    if cfo is not None and not cfo.empty:
+        latest = float(cfo.iloc[0])
+        if latest > 0:
+            return round(px / (latest / shares_f), 2)
+    return None
+
+
+def cash_ratio(info: dict) -> float | None:
+    """Cash & equivalents ÷ current liabilities."""
+    info = info or {}
+    cash = info.get("totalCash")
+    curr_liab = info.get("totalCurrentLiabilities")
+    if cash is None or pd.isna(cash) or curr_liab is None or pd.isna(curr_liab):
+        return None
+    liab = float(curr_liab)
+    if liab <= 0:
+        return None
+    return round(float(cash) / liab, 2)
 
 
 def rank_intrinsic_value(df: pd.DataFrame) -> pd.DataFrame:

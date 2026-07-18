@@ -6,18 +6,17 @@ import pandas as pd
 import streamlit as st
 
 from stocks.core.config import (
-    HEADWIND_PEAD_BACKFILL_MAX,
-    HEADWIND_PEAD_CACHE_HOURS,
     HEADWIND_SCAN_CACHE_HOURS,
-    HEADWIND_TAILWIND_MCAP_MIN_CR,
     INDIA_STOCKS_DATASET,
     INTRINSIC_VALUE_CACHE_HOURS,
-    PEAD2_MAX_WORKERS,
+    cap_tier_id_from_label,
 )
 from stocks.listings.stocks_data import load_india_stocks
 from stocks.dashboards.report_html import embed_html_iframe
+from stocks.market.fundamentals_service import apply_cap_tier_filter
 from stocks.scans.holdings_industry_filter import apply_holdings_industries_if_checked
 from stocks.scans.results_utils import analysis_universe
+from stocks.scans.scan_universe import cap_tier_min_mcap_cr, resolve_cap_tier_id
 from stocks.scans.scan_toolbar import (
     SCAN_BTN_COL_WIDTH,
     base_scan_extra_widths,
@@ -35,16 +34,17 @@ from stocks.strategies.intrinsic_value.html import (
     build_headwind_drilldown_html,
     headwind_board_iframe_height,
     headwind_drilldown_iframe_height,
+    _stocks_by_sector,
 )
 from stocks.strategies.intrinsic_value.service import (
     assemble_headwind_from_iv_cache,
+    ensure_pcf_values,
     filter_universe_by_db_mcap,
+    resolve_scan_group_col,
     run_intrinsic_value_scan,
+    shrink_universe_by_mcap,
 )
-from stocks.strategies.pead2.cache_lookup import count_pead_backfill_pending, ensure_pead_scores
 from stocks.core.text_utils import safe_str
-
-_MIN_CR = HEADWIND_TAILWIND_MCAP_MIN_CR
 
 
 def _as_df(value: pd.DataFrame | None) -> pd.DataFrame:
@@ -59,12 +59,13 @@ def _industry_column(ranked: pd.DataFrame) -> str:
     return "sector"
 
 
-def _apply_scan_result(result: dict, scan_market: str) -> None:
+def _apply_scan_result(result: dict, scan_market: str, *, filter_key: tuple) -> None:
     st.session_state.ht_ranked = result["ranked"]
     st.session_state.ht_sectors = result["sectors"]
     st.session_state.ht_scanned = result["scanned"]
     st.session_state.ht_with_data = result["with_data"]
     st.session_state.ht_scan_market = scan_market
+    st.session_state.ht_filter_key = filter_key
     industry_col = safe_str(result.get("industry_col"))
     if not industry_col:
         industry_col = _industry_column(_as_df(result.get("ranked")))
@@ -73,13 +74,92 @@ def _apply_scan_result(result: dict, scan_market: str) -> None:
         st.session_state.ht_selected_sector = str(result["sectors"].iloc[0]["sector"])
 
 
-def _scan_universe(stocks: pd.DataFrame, market: str) -> tuple[pd.DataFrame, dict[str, int]]:
-    """Listings with fresh SQLite market_cap_cr ≥ floor (no yfinance)."""
+def _ht_filter_key(
+    filters,
+    *,
+    holdings_industries_only: bool,
+    cap_tier_id: str,
+) -> tuple:
+    return (
+        filters.market,
+        tuple(filters.sectors),
+        tuple(filters.industries),
+        filters.search,
+        holdings_industries_only,
+        cap_tier_id,
+    )
+
+
+def _resolve_ht_industry_col(ranked: pd.DataFrame, preferred: str = "") -> str:
+    """H&T always groups the board by display sector."""
+    if "sector" in ranked.columns:
+        return "sector"
+    pref = safe_str(preferred).strip()
+    if pref and pref in ranked.columns:
+        return pref
+    return resolve_scan_group_col(ranked, force_display_sector=True)
+
+
+def _narrow_ht_results(
+    ranked: pd.DataFrame,
+    sectors: pd.DataFrame | None,
+    filtered: pd.DataFrame,
+    industry_col: str,
+) -> tuple[pd.DataFrame, pd.DataFrame | None]:
+    """Keep H&T results aligned with the current toolbar filters."""
+    if ranked.empty or filtered.empty or "ticker" not in filtered.columns:
+        return ranked, sectors
+    tickers = set(filtered["ticker"].astype(str).str.upper())
+    narrowed = ranked[ranked["ticker"].astype(str).str.upper().isin(tickers)].copy()
+    if (
+        sectors is None
+        or sectors.empty
+        or not industry_col
+        or industry_col not in narrowed.columns
+    ):
+        return narrowed, sectors
+    groups = set(narrowed[industry_col].astype(str).str.strip()) - {""}
+    if not groups:
+        return narrowed, sectors
+    narrowed_sectors = sectors[
+        sectors["sector"].astype(str).str.strip().isin(groups)
+    ].copy()
+    return narrowed, narrowed_sectors
+
+
+def _resolve_mcap_floor(cap_tier_id: str) -> float:
+    """All caps = no mcap floor; named tiers use their configured minimum."""
+    if cap_tier_id in ("all", ""):
+        return 0.0
+    tier_min = cap_tier_min_mcap_cr(cap_tier_id)
+    return 0.0 if tier_min is None else float(tier_min)
+
+
+def _filtered_universe(stocks: pd.DataFrame, market: str) -> pd.DataFrame:
     universe = analysis_universe(stocks, limit=0)
     market = safe_str(market).upper()
     if market in ("NSE", "BSE") and "market" in universe.columns:
         universe = universe[universe["market"].astype(str).str.upper() == market]
-    return filter_universe_by_db_mcap(universe, min_cr=_MIN_CR)
+    return universe.reset_index(drop=True)
+
+
+def _scan_universe(
+    stocks: pd.DataFrame,
+    market: str,
+    *,
+    min_cr: float,
+) -> tuple[pd.DataFrame, dict[str, int]]:
+    """Listings for cache restore — DB mcap filter only when a floor is set."""
+    universe = _filtered_universe(stocks, market)
+    if universe.empty or min_cr <= 0:
+        return universe, {
+            "total": len(universe),
+            "cached": 0,
+            "eligible": len(universe),
+            "missing": 0,
+            "below_floor": 0,
+        }
+    return filter_universe_by_db_mcap(universe, min_cr=min_cr)
 
 
 def _resolve_scan_market(market: str) -> str:
@@ -89,31 +169,40 @@ def _resolve_scan_market(market: str) -> str:
     return "All"
 
 
-def _try_restore_results(stocks: pd.DataFrame, scan_market: str) -> bool:
+def _try_restore_results(
+    filtered: pd.DataFrame,
+    scan_market: str,
+    *,
+    mcap_floor: float,
+    filter_key: tuple,
+    allow_disk_cache: bool,
+) -> bool:
     sectors_state = st.session_state.get("ht_sectors")
     if (
         isinstance(sectors_state, pd.DataFrame)
         and not sectors_state.empty
         and safe_str(st.session_state.get("ht_scan_market")) == scan_market
+        and st.session_state.get("ht_filter_key") == filter_key
     ):
         return True
 
-    cached = load_cached_headwind_scan(
-        max_hours=HEADWIND_SCAN_CACHE_HOURS,
-        scan_market=scan_market,
-        min_mcap_cr=_MIN_CR,
-    )
-    if cached:
-        _apply_scan_result(cached, scan_market)
-        return True
+    if allow_disk_cache:
+        cached = load_cached_headwind_scan(
+            max_hours=HEADWIND_SCAN_CACHE_HOURS,
+            scan_market=scan_market,
+            min_mcap_cr=mcap_floor,
+        )
+        if cached:
+            _apply_scan_result(cached, scan_market, filter_key=filter_key)
+            return True
 
     built = assemble_headwind_from_iv_cache(
-        _scan_universe(stocks, scan_market)[0],
-        min_mcap_cr=_MIN_CR,
+        _scan_universe(filtered, scan_market, min_cr=mcap_floor)[0],
+        min_mcap_cr=mcap_floor,
         min_sector_companies=1,
     )
     if built:
-        _apply_scan_result(built, scan_market)
+        _apply_scan_result(built, scan_market, filter_key=filter_key)
         return True
     return False
 
@@ -128,7 +217,7 @@ def render_headwind_tailwind() -> None:
     st.markdown("### H&T")
 
     with scan_toolbar_row(*base_scan_extra_widths(SCAN_BTN_COL_WIDTH)) as row:
-        filters, _, holdings_industries_only = render_base_scan_filters(
+        filters, cap_tier_label_ui, holdings_industries_only = render_base_scan_filters(
             stocks,
             row,
             key_prefix="htf",
@@ -144,32 +233,86 @@ def render_headwind_tailwind() -> None:
     )
     if applied is None:
         return
-    filtered, _holdings_industry_note = applied
+    filtered, holdings_industry_note = applied
 
     scan_market = _resolve_scan_market(filters.market)
-    eligible, mcap_stats = _scan_universe(filtered, scan_market)
+    cap_tier_id = resolve_cap_tier_id(
+        filters.market, cap_tier_id_from_label(cap_tier_label_ui)
+    )
+    mcap_floor = _resolve_mcap_floor(cap_tier_id)
+    filter_key = _ht_filter_key(
+        filters,
+        holdings_industries_only=holdings_industries_only,
+        cap_tier_id=cap_tier_id,
+    )
+    wide_open = (
+        filters.market == "All"
+        and not filters.sectors
+        and not filters.industries
+        and not filters.search.strip()
+        and not holdings_industries_only
+    )
 
     if not run_clicked:
-        _try_restore_results(stocks, scan_market)
+        _try_restore_results(
+            filtered,
+            scan_market,
+            mcap_floor=mcap_floor,
+            filter_key=filter_key,
+            allow_disk_cache=wide_open,
+        )
 
     if run_clicked:
-        if eligible.empty:
-            scope = scan_market if scan_market in ("NSE", "BSE") else "filtered"
-            st.warning(
-                f"No {scope} listings with cached market cap ≥ ₹{_MIN_CR:.0f} Cr. "
-                "Run **PEAD**, **Breakout**, or **Refresh prices** on Holdings to fill SQLite first."
-            )
+        universe = _filtered_universe(filtered, scan_market)
+        if universe.empty:
+            st.warning("No stocks match the current filters.")
             return
 
-        progress = st.progress(0, text="Scanning...")
+        progress = st.progress(0, text="Fetching market caps...")
+
+        def _mcap_progress(done: int, total: int, _phase: str) -> None:
+            progress.progress(
+                done / max(total, 1),
+                text=f"Market cap {done}/{total}...",
+            )
+
+        try:
+            universe, _mcap_excluded = shrink_universe_by_mcap(
+                universe,
+                min_cr=mcap_floor,
+                progress_callback=_mcap_progress,
+            )
+        except Exception as exc:
+            progress.empty()
+            st.error(f"Market-cap fetch failed: {exc}")
+            return
+
+        if cap_tier_id not in ("all", ""):
+            universe, _tier_excluded = apply_cap_tier_filter(universe, cap_tier_id)
+
+        if universe.empty:
+            progress.empty()
+            if mcap_floor > 0:
+                st.warning(
+                    f"No listings with market cap ≥ ₹{mcap_floor:.0f} Cr "
+                    f"in the current selection."
+                )
+            else:
+                st.warning("No stocks match the current filters.")
+            return
+
+        progress.progress(0, text=f"Fetching fundamentals (0/{len(universe)})...")
 
         def _progress(done: int, total: int) -> None:
-            progress.progress(done / max(total, 1), text=f"Scanning {done}/{total}...")
+            progress.progress(
+                done / max(total, 1),
+                text=f"Fundamentals {done}/{total}...",
+            )
 
         try:
             result = run_intrinsic_value_scan(
-                eligible,
-                min_mcap_cr=_MIN_CR,
+                universe,
+                min_mcap_cr=mcap_floor,
                 min_sector_companies=1,
                 prefilter_mcap=False,
                 use_cache=True,
@@ -183,50 +326,44 @@ def render_headwind_tailwind() -> None:
 
         if result.get("with_data", 0) == 0 or result.get("sectors") is None or result["sectors"].empty:
             partial = assemble_headwind_from_iv_cache(
-                eligible,
-                min_mcap_cr=_MIN_CR,
+                universe,
+                min_mcap_cr=mcap_floor,
                 min_sector_companies=1,
             )
             if partial:
-                save_cached_headwind_scan(partial, scan_market=scan_market, min_mcap_cr=_MIN_CR)
-                _apply_scan_result(partial, scan_market)
+                if wide_open:
+                    save_cached_headwind_scan(
+                        partial, scan_market=scan_market, min_mcap_cr=mcap_floor
+                    )
+                _apply_scan_result(partial, scan_market, filter_key=filter_key)
                 st.rerun()
-            st.error("No fundamentals returned. Wait a few minutes and run again.")
+            scanned = int(result.get("scanned") or len(universe))
+            with_data = int(result.get("with_data") or 0)
+            st.error(
+                f"No fundamentals returned ({with_data}/{scanned} stocks). "
+                "Try narrowing sector/industry filters, or run again in a few minutes "
+                "if Yahoo is rate-limiting."
+            )
             return
 
-        save_cached_headwind_scan(result, scan_market=scan_market, min_mcap_cr=_MIN_CR)
-        _apply_scan_result(result, scan_market)
+        if wide_open:
+            save_cached_headwind_scan(
+                result, scan_market=scan_market, min_mcap_cr=mcap_floor
+            )
+        _apply_scan_result(result, scan_market, filter_key=filter_key)
         st.rerun()
 
-    ranked = _as_df(st.session_state.get("ht_ranked"))
-    ranked = ensure_pe_ratios(
-        ranked,
-        max_hours=INTRINSIC_VALUE_CACHE_HOURS,
-        pead_max_hours=HEADWIND_PEAD_CACHE_HOURS,
-    )
-    ranked = ensure_pead_scores(
-        ranked,
-        max_hours=HEADWIND_PEAD_CACHE_HOURS,
-        backfill_max=0,
-    )
-    pending_pead = 0
-    if not ranked.empty and "ticker" in ranked.columns:
-        missing = ranked.loc[ranked["pead_score"].isna(), "ticker"].astype(str).str.upper().tolist()
-        pending_pead = count_pead_backfill_pending(missing, max_hours=999999)
+    if st.session_state.get("ht_filter_key") not in (None, filter_key):
+        hint = filter_caption_suffix(filters, extra=holdings_industry_note)
+        if hint:
+            st.info(f"Filters changed — click **Run scan** — {hint}.")
+        else:
+            st.info("Filters changed — click **Run scan** to refresh the board.")
+        return
 
-    if pending_pead and HEADWIND_PEAD_BACKFILL_MAX > 0:
-        with st.spinner(
-            f"Checking PEAD data for {min(pending_pead, HEADWIND_PEAD_BACKFILL_MAX)} stocks..."
-        ):
-            ranked = ensure_pead_scores(
-                ranked,
-                max_hours=HEADWIND_PEAD_CACHE_HOURS,
-                backfill_max=HEADWIND_PEAD_BACKFILL_MAX,
-                max_workers=PEAD2_MAX_WORKERS,
-            )
-            st.session_state.ht_ranked = ranked
-    else:
-        st.session_state.ht_ranked = ranked
+    ranked = _as_df(st.session_state.get("ht_ranked"))
+    ranked = ensure_pe_ratios(ranked, max_hours=INTRINSIC_VALUE_CACHE_HOURS)
+    st.session_state.ht_ranked = ranked
     sectors = st.session_state.get("ht_sectors")
     if not isinstance(sectors, pd.DataFrame):
         sectors = None
@@ -238,34 +375,34 @@ def render_headwind_tailwind() -> None:
         sectors = None
 
     if sectors is None or sectors.empty:
-        hint = filter_caption_suffix(filters)
+        hint = filter_caption_suffix(filters, extra=holdings_industry_note)
         if hint:
             st.info(f"Click **Run scan** — {hint}.")
         else:
             st.info("Click **Run scan** to build the headwind / tailwind board.")
         return
 
-    industry_col = safe_str(st.session_state.get("ht_industry_col"))
-    if not industry_col:
-        industry_col = _industry_column(ranked)
+    industry_col = _resolve_ht_industry_col(
+        ranked, safe_str(st.session_state.get("ht_industry_col"))
+    )
+    ranked, sectors = _narrow_ht_results(ranked, sectors, filtered, industry_col)
+    if sectors is None or sectors.empty or ranked.empty:
+        hint = filter_caption_suffix(filters, extra=holdings_industry_note)
+        st.warning(
+            f"No H&T results for the current filters{(' — ' + hint) if hint else ''}."
+        )
+        return
 
     tab_all, tab_trend = st.tabs(["All", "Trend bars"])
 
     market_label = result_market or scan_market
 
     with tab_all:
-        st.caption(
-            "**PE** (Option A) = price ÷ sum of last 4 quarters’ EPS. "
-            "**Fwd PE** (Option B) = price ÷ (latest quarter EPS × 4). "
-            "**PEAD** = earnings-drift score from the PEAD scan (hover **—** for why). "
-            "Yellow **SS** tags = SuperStar investors holding the stock (refresh on **SuperStars** page). "
-            "Re-run **Run scan** if PE shows —."
-        )
         render_all_drilldown(
             sectors,
             ranked,
             industry_col,
-            min_mcap_cr=_MIN_CR,
+            min_mcap_cr=mcap_floor,
             title=f"H&T — {market_label}",
         )
 
@@ -293,14 +430,15 @@ def render_all_drilldown(
         st.info("No ranked stock data — run scan again.")
         return
 
-    board = sectors.reset_index(drop=True)
-    first_group = safe_str(board.iloc[0].get("sector")) if len(board) else ""
-    expanded_n = 0
-    if first_group and industry_col in ranked.columns:
-        expanded_n = int(
-            (ranked[industry_col].astype(str).str.strip() == first_group).sum()
-        )
+    ranked = ensure_pcf_values(
+        ranked,
+        max_hours=INTRINSIC_VALUE_CACHE_HOURS,
+        fetch_missing=False,
+    )
 
+    board = sectors.reset_index(drop=True)
+    stocks_map = _stocks_by_sector(board, ranked, industry_col)
+    max_stocks = max((len(v) for v in stocks_map.values()), default=0)
     drill_html = build_headwind_drilldown_html(
         board,
         ranked,
@@ -308,12 +446,13 @@ def render_all_drilldown(
         min_mcap_cr=min_mcap_cr,
         title=title,
         standalone=True,
+        stocks_map=stocks_map,
     )
     embed_html_iframe(
         drill_html,
         height=headwind_drilldown_iframe_height(
             len(board),
-            expanded_stocks=max(expanded_n, 1),
+            max_sector_stocks=max_stocks,
         ),
     )
 

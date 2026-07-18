@@ -86,15 +86,6 @@ def _store_scan_result(result: dict) -> None:
     st.session_state.pead2_cache_hits = int(result.get("cache_hits") or 0)
 
 
-def _should_auto_scan(filter_key: tuple, coverage: Pead2ScanCoverage) -> bool:
-    """Run once per filter set when cache is stale or results are not loaded yet."""
-    if st.session_state.get("pead2_auto_scan_done") == filter_key:
-        return False
-    if coverage.refreshable > 0:
-        return True
-    return st.session_state.get("pead2_candidates") is None
-
-
 def _run_scan(
     universe: pd.DataFrame,
     *,
@@ -167,7 +158,6 @@ def render_pead2(*, show_title: bool = True) -> None:
             st.session_state.pead2_filter_key = filter_key
             st.session_state.pop("pead2_candidates", None)
             st.session_state.pop("pead2_universe_key", None)
-            st.session_state.pop("pead2_auto_scan_done", None)
 
         universe, coverage = _resolve_universe_and_coverage(
             filtered,
@@ -190,22 +180,15 @@ def render_pead2(*, show_title: bool = True) -> None:
     coverage = pead2_scan_coverage(universe)
     st.session_state.pead2_coverage = coverage
     holdings_view = is_holdings_playlist(filters.market)
-    run_scan = run_clicked or (
-        not universe.empty and _should_auto_scan(filter_key, coverage)
-    )
 
-    if run_scan:
+    if run_clicked:
         if universe.empty:
             st.warning("No stocks match the current filters.")
             return
 
         status_slot = st.empty()
         with status_slot.container():
-            st.info(
-                "Running PEAD scan..."
-                if run_clicked
-                else f"Refreshing PEAD (re-fetching cache older than {PEAD2_CACHE_HOURS}h)..."
-            )
+            st.info("Running PEAD scan...")
 
         result = _run_scan(
             universe,
@@ -221,7 +204,6 @@ def render_pead2(*, show_title: bool = True) -> None:
             coverage = pead2_scan_coverage(universe)
         st.session_state.pead2_coverage = coverage
         st.session_state.pead2_universe_key = filter_key
-        st.session_state.pead2_auto_scan_done = filter_key
 
         fetched = int(result.get("fetched") or 0)
         if fetched > 0:
@@ -232,12 +214,6 @@ def render_pead2(*, show_title: bool = True) -> None:
 
     candidates = st.session_state.get("pead2_candidates")
     candidates_previous = st.session_state.get("pead2_candidates_previous")
-
-    if candidates is None and holdings_view and not universe.empty:
-        result = run_pead2_scan(universe, only_pending=True, max_fetch=0)
-        _store_scan_result(result)
-        candidates = result.get("candidates")
-        candidates_previous = result.get("candidates_previous")
 
     if candidates is None:
         st.caption("Set filters, then click **Scan**.")

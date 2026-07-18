@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pandas as pd
 
 from stocks.core.text_utils import safe_str
@@ -336,6 +338,174 @@ _COARSE_SECTOR_DISPLAY: dict[str, str] = {
     "Miscellaneous": DIVERSIFIED,
 }
 
+_HF_COARSE_LABELS = frozenset(_COARSE_SECTOR_DISPLAY.keys())
+
+# Friendlier industry labels when only HF coarse taxonomy is available.
+_COARSE_INDUSTRY_LABEL: dict[str, str] = {
+    "Process industries": "Manufacturing & Processing",
+    "Producer manufacturing": "Manufacturing",
+    "Non-energy minerals": "Metals & Mining",
+    "Energy minerals": "Oil, Gas & Mining",
+    "Finance": "Financial Services",
+    "Technology services": "IT Services",
+    "Electronic technology": "Electronics & Technology",
+    "Consumer durables": "Consumer Durables",
+    "Consumer non-durables": "FMCG & Consumables",
+    "Health technology": "Pharmaceuticals & Healthcare",
+    "Health services": "Healthcare Services",
+    "Distribution services": "Trading & Distribution",
+    "Industrial services": "Industrial Services",
+    "Commercial services": "Commercial Services",
+    "Consumer services": "Consumer Services",
+    "Retail trade": "Retail",
+    "Transportation": "Transportation & Logistics",
+    "Utilities": "Power & Utilities",
+    "Communications": "Telecom & Communications",
+    "Miscellaneous": "Diversified",
+}
+
+_AUTO_NAME_MARKERS = (
+    "automobile",
+    "automotive",
+    "automation",
+    " autol",
+    "auto ",
+    "auto-",
+    "autopin",
+    "autorid",
+    "autocast",
+    "autocorp",
+    "motorcycle",
+    " motor ",
+    " motors",
+    "motocorp",
+    "vehicle",
+    "vehicles",
+    "tyre",
+    "tires",
+    "tire",
+    "scooter",
+    "tractor",
+    "maruti",
+    "leyland",
+    "bajaj auto",
+    "hero ",
+    "tvs motor",
+    "eicher",
+    "force motor",
+    "piaggio",
+    "cycle & motor",
+)
+
+_PHARMA_NAME_MARKERS = (
+    "pharma",
+    "pharmaceutical",
+    " drug ",
+    " drugs",
+    " biotech",
+    "medicine",
+    "diagnostic",
+    " hospital",
+    "healthcare",
+)
+
+_BANK_NAME_RE = re.compile(
+    r"\b(bank|financier|housing finance|microfinance|small finance bank)\b",
+    re.I,
+)
+
+_REAL_ESTATE_NAME_MARKERS = (
+    " real estate",
+    " realty",
+    " developers",
+    " developer ",
+    " construction ltd",
+    " infra ltd",
+    " infrastructure ltd",
+)
+
+
+def _name_lower(name: str) -> str:
+    return f" {safe_str(name).lower()} "
+
+
+def _name_suggests_automobile(name: str) -> bool:
+    n = _name_lower(name)
+    return any(marker in n for marker in _AUTO_NAME_MARKERS)
+
+
+def _name_suggests_pharma(name: str) -> bool:
+    n = _name_lower(name)
+    return any(marker in n for marker in _PHARMA_NAME_MARKERS)
+
+
+def _name_suggests_banking(name: str) -> bool:
+    return bool(_BANK_NAME_RE.search(safe_str(name)))
+
+
+def _name_suggests_real_estate(name: str) -> bool:
+    n = _name_lower(name)
+    return any(marker in n for marker in _REAL_ESTATE_NAME_MARKERS)
+
+
+def _humanize_coarse_industry(label: str) -> str:
+    key = safe_str(label)
+    if not key:
+        return ""
+    return _COARSE_INDUSTRY_LABEL.get(key, key)
+
+
+def _industry_from_name(name: str) -> str:
+    n = _name_lower(name)
+    if _name_suggests_automobile(name):
+        return "Automobile & Components"
+    if _name_suggests_pharma(name):
+        return "Pharmaceuticals & Healthcare"
+    if _name_suggests_banking(name):
+        return "Banking & Financial Services"
+    if _name_suggests_real_estate(name):
+        return "Real Estate & Construction"
+    if any(k in n for k in (" hotel", " hospitality", " resort", " tourism", " restaurant")):
+        return "Hotels & Hospitality"
+    if any(k in n for k in (" textile", " garment", " apparel", " fabric")):
+        return "Textiles & Apparel"
+    if any(k in n for k in (" steel", " iron ore", " metal ")):
+        return "Steel & Metals"
+    if any(k in n for k in (" oil ", " petroleum", " petrol", " gas ltd")):
+        return "Oil & Gas"
+    if any(k in n for k in (" software", " technology", " infotech", " it ltd")):
+        return "Software & IT Services"
+    return ""
+
+
+def refine_display_sector_from_name(
+    *,
+    name: str,
+    sector: str,
+    source_sector: str = "",
+) -> str:
+    """Correct obvious HF mis-buckets using the company name."""
+    current = safe_str(sector)
+    source = safe_str(source_sector)
+    if not current:
+        return current
+
+    if _name_suggests_automobile(name) and current != AUTOMOBILE:
+        return AUTOMOBILE
+    if _name_suggests_pharma(name) and current not in {PHARMA, FMCG}:
+        return PHARMA
+    if _name_suggests_banking(name) and current != BANKING:
+        return BANKING
+    if _name_suggests_real_estate(name) and current not in {REAL_ESTATE, CAPITAL_GOODS}:
+        return REAL_ESTATE
+
+    # HF often tags auto ancillaries as producer manufacturing / consumer durables.
+    if source in {"Consumer durables", "Producer manufacturing", "Retail trade"}:
+        if _name_suggests_automobile(name):
+            return AUTOMOBILE
+
+    return current
+
 
 def display_sector(
     *,
@@ -383,21 +553,80 @@ def display_sector(
     return coarse
 
 
+def display_sectors_for_labels(labels) -> set[str]:
+    """Map classifier labels (industry / sub-sector / coarse sector) to display sectors."""
+    out: set[str] = set()
+    for label in labels:
+        key = safe_str(label).strip()
+        if not key or key.upper() in {"N/A", "NA"}:
+            continue
+        mapped = display_sector(sector=key, industry=key, sub_sector=key)
+        if mapped:
+            out.add(mapped)
+    return out
+
+
+def match_classifier_mask(df: pd.DataFrame, labels) -> pd.Series:
+    """True where a row matches any classifier label (fine tags or display sector peers)."""
+    label_set = {
+        safe_str(v).strip()
+        for v in labels
+        if safe_str(v).strip() and safe_str(v).strip().upper() not in {"N/A", "NA"}
+    }
+    if not label_set:
+        return pd.Series(False, index=df.index)
+
+    display_targets = display_sectors_for_labels(label_set)
+    mask = pd.Series(False, index=df.index)
+    for col in ("industry", "sub_sector", "sector"):
+        if col not in df.columns:
+            continue
+        mask |= df[col].astype(str).str.strip().isin(label_set)
+    if display_targets and "sector" in df.columns:
+        untagged = pd.Series(True, index=df.index)
+        for col in ("industry", "sub_sector"):
+            if col in df.columns:
+                untagged &= df[col].astype(str).str.strip().eq("")
+        mask |= untagged & df["sector"].astype(str).str.strip().isin(display_targets)
+    return mask
+
+
 def effective_industry_label(
     *,
     sector: str,
     industry: str = "",
     sub_sector: str = "",
     source_sector: str = "",
+    name: str = "",
 ) -> str:
     """Industry label distinct from display sector when finer taxonomy exists."""
     display = safe_str(sector)
     ind = safe_str(industry)
-    if ind and ind != display:
-        return ind
-    for candidate in (safe_str(sub_sector), safe_str(source_sector)):
-        if candidate and candidate != display:
-            return candidate
+    if ind and ind != display and ind not in _DISPLAY_IDENTITY:
+        if ind not in _HF_COARSE_LABELS:
+            return ind
+        humanized = _humanize_coarse_industry(ind)
+        if humanized and humanized != display:
+            return humanized
+
+    sub = safe_str(sub_sector)
+    if sub and sub != display and sub not in _DISPLAY_IDENTITY and sub not in _HF_COARSE_LABELS:
+        return sub
+
+    name_ind = _industry_from_name(name)
+    if name_ind and name_ind != display:
+        return name_ind
+
+    for candidate in (sub, safe_str(source_sector)):
+        if not candidate or candidate == display or candidate in _DISPLAY_IDENTITY:
+            continue
+        if candidate in _HF_COARSE_LABELS:
+            humanized = _humanize_coarse_industry(candidate)
+            if humanized and humanized != display:
+                return humanized
+            continue
+        return candidate
+
     return ""
 
 
@@ -420,8 +649,9 @@ def reconcile_industry_labels(stocks: pd.DataFrame) -> pd.DataFrame:
             industry=safe_str(row.get("industry")),
             sub_sector=safe_str(row.get("sub_sector")),
             source_sector=safe_str(row.get("source_sector")),
+            name=safe_str(row.get("name")),
         )
-        sub = safe_str(row.get("sub_sector")) or industry
+        sub = industry or safe_str(row.get("sub_sector"))
         industries.append(industry)
         sub_sectors.append(sub)
 
@@ -452,6 +682,11 @@ def apply_display_sector_mapping(stocks: pd.DataFrame) -> pd.DataFrame:
             sector=raw,
             industry=safe_str(row.get("industry")),
             sub_sector=safe_str(row.get("sub_sector")),
+        )
+        mapped = refine_display_sector_from_name(
+            name=safe_str(row.get("name")),
+            sector=mapped or raw,
+            source_sector=existing_source or raw,
         )
         display_sectors.append(mapped or raw)
         source_sectors.append(existing_source or (raw if raw and raw != mapped else ""))

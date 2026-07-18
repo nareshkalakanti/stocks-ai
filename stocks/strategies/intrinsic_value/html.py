@@ -7,6 +7,7 @@ import json
 
 import pandas as pd
 
+from stocks.core.database import load_company_profiles_from_db
 from stocks.core.text_utils import resolve_company_name, safe_str
 from stocks.dashboards.expand_panel_html import CORP_TAGS_JS
 from stocks.listings.sector_display import effective_industry_label
@@ -84,6 +85,13 @@ _IV_CSS = """
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
+  #hw-table th:nth-child(1),
+  #hw-table td:nth-child(1) { width: 24%; text-align: left; }
+  #hw-table th:nth-child(2),
+  #hw-table td:nth-child(2) { width: 7%; }
+  #hw-table th:nth-child(3),
+  #hw-table td:nth-child(3) { width: 92px; max-width: 100px; }
+  #hw-table td:nth-child(3) .badge { display: inline-block; }
   table.iv th.col-rank,
   table.iv td.col-rank {
     width: 52px;
@@ -112,12 +120,12 @@ _IV_CSS = """
   table.iv th.col-pb { width: 7%; }
   table.iv th.col-pe { width: 7%; }
   table.iv th.col-fpe { width: 7%; }
-  table.iv th.col-pead { width: 8%; }
   table.iv th.col-score { width: 7%; }
-  .iv-expand-panel table.iv { table-layout: fixed; }
+  .iv-expand-panel table.iv:not(.iv-stocks) { table-layout: fixed; }
   table.iv.iv-stocks {
-    table-layout: auto;
+    table-layout: fixed;
     width: 100%;
+    min-width: 920px;
     font-size: 13px;
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -142,35 +150,82 @@ _IV_CSS = """
   table.iv.iv-stocks tbody tr:last-child td { border-bottom: none; }
   table.iv.iv-stocks tbody tr:hover td { background: #fafafa !important; }
   table.iv.iv-stocks .col-rank {
-    width: 44px;
-    text-align: center;
+    width: 32px;
+    max-width: 32px;
+    min-width: 32px;
+    padding-left: 8px;
+    padding-right: 4px;
+    text-align: right;
     color: #94a3b8;
     font-weight: 600;
     font-size: 12px;
+    white-space: nowrap;
   }
   table.iv.iv-stocks .col-company {
-    min-width: 220px;
-    max-width: 360px;
+    width: 220px;
+    min-width: 0;
     text-align: left;
+    overflow: visible;
+    white-space: normal;
+    padding-left: 8px;
   }
-  table.iv.iv-stocks .col-mcap { width: 96px; }
-  table.iv.iv-stocks .col-growth { width: 108px; }
-  table.iv.iv-stocks .col-roce { width: 92px; }
-  table.iv.iv-stocks .col-pb { width: 72px; }
+  table.iv.iv-stocks .col-industry {
+    width: 128px;
+    min-width: 0;
+    text-align: left;
+    font-size: 12px;
+    color: #475569;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.3;
+  }
+  table.iv.iv-stocks .col-pcf {
+    width: 1%;
+    white-space: nowrap;
+  }
+  table.iv.iv-stocks .col-mcap,
+  table.iv.iv-stocks .col-growth,
+  table.iv.iv-stocks .col-roce,
+  table.iv.iv-stocks .col-pb,
   table.iv.iv-stocks .col-pe,
-  table.iv.iv-stocks .col-fpe { width: 64px; text-align: right; }
-  table.iv.iv-stocks .col-pead { width: 72px; text-align: center; }
+  table.iv.iv-stocks .col-fpe,
+  table.iv.iv-stocks .col-score {
+    width: 1%;
+    white-space: nowrap;
+  }
   .pe-val { font-weight: 600; font-variant-numeric: tabular-nums; }
   .pe-val.neg { color: #dc2626; }
   .pe-val.pos { color: var(--text); }
+  .fpe-good { color: #059669; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .fpe-mid { color: #d97706; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .fpe-bad { color: #dc2626; font-weight: 600; font-variant-numeric: tabular-nums; }
   table.iv.iv-stocks .col-score {
-    width: 64px;
     text-align: right;
     color: var(--green);
     font-weight: 700;
-    font-size: 14px;
+    font-size: 13px;
+    min-width: 64px;
+    padding-left: 8px;
+    padding-right: 10px;
+    overflow: visible;
+    text-overflow: clip;
+    font-variant-numeric: tabular-nums;
+  }
+  table.iv.iv-stocks th.col-score {
+    min-width: 64px;
+    overflow: visible;
+    text-overflow: clip;
   }
   table.iv.iv-stocks td.num { white-space: nowrap; }
+  table.iv.iv-stocks td.col-company,
+  table.iv.iv-stocks td.col-industry {
+    overflow: visible;
+    text-overflow: clip;
+  }
+  table.iv.iv-stocks td.col-company .company-name {
+    word-break: normal;
+    overflow-wrap: anywhere;
+  }
   .na-cell {
     color: #94a3b8;
     font-weight: 500;
@@ -178,17 +233,6 @@ _IV_CSS = """
     cursor: help;
     border-bottom: 1px dotted #cbd5e1;
   }
-  .badge-pead {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 999px;
-    font-size: 12px;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-  }
-  .badge-pead.high { background: #ecfdf5; color: #059669; }
-  .badge-pead.mid { background: #fffbeb; color: #d97706; }
-  .badge-pead.low { background: #fef2f2; color: #dc2626; }
   table.iv tbody tr:nth-child(even) td { background: var(--row-odd); }
   table.iv tbody tr:nth-child(odd) td { background: var(--row-even); }
   table.iv:not(.iv-stocks) tbody tr:hover td { background: var(--row-hover) !important; }
@@ -349,6 +393,53 @@ _IV_CSS = """
     overflow: hidden;
     margin: 4px 0 2px;
   }
+  .iv-expand-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px;
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .iv-expand-toolbar strong {
+    color: var(--text);
+    font-size: 12px;
+  }
+  .iv-expand-scroll {
+    max-height: min(58vh, 520px);
+    overflow: auto;
+    background: #fff;
+  }
+  .iv-expand-scroll table.iv.iv-stocks {
+    border: none;
+    border-radius: 0;
+  }
+  .iv-expand-scroll table.iv.iv-stocks thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    box-shadow: 0 1px 0 #e2e8f0;
+  }
+  .hw-more-row td {
+    text-align: center;
+    padding: 10px 12px !important;
+    background: #fafafa !important;
+  }
+  .hw-more-btn {
+    appearance: none;
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    color: #334155;
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .hw-more-btn:hover { background: #f8fafc; border-color: #94a3b8; }
   .iv-expand-head {
     padding: 10px 14px;
     background: #f8fafc;
@@ -365,12 +456,12 @@ _IV_CSS = """
     color: var(--muted);
     margin: 3px 0 0;
   }
-  .iv-expand-body { padding: 10px 12px 12px; }
+  .iv-expand-body { padding: 0; }
   .company-cell { min-width: 0; }
   .company-top {
     display: flex;
     align-items: flex-start;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 8px;
     margin-bottom: 4px;
   }
@@ -402,10 +493,14 @@ _IV_CSS = """
   }
   .links-inline {
     display: inline-flex;
+    align-items: center;
     gap: 4px;
     flex-shrink: 0;
+    margin-left: auto;
+    white-space: nowrap;
   }
-  .links-inline a,
+  .links-inline a.link,
+  .links-inline a {
   table.iv .links a.link {
     display: inline-block;
     padding: 2px 6px;
@@ -550,7 +645,6 @@ def build_headwind_html(
     else:
         rows_html: list[str] = []
         for _, row in sectors.iterrows():
-            score = float(row.get("score") or 0)
             ind = safe_str(row.get("indicator")).upper()
             if ind == "TAILWIND":
                 badge_cls = "badge-tail"
@@ -563,7 +657,6 @@ def build_headwind_html(
                 "<tr>"
                 f'<td>{html.escape(safe_str(row.get("sector")))}</td>'
                 f'<td class="num">{int(row.get("companies", 0))}</td>'
-                f'<td class="num">{sign}{score:.4f}</td>'
                 f'<td><span class="badge {badge_cls}">{html.escape(ind)}</span></td>'
                 f'<td class="num">{_fmt_pct(row.get("median_growth_3y"))}</td>'
                 f'<td class="num">{_fmt_pct(row.get("median_roce_3y"))}</td>'
@@ -575,9 +668,9 @@ def build_headwind_html(
             f'<div class="iv-wrap">'
             f'<div class="iv-title">H&T</div>'
             f'<h1 class="iv-h1">{html.escape(title)}</h1>'
-            f'<div class="iv-meta">Sector score vs market medians on 3Y sales growth, 3Y ROCE, and P/B</div>'
+            f'<div class="iv-meta">Sector signal vs market medians on 3Y sales growth, 3Y ROCE, and P/B</div>'
             f"<table class=\"iv\"><thead><tr>"
-            f"<th>Sector</th><th class=\"num\">Stocks</th><th class=\"num\">Score</th><th>Signal</th>"
+            f"<th>Sector</th><th class=\"num\">Stocks</th><th>Signal</th>"
             f"<th class=\"num\">Median growth 3Y</th><th class=\"num\">Median ROCE 3Y</th>"
             f"<th class=\"num\">Median P/B</th><th class=\"num\">Avg total score</th>"
             f"</tr></thead><tbody>{''.join(rows_html)}</tbody></table></div>"
@@ -665,7 +758,12 @@ def _json_scalar(val):
     return val
 
 
-def _stock_row_json(src: pd.Series, *, ss_map: dict | None = None) -> dict:
+def _stock_row_json(
+    src: pd.Series,
+    *,
+    ss_map: dict | None = None,
+    website: str | None = None,
+) -> dict:
     sector = safe_str(src.get("sector"))
     ticker = safe_str(src.get("ticker"))
     industry = effective_industry_label(
@@ -687,15 +785,17 @@ def _stock_row_json(src: pd.Series, *, ss_map: dict | None = None) -> dict:
         "pb": _json_scalar(src.get("pb")),
         "pe_ratio": _json_scalar(src.get("pe_ratio")),
         "forward_pe": _json_scalar(src.get("forward_pe")),
+        "pcf": _json_scalar(src.get("pcf")),
         "growth_rank": _json_scalar(src.get("growth_rank")),
         "roce_rank": _json_scalar(src.get("roce_rank")),
         "pb_rank": _json_scalar(src.get("pb_rank")),
-        "pead_score": _json_scalar(src.get("pead_score")),
-        "pead_note": safe_str(src.get("pead_note")) or None,
         "total_score": _json_scalar(src.get("total_score")),
         "sc": safe_str(src.get("screener_link")) or None,
         "tv": safe_str(src.get("tv_link")) or None,
     }
+    web = safe_str(website or src.get("website"))
+    if web:
+        out["website"] = web
     out.update(corp_tags_dict_for_ticker(ticker))
     if ss_map:
         ss = ss_map.get(ticker.upper()) or ss_map.get(ticker) or {}
@@ -724,41 +824,75 @@ def _sector_row_json(row: pd.Series, max_abs: float) -> dict:
     }
 
 
+def _subset_for_sector_group(
+    work: pd.DataFrame,
+    key: str,
+    industry_col: str,
+) -> pd.DataFrame:
+    """Match ranked rows to a sector-board group key (handles column mismatches)."""
+    label = safe_str(key).strip()
+    if not label or work.empty:
+        return work.iloc[0:0].copy()
+    if industry_col in work.columns:
+        hit = work[work[industry_col].astype(str).str.strip() == label]
+        if not hit.empty:
+            return hit.copy()
+    for col in ("sector", "sub_sector", "industry"):
+        if col not in work.columns or col == industry_col:
+            continue
+        hit = work[work[col].astype(str).str.strip() == label]
+        if not hit.empty:
+            return hit.copy()
+    return work.iloc[0:0].copy()
+
+
 def _stocks_by_sector(
     sectors: pd.DataFrame,
     ranked: pd.DataFrame,
     industry_col: str,
 ) -> dict[str, list[dict]]:
     out: dict[str, list[dict]] = {}
-    if ranked is None or ranked.empty or industry_col not in ranked.columns:
+    if ranked is None or ranked.empty:
         return out
     work = ranked.copy()
-    work["_industry_key"] = work[industry_col].astype(str).str.strip()
     ss_map = superstar_pead_map(
+        work["ticker"].astype(str).str.strip().str.upper().unique().tolist()
+    )
+    profiles = load_company_profiles_from_db(
         work["ticker"].astype(str).str.strip().str.upper().unique().tolist()
     )
     for _, sec in sectors.iterrows():
         key = safe_str(sec.get("sector"))
         if not key:
             continue
-        subset = work[work["_industry_key"] == key.strip()].copy()
+        subset = _subset_for_sector_group(work, key, industry_col)
         if subset.empty:
             out[key] = []
             continue
         ind_ranked = rank_intrinsic_value(subset)
-        out[key] = [_stock_row_json(r, ss_map=ss_map) for _, r in ind_ranked.iterrows()]
+        rows = [
+            _stock_row_json(
+                r,
+                ss_map=ss_map,
+                website=(profiles.get(safe_str(r.get("ticker")).upper()) or {}).get("website"),
+            )
+            for _, r in ind_ranked.iterrows()
+        ]
+        out[key] = rows
     return out
 
 
 def headwind_drilldown_iframe_height(
     sector_count: int,
     *,
-    expanded_stocks: int = 0,
+    max_sector_stocks: int = 0,
 ) -> int:
-    base = min(1800, max(400, 220 + sector_count * 46))
-    if expanded_stocks:
-        base += min(520, 72 + expanded_stocks * 34)
-    return base
+    """Size iframe for sector rows plus one expanded scroll panel."""
+    base = 88 + max(1, sector_count) * 46
+    if max_sector_stocks > 0:
+        visible_rows = min(max_sector_stocks, 14)
+        base += 92 + visible_rows * 36
+    return min(2200, max(160, base))
 
 
 def build_headwind_drilldown_html(
@@ -770,6 +904,7 @@ def build_headwind_drilldown_html(
     title: str = "H&T — Industries",
     subtitle: str = "",
     standalone: bool = True,
+    stocks_map: dict[str, list[dict]] | None = None,
 ) -> str:
     """Clickable sector table; expand row to show ranked stocks (PEAD-style)."""
     if sectors is None or sectors.empty:
@@ -777,7 +912,8 @@ def build_headwind_drilldown_html(
     else:
         max_abs = max(0.05, float(sectors["score"].abs().max()))
         sector_rows = [_sector_row_json(r, max_abs) for _, r in sectors.iterrows()]
-        stocks_map = _stocks_by_sector(sectors, ranked, industry_col)
+        if stocks_map is None:
+            stocks_map = _stocks_by_sector(sectors, ranked, industry_col)
         meta = html.escape(subtitle) if subtitle else ""
         meta_html = f'<div class="iv-meta">{meta}</div>' if meta else ""
         data_sectors = json.dumps(sector_rows, separators=(",", ":"))
@@ -789,7 +925,7 @@ def build_headwind_drilldown_html(
   {meta_html}
   <table class="iv" id="hw-table">
     <thead><tr>
-      <th>Sector</th><th class="num">Stocks</th><th class="num">Score</th><th>Signal</th>
+      <th>Sector</th><th class="num">Stocks</th><th>Signal</th>
       <th class="num">Median growth 3Y</th><th class="num">Median ROCE 3Y</th>
       <th class="num">Median P/B</th><th class="num">Avg total score</th>
     </tr></thead>
@@ -800,8 +936,11 @@ def build_headwind_drilldown_html(
 const SECTORS = {data_sectors};
 const STOCKS = {data_stocks};
 const MIN_MCAP = {float(min_mcap_cr):.0f};
-const STOCK_COLS = 10;
-let expandedSector = SECTORS.length ? SECTORS[0].sector : null;
+const SECTOR_COLS = 7;
+const STOCK_COLS = 11;
+const STOCK_PAGE = 60;
+let expandedSector = null;
+const stockPageLimits = {{}};
 
 {CORP_TAGS_JS}
 
@@ -837,78 +976,118 @@ function displayName(s) {{
   if (n && !n.includes(",") && !/\\.NS|\\.BO/i.test(n) && n.toUpperCase() !== t) return n;
   return t || n;
 }}
+function fmtWebPill(web) {{
+  if (!web) return "";
+  let href = String(web).trim();
+  if (!/^https?:\\/\\//i.test(href)) href = "https://" + href;
+  let title = href;
+  try {{
+    const host = new URL(href).hostname.replace(/^www\\./i, "");
+    if (host) title = host;
+  }} catch (_) {{}}
+  return `<a class="link" href="${{esc(href)}}" target="_blank" rel="noopener noreferrer" title="${{esc(title)}}">Web</a>`;
+}}
 function fmtCompanyCell(s) {{
   const name = displayName(s);
   const links = [];
-  if (s.sc) links.push(`<a class="link" href="${{esc(s.sc)}}" target="_blank" rel="noopener">SC</a>`);
-  if (s.tv) links.push(`<a class="link" href="${{esc(s.tv)}}" target="_blank" rel="noopener">TV</a>`);
+  if (s.sc) links.push(`<a class="link" href="${{esc(s.sc)}}" target="_blank" rel="noopener noreferrer" title="screener.in">SC</a>`);
+  if (s.tv) links.push(`<a class="link" href="${{esc(s.tv)}}" target="_blank" rel="noopener noreferrer" title="TradingView">TV</a>`);
+  const web = s.website;
+  if (web) links.push(fmtWebPill(web));
   const tags = fmtCorpTags(s);
   const sub = tags ? `<div class="company-sub">${{tags}}</div>` : "";
+  const linksHtml = links.length
+    ? `<span class="links-inline">${{links.join("")}}</span>`
+    : "";
   return (
     `<div class="company-cell">` +
     `<div class="company-top">` +
     `<span class="company-name">${{esc(name)}}</span>` +
-    (links.length ? `<span class="links-inline">${{links.join("")}}</span>` : "") +
+    linksHtml +
     `</div>${{sub}}</div>`
   );
 }}
+const PE_TITLE = "Option A: 4+ qtrs → sum last 4 EPS; 1–3 qtrs → sum available; else Yahoo trailingPE";
 function fmtPe(v) {{
   const n = num(v);
-  if (n === null || isNaN(n)) return `<span class="na-cell">—</span>`;
+  if (n === null || isNaN(n)) return `<span class="na-cell" title="${{PE_TITLE}}">—</span>`;
   const cls = n < 0 ? "neg" : "pos";
-  return `<span class="pe-val ${{cls}}">${{n.toFixed(1)}}</span>`;
+  return `<span class="pe-val ${{cls}}" title="${{PE_TITLE}}">${{n.toFixed(1)}}</span>`;
 }}
-function fmtPeadScore(v, note) {{
+function fmtFpe(v) {{
   const n = num(v);
-  if (n === null || isNaN(n)) {{
-    const tip = note ? ` title="${{esc(note)}}"` : "";
-    return `<span class="na-cell"${{tip}}>—</span>`;
-  }}
-  const tier = n > 40 ? "high" : (n > 30 ? "mid" : "low");
-  return `<span class="badge-pead ${{tier}}">${{n.toFixed(1)}}</span>`;
+  if (n === null || isNaN(n)) return `<span class="na-cell" title="Option B: price ÷ (latest quarter EPS × 4)">—</span>`;
+  if (n >= 500) return `<span class="fpe-bad" title="Option B: run-rate EPS ≤ 0 or PE capped">${{n.toFixed(1)}}</span>`;
+  let cls = "fpe-good";
+  if (n > 40) cls = "fpe-bad";
+  else if (n > 20) cls = "fpe-mid";
+  return `<span class="${{cls}}" title="Option B: price ÷ (latest quarter EPS × 4)">${{n.toFixed(1)}}</span>`;
+}}
+function fmtIndustry(s) {{
+  const label = String(s.industry || s.sector || "").trim();
+  return label ? esc(label) : '<span class="na-cell">—</span>';
 }}
 function renderStocksForSector(sector, tbody) {{
-  const stocks = STOCKS[sector] || [];
+  const all = STOCKS[sector] || [];
   tbody.innerHTML = "";
-  if (!stocks.length) {{
+  if (!all.length) {{
     const tr = document.createElement("tr");
     tr.innerHTML = `<td colspan="${{STOCK_COLS}}" class="iv-expand-meta">No stock data for this sector.</td>`;
     tbody.appendChild(tr);
     return;
   }}
+  const limit = stockPageLimits[sector] || Math.min(STOCK_PAGE, all.length);
+  const stocks = all.slice(0, limit);
   stocks.forEach(s => {{
     const tr = document.createElement("tr");
     tr.innerHTML =
       `<td class="col-rank">${{s.rank || ""}}</td>` +
       `<td class="col-company">${{fmtCompanyCell(s)}}</td>` +
+      `<td class="col-industry">${{fmtIndustry(s)}}</td>` +
       `<td class="num col-mcap">₹${{fmtNum(s.market_cap_cr, 1)}} Cr</td>` +
       `<td class="num col-growth">${{metricCell(fmtPct(s.sales_growth_3y), s.growth_rank)}}</td>` +
       `<td class="num col-roce">${{metricCell(fmtPct(s.roce_3y), s.roce_rank)}}</td>` +
       `<td class="num col-pb">${{metricCell(fmtNum(s.pb), s.pb_rank)}}</td>` +
       `<td class="num col-pe">${{fmtPe(s.pe_ratio)}}</td>` +
-      `<td class="num col-fpe">${{fmtPe(s.forward_pe)}}</td>` +
-      `<td class="num col-pead">${{fmtPeadScore(s.pead_score, s.pead_note)}}</td>` +
+      `<td class="num col-fpe">${{fmtFpe(s.forward_pe)}}</td>` +
+      `<td class="num col-pcf" title="Price ÷ operating cash flow per share">${{fmtNum(s.pcf, 2)}}</td>` +
       `<td class="num col-score">${{Math.round(num(s.total_score) || 0)}}</td>`;
     tbody.appendChild(tr);
   }});
+  if (all.length > limit) {{
+    const remaining = all.length - limit;
+    const tr = document.createElement("tr");
+    tr.className = "hw-more-row";
+    const step = Math.min(STOCK_PAGE, remaining);
+    tr.innerHTML =
+      `<td colspan="${{STOCK_COLS}}">` +
+      `<button type="button" class="hw-more-btn">Show ${{step}} more (${{remaining}} left)</button>` +
+      `</td>`;
+    tr.querySelector("button").onclick = (ev) => {{
+      ev.stopPropagation();
+      stockPageLimits[sector] = limit + step;
+      render();
+    }};
+    tbody.appendChild(tr);
+  }}
 }}
 function renderSectorRow(r, isOpen) {{
   const ind = (r.indicator || "").toUpperCase();
-  const sign = (num(r.score) || 0) >= 0 ? "+" : "";
   const tr = document.createElement("tr");
   tr.className = "iv-sector-row" + (isOpen ? " expanded" : "");
   tr.innerHTML =
     `<td><span class="expand-hint"></span>${{esc(r.sector)}}</td>` +
     `<td class="num">${{r.companies || 0}}</td>` +
-    `<td class="num">${{sign}}${{num(r.score).toFixed(4)}}</td>` +
     `<td><span class="badge ${{badgeCls(ind)}}">${{esc(ind)}}</span></td>` +
     `<td class="num">${{fmtPct(r.median_growth_3y)}}</td>` +
     `<td class="num">${{fmtPct(r.median_roce_3y)}}</td>` +
     `<td class="num">${{fmtNum(r.median_pb)}}</td>` +
     `<td class="num">${{fmtNum(r.avg_total_score, 1)}}</td>`;
   tr.onclick = (e) => {{
-    if (e.target.closest("a")) return;
-    expandedSector = expandedSector === r.sector ? null : r.sector;
+    if (e.target.closest("a") || e.target.closest("button")) return;
+    const next = expandedSector === r.sector ? null : r.sector;
+    if (next !== r.sector) delete stockPageLimits[r.sector];
+    expandedSector = next;
     render();
   }};
   return tr;
@@ -923,22 +1102,31 @@ function render() {{
       const tr2 = document.createElement("tr");
       tr2.className = "iv-expand-row";
       const td = document.createElement("td");
-      td.colSpan = STOCK_COLS;
+      td.colSpan = SECTOR_COLS;
+      const stockCount = (STOCKS[r.sector] || []).length;
       td.innerHTML =
         `<div class="iv-expand-panel">` +
-        `<div class="iv-expand-head">` +
-        `<div class="iv-expand-title">${{esc(r.sector)}}</div>` +
-        `<div class="iv-expand-meta">${{(STOCKS[r.sector] || []).length}} stocks · ≥ ₹${{MIN_MCAP}} Cr</div>` +
+        `<div class="iv-expand-toolbar">` +
+        `<span><strong>${{esc(r.sector)}}</strong> · ${{stockCount}} stocks` +
+        `${{MIN_MCAP > 0 ? " · ≥ ₹" + MIN_MCAP + " Cr" : ""}}</span>` +
+        `<span>Ranked by score · scroll for more</span>` +
         `</div>` +
         `<div class="iv-expand-body">` +
-        `<table class="iv iv-stocks"><thead><tr>` +
+        `<div class="iv-expand-scroll">` +
+        `<table class="iv iv-stocks"><colgroup>` +
+        `<col style="width:32px"><col style="width:220px"><col style="width:128px">` +
+        `<col style="width:72px"><col style="width:88px"><col style="width:72px"><col style="width:56px">` +
+        `<col style="width:56px"><col style="width:56px"><col style="width:52px"><col style="width:68px">` +
+        `</colgroup><thead><tr>` +
         `<th class="col-rank">#</th><th class="col-company">Company</th>` +
+        `<th class="col-industry">Industry</th>` +
         `<th class="num col-mcap">Mkt cap</th><th class="num col-growth">Growth 3Y</th>` +
         `<th class="num col-roce">ROCE 3Y</th><th class="num col-pb">P/B</th>` +
-        `<th class="num col-pe" title="Option A: price ÷ sum of last 4 quarters EPS">PE</th>` +
-        `<th class="num col-fpe" title="Option B: price ÷ latest quarter EPS × 4">Fwd PE</th>` +
-        `<th class="num col-pead">PEAD</th><th class="num col-score">Score</th>` +
-        `</tr></thead><tbody id="hw-stocks-${{si}}"></tbody></table></div></div>`;
+        `<th class="num col-pe" title="Option A: 4+ qtrs → sum last 4 EPS (TTM); 1–3 → sum available; else Yahoo trailingPE">PE</th>` +
+        `<th class="num col-fpe" title="Option B: price ÷ (latest quarter EPS × 4)">Fwd PE</th>` +
+        `<th class="num col-pcf" title="Price ÷ operating cash flow per share">P/CF</th>` +
+        `<th class="num col-score">Score</th>` +
+        `</tr></thead><tbody id="hw-stocks-${{si}}"></tbody></table></div></div></div>`;
       tr2.appendChild(td);
       tb.appendChild(tr2);
       const stockBody = document.getElementById("hw-stocks-" + si);

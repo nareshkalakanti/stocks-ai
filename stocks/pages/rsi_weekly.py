@@ -23,6 +23,7 @@ from stocks.scans.stock_filters import apply_stock_filters
 from stocks.strategies.rsi_weekly.html import build_rsi_weekly_html, rsi_weekly_iframe_height
 from stocks.strategies.rsi_weekly.service import (
     RSI_ENTRY,
+    RSI_ENTRY_MAX,
     RSI_LENGTH,
     prepare_rsi_weekly_universe,
     run_rsi_weekly_scan,
@@ -39,8 +40,8 @@ def render_rsi_weekly() -> None:
 
     st.markdown("### RSI Weekly")
     st.caption(
-        f"Weekly RSI({RSI_LENGTH}) · **entry ≥ {RSI_ENTRY:g}** "
-        "(new cross replaces prior trade) · shows this week's crosses only"
+        f"Weekly RSI({RSI_LENGTH}) · **entry {RSI_ENTRY:g}–{RSI_ENTRY_MAX:g}** "
+        "(fresh cross only — prev below 60, this week 60–61) · new cross replaces prior"
     )
 
     with scan_toolbar_row(
@@ -123,12 +124,16 @@ def render_rsi_weekly() -> None:
 
     if result.empty:
         st.session_state.pop("rsiw_result", None)
-        st.warning("No stocks with a weekly RSI cross above 60 this week.")
+        st.warning(
+            f"No stocks with a fresh weekly RSI cross in {RSI_ENTRY:g}–{RSI_ENTRY_MAX:g} this week."
+        )
         return
 
     # Skip quarterly/snapshot enrich — that was making the report crawl.
     st.session_state.rsiw_result = result
-    st.caption(f"**{len(result):,}** stocks crossed RSI ≥ {RSI_ENTRY:g} this week.")
+    st.caption(
+        f"**{len(result):,}** stocks crossed RSI {RSI_ENTRY:g}–{RSI_ENTRY_MAX:g} this week."
+    )
     embed_html = build_rsi_weekly_html(result, standalone=False)
     embed_html_iframe(embed_html, height=rsi_weekly_iframe_height(len(result)))
 

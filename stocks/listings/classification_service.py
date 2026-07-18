@@ -330,12 +330,18 @@ def classification_coverage(stocks: pd.DataFrame) -> dict[str, int]:
             "industry": 0,
             "sub_sector": 0,
             "industry_from_sector": 0,
+            "source_sector": 0,
         }
     tickers = stocks["ticker"].astype(str).str.upper().nunique()
     by_t = stocks.drop_duplicates("ticker")
     has_industry = by_t["industry"].fillna("").astype(str).str.strip() != ""
     industry = int(has_industry.sum())
     sub_sector = int((by_t["sub_sector"].fillna("").astype(str).str.strip() != "").sum())
+    source_sector = 0
+    if "source_sector" in by_t.columns:
+        source_sector = int(
+            (by_t["source_sector"].fillna("").astype(str).str.strip() != "").sum()
+        )
     # Industry label copied from HF sector when sqlite had no finer taxonomy.
     sector_eq = (
         by_t["sector"].fillna("").astype(str).str.strip()
@@ -346,5 +352,20 @@ def classification_coverage(stocks: pd.DataFrame) -> dict[str, int]:
         "tickers": int(tickers),
         "industry": industry,
         "sub_sector": sub_sector,
+        "source_sector": source_sector,
         "industry_from_sector": from_sector,
+    }
+
+
+def classification_status(
+    stocks: pd.DataFrame,
+    *,
+    sqlite_dir: Path | None = None,
+) -> dict[str, int | bool | list[str]]:
+    """Coverage plus sqlite availability for diagnostics."""
+    ok, found = classification_sources_ok(sqlite_dir)
+    return {
+        "sqlite_ok": ok,
+        "sqlite_files": found,
+        **classification_coverage(stocks),
     }

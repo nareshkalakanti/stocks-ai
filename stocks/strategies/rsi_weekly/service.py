@@ -20,6 +20,8 @@ from stocks.strategies.tq_bb.service import (
 
 RSI_LENGTH = 14
 RSI_ENTRY = 60.0
+# Fresh cross only — current bar must stay near the threshold (not 62+, 66+, etc.).
+RSI_ENTRY_MAX = 61.0
 RSI_MIN_BARS = RSI_LENGTH + 5
 # 1y weekly is enough for RSI(14); keeps Yahoo fetches light.
 RSI_HISTORY_PERIOD = "1y"
@@ -31,15 +33,16 @@ def latest_rsi_entry_cross(
     rsi: pd.Series,
     *,
     entry: float = RSI_ENTRY,
+    entry_max: float = RSI_ENTRY_MAX,
 ) -> dict | None:
-    """Return state only when the latest bar crosses above ``entry``."""
+    """Return state only when the latest bar crosses above ``entry`` and stays near it."""
     s = pd.to_numeric(rsi, errors="coerce").dropna()
     if len(s) < 2:
         return None
 
     prev = float(s.iloc[-2])
     cur = float(s.iloc[-1])
-    if not (prev < entry <= cur):
+    if not (prev < entry <= cur <= entry_max):
         return None
 
     return {
@@ -56,6 +59,7 @@ def analyze_rsi_weekly(
     *,
     rsi_length: int = RSI_LENGTH,
     rsi_entry: float = RSI_ENTRY,
+    rsi_entry_max: float = RSI_ENTRY_MAX,
 ) -> dict | None:
     if is_skippable_symbol(ticker):
         return None
@@ -67,7 +71,7 @@ def analyze_rsi_weekly(
         return None
 
     rsi = calculate_rsi(data, period=rsi_length)
-    state = latest_rsi_entry_cross(rsi, entry=rsi_entry)
+    state = latest_rsi_entry_cross(rsi, entry=rsi_entry, entry_max=rsi_entry_max)
     if not state:
         return None
 
@@ -81,6 +85,7 @@ def analyze_rsi_weekly(
         "prev_rsi": state["prev_rsi"],
         "signal": state["signal"],
         "rsi_entry": rsi_entry,
+        "rsi_entry_max": rsi_entry_max,
         "date": latest.name.strftime("%Y-%m-%d"),
         "timeframe": "weekly",
         "score": state["rsi"],
@@ -96,6 +101,7 @@ def run_rsi_weekly_scan(
     should_stop: Callable[[], bool] | None = None,
     rsi_length: int = RSI_LENGTH,
     rsi_entry: float = RSI_ENTRY,
+    rsi_entry_max: float = RSI_ENTRY_MAX,
 ) -> pd.DataFrame:
     listings = _listing_rows(universe)
     if limit is not None and limit > 0:
@@ -121,6 +127,7 @@ def run_rsi_weekly_scan(
             market,
             rsi_length=rsi_length,
             rsi_entry=rsi_entry,
+            rsi_entry_max=rsi_entry_max,
         )
 
     jobs = [(ticker, market) for ticker, market in listings]
@@ -137,7 +144,7 @@ def run_rsi_weekly_scan(
     if df.empty:
         return df
 
-    return df.sort_values(["rsi"], ascending=[False]).reset_index(drop=True)
+    return df.sort_values(["rsi"], ascending=[True]).reset_index(drop=True)
 
 
 prepare_rsi_weekly_universe = prepare_strategy_universe
@@ -147,6 +154,7 @@ simulate_rsi_weekly_state = latest_rsi_entry_cross
 
 __all__ = [
     "RSI_ENTRY",
+    "RSI_ENTRY_MAX",
     "RSI_LENGTH",
     "SIGNAL_ENTRY",
     "analyze_rsi_weekly",
