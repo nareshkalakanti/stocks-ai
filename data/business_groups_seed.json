@@ -1,0 +1,3959 @@
+{
+  "groups": [
+    {
+      "name": "AARTI GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "AARTIDRUGS",
+          "market": "NSE",
+          "name": "Aarti Drugs Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "AARTIIND",
+          "market": "NSE",
+          "name": "AARTI Industries Ltd",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "AARTIPHARM",
+          "market": "NSE",
+          "name": "Aarti Pharmalabs Limited",
+          "demerger": true,
+          "spin_off": true
+        },
+        {
+          "ticker": "AARTISURF",
+          "market": "NSE",
+          "name": "Aarti Surfactants Ltd.",
+          "demerger": true,
+          "spin_off": true
+        }
+      ]
+    },
+    {
+      "name": "ABANS GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "ABANSENT",
+          "market": "BSE",
+          "name": "ABans Enterprises Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "AFSL",
+          "market": "NSE",
+          "name": "Abans Financial Services Ltd",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "ADANI GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "ADANIENSOL",
+          "market": "NSE",
+          "name": "Adani Energy Solutions Ltd",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "ADANIENT",
+          "market": "NSE",
+          "name": "Adani Enterprises Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "ADANIGREEN",
+          "market": "NSE",
+          "name": "Adani Green Energy Limited",
+          "demerger": false,
+          "spin_off": true
+        },
+        {
+          "ticker": "ADANIPORTS",
+          "market": "NSE",
+          "name": "Adani Ports & Special Economic Zone Ltd",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "ADANIPOWER",
+          "market": "NSE",
+          "name": "Adani Power Limited",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "ATGL",
+          "market": "NSE",
+          "name": "Adani Total Gas Ltd.",
+          "demerger": false,
+          "spin_off": true
+        }
+      ]
+    },
+    {
+      "name": "Aeroflex Group",
+      "token": null,
+      "members": [
+        {
+          "ticker": "AEROENTER",
+          "market": "NSE",
+          "name": "Aeroflex Enterprises Ltd",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "AEROFLEX",
+          "market": "NSE",
+          "name": "Aeroflex Industries Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "AERONEU",
+          "market": "NSE",
+          "name": "Aeroflex Neu Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "Ageis Group",
+      "token": null,
+      "members": [
+        {
+          "ticker": "AEGISLOG",
+          "market": "NSE",
+          "name": "Aegis Logistics Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "AEGISVOPAK",
+          "market": "NSE",
+          "name": "Aegis Vopak Terminals Limited",
+          "demerger": false,
+          "spin_off": true
+        }
+      ]
+    },
+    {
+      "name": "ALEMBIC",
+      "token": null,
+      "members": [
+        {
+          "ticker": "ALEMBICLTD",
+          "market": "NSE",
+          "name": "Alembic Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "APLLTD",
+          "market": "NSE",
+          "name": "Alembic Pharmaceuticals Limited",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "PAUSHAKLTD",
+          "market": "BSE",
+          "name": "Paushak Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "Allcargo Group",
+      "token": null,
+      "members": [
+        {
+          "ticker": "ACLGATI",
+          "market": "NSE",
+          "name": "Allcargo Gati Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "ALLCARGO",
+          "market": "NSE",
+          "name": "Allcargo Logistics Limited",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "ATL",
+          "market": "NSE",
+          "name": "Allcargo Terminals Limited",
+          "demerger": true,
+          "spin_off": true
+        }
+      ]
+    },
+    {
+      "name": "APOLLO HOSPITALS",
+      "token": null,
+      "members": [
+        {
+          "ticker": "APOLLOHOSP",
+          "market": "NSE",
+          "name": "Apollo Hospitals Enterprise Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "APOLSINHOT",
+          "market": "NSE",
+          "name": "Apollo Sindoori Hotels Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "INDRAMEDCO",
+          "market": "NSE",
+          "name": "Indraprastha Medical Corporation Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "ARCHIDPLY GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "ADL",
+          "market": "NSE",
+          "name": "Archidply Decor Ltd",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "ARCHIDPLY",
+          "market": "NSE",
+          "name": "Archidply Industries Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "ARVIND MAFATLAL",
+      "token": null,
+      "members": [
+        {
+          "ticker": "HYBRIDFIN",
+          "market": "NSE",
+          "name": "Hybrid Financial Services Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "MAFATIND",
+          "market": "BSE",
+          "name": "Mafatlal Industries Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "NOCIL",
+          "market": "NSE",
+          "name": "NOCIL Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "ASAHI SONGWON",
+      "token": null,
+      "members": [
+        {
+          "ticker": "ASAHIIND",
+          "market": "BSE",
+          "name": "Asahi Industries Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "ASAHIINDIA",
+          "market": "NSE",
+          "name": "Asahi India Glass Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "ASAHISONG",
+          "market": "NSE",
+          "name": "Asahi Songwon Colors Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "BAJAJ",
+      "token": null,
+      "members": [
+        {
+          "ticker": "BAJAJCON",
+          "market": "NSE",
+          "name": "Bajaj Consumer Care Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "BAJAJELEC",
+          "market": "NSE",
+          "name": "Bajaj Electricals Limited",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "BAJAJFINSV",
+          "market": "NSE",
+          "name": "Bajaj Finserv Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "BAJAJHCARE",
+          "market": "NSE",
+          "name": "Bajaj Healthcare Ltd",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "BAJAJHFL",
+          "market": "NSE",
+          "name": "Bajaj Housing Finance Ltd.",
+          "demerger": false,
+          "spin_off": true
+        },
+        {
+          "ticker": "BAJAJHIND",
+          "market": "NSE",
+          "name": "Bajaj Hindusthan Sugar Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "BAJAJHLDNG",
+          "market": "NSE",
+          "name": "Bajaj Holdings & Investment Limited.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "BAJAJINDEF",
+          "market": "NSE",
+          "name": "Indef Manufacturing Limited",
+          "demerger": false,
+          "spin_off": true
+        },
+        {
+          "ticker": "BAJAJST",
+          "market": "BSE",
+          "name": "Bajaj Steel Industries Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "BAJAJ_AUTO",
+          "market": "NSE",
+          "name": "Bajaj Auto Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "BAJEL",
+          "market": "NSE",
+          "name": "Bajel Projects Limited",
+          "demerger": true,
+          "spin_off": true
+        },
+        {
+          "ticker": "BAJFINANCE",
+          "market": "NSE",
+          "name": "Bajaj Finance Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "MUKANDLTD",
+          "market": "NSE",
+          "name": "Mukand Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "BHARTI GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "BHARTIARTL",
+          "market": "NSE",
+          "name": "Bharti Airtel Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "BHARTIHEXA",
+          "market": "NSE",
+          "name": "Bharti Hexacom Limited",
+          "demerger": false,
+          "spin_off": true
+        },
+        {
+          "ticker": "INDUSTOWER",
+          "market": "NSE",
+          "name": "Indus Towers Limited",
+          "demerger": false,
+          "spin_off": true
+        }
+      ]
+    },
+    {
+      "name": "BHILWARA",
+      "token": null,
+      "members": [
+        {
+          "ticker": "BHILSPIN",
+          "market": "BSE",
+          "name": "Bhilwara Spinners Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "BSL",
+          "market": "NSE",
+          "name": "BSL Ltd",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "CIFL",
+          "market": "NSE",
+          "name": "Capital India Finance Ltd",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "HEG",
+          "market": "NSE",
+          "name": "HEG Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "MARALOVER",
+          "market": "NSE",
+          "name": "Maral Overseas Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "RSWM",
+          "market": "NSE",
+          "name": "RSWM Ltd",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "BIRLA ADITYA",
+      "token": null,
+      "members": [
+        {
+          "ticker": "ABCAPITAL",
+          "market": "NSE",
+          "name": "Aditya Birla Capital Ltd.",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "ABFRL",
+          "market": "NSE",
+          "name": "Aditya Birla Fashion and Retail Ltd",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "ABLBL",
+          "market": "NSE",
+          "name": "Aditya Birla Lifestyle Brands Limited",
+          "demerger": true,
+          "spin_off": true
+        },
+        {
+          "ticker": "ABREL",
+          "market": "NSE",
+          "name": "Aditya Birla Real Estate Ltd",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "ABSLAMC",
+          "market": "NSE",
+          "name": "Aditya Birla Sun Life Amc Limited",
+          "demerger": false,
+          "spin_off": true
+        },
+        {
+          "ticker": "BIRLAMONEY",
+          "market": "NSE",
+          "name": "Aditya Birla Money Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "BIRLA BK",
+      "token": null,
+      "members": [
+        {
+          "ticker": "CENTENKA",
+          "market": "NSE",
+          "name": "Century Enka Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "JAYSREETEA",
+          "market": "NSE",
+          "name": "Jay Shree Tea & Industries Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "KESORAMIND",
+          "market": "NSE",
+          "name": "Kesoram Industries Ltd",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "MANGLMCEM",
+          "market": "NSE",
+          "name": "Mangalam Cement Ltd",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "BIRLA CK",
+      "token": null,
+      "members": [
+        {
+          "ticker": "ORIENTCEM",
+          "market": "NSE",
+          "name": "Orient Cement Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "ORIENTELEC",
+          "market": "NSE",
+          "name": "Orient Electric Ltd.",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "ORIENTPPR",
+          "market": "NSE",
+          "name": "Orient Paper & Industries Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "BIRLA KK",
+      "token": null,
+      "members": [
+        {
+          "ticker": "AVADHSUGAR",
+          "market": "NSE",
+          "name": "Avadh Sugar & Energy Ltd.",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "GANGESSECU",
+          "market": "NSE",
+          "name": "Ganges Securities Ltd.",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "HTMEDIA",
+          "market": "NSE",
+          "name": "HT Media Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "MAGADSUGAR",
+          "market": "NSE",
+          "name": "Magadh Sugar & Energy Ltd.",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "PALASHSECU",
+          "market": "NSE",
+          "name": "Palash Securities Ltd.",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "SILINV",
+          "market": "NSE",
+          "name": "SIL Investments Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SUTLEJTEX",
+          "market": "NSE",
+          "name": "Sutlej Textiles & Industries Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "TEXRAIL",
+          "market": "NSE",
+          "name": "Texmaco Rail & Engineering Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "ZUARIIND",
+          "market": "NSE",
+          "name": "Zuari Industries Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "BIRLA MP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "BIRLACABLE",
+          "market": "NSE",
+          "name": "Birla Cable Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "UNIVCABLES",
+          "market": "NSE",
+          "name": "Universal Cables Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "VINDHYATEL",
+          "market": "NSE",
+          "name": "Vindhya Telelinks Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "BLS GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "BLS",
+          "market": "NSE",
+          "name": "BLS International Services Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "BLSE",
+          "market": "NSE",
+          "name": "BLS E-Services Limited",
+          "demerger": false,
+          "spin_off": true
+        }
+      ]
+    },
+    {
+      "name": "BOROSIL GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "BOROLTD",
+          "market": "NSE",
+          "name": "Borosil Ltd",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "BORORENEW",
+          "market": "NSE",
+          "name": "Borosil Renewables Limited",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "BOROSCI",
+          "market": "NSE",
+          "name": "Borosil Scientific Limited",
+          "demerger": true,
+          "spin_off": true
+        }
+      ]
+    },
+    {
+      "name": "CHEMBOND GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "CHEMBOND",
+          "market": "NSE",
+          "name": "Chembond Material Technologies Limited",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "CHEMBONDCH",
+          "market": "NSE",
+          "name": "Chembond Chemicals Limited",
+          "demerger": true,
+          "spin_off": true
+        }
+      ]
+    },
+    {
+      "name": "CYIENT GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "CYIENT",
+          "market": "NSE",
+          "name": "Cyient Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "CYIENTDLM",
+          "market": "NSE",
+          "name": "Cyient DLM Limited",
+          "demerger": false,
+          "spin_off": true
+        }
+      ]
+    },
+    {
+      "name": "DALMIA",
+      "token": null,
+      "members": [
+        {
+          "ticker": "DALMIASUG",
+          "market": "NSE",
+          "name": "Dalmia Bharat Sugar & Industries Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "GOLDENTOBC",
+          "market": "NSE",
+          "name": "Golden Tobacco Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "DCM",
+      "token": null,
+      "members": [
+        {
+          "ticker": "DCM",
+          "market": "NSE",
+          "name": "DCM Ltd.",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "DCMFINSERV",
+          "market": "NSE",
+          "name": "DCM Financial Services Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "DCMSHRIRAM",
+          "market": "NSE",
+          "name": "DCM Shriram Limited",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "DCMSRIND",
+          "market": "NSE",
+          "name": "DCM Shriram Industries Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "KAMAHOLD",
+          "market": "BSE",
+          "name": "Kama Holdings Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SRF",
+          "market": "NSE",
+          "name": "Srf Limited",
+          "demerger": true,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "DEMPO",
+      "token": null,
+      "members": [
+        {
+          "ticker": "GOACARBON",
+          "market": "NSE",
+          "name": "Goa Carbon Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "HNDFDS",
+          "market": "NSE",
+          "name": "Hindustan Foods Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "DR AGARWAL GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "AGARWALEYE",
+          "market": "NSE",
+          "name": "Dr. Agarwal's Health Care Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "DRAGARWQ",
+          "market": "BSE",
+          "name": "Dr. Agarwal'S Eye Hospital Limited",
+          "demerger": false,
+          "spin_off": true
+        }
+      ]
+    },
+    {
+      "name": "ELGI",
+      "token": null,
+      "members": [
+        {
+          "ticker": "ELGIRUBCO",
+          "market": "NSE",
+          "name": "Elgi Rubber Company Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "LGBBROSLTD",
+          "market": "NSE",
+          "name": "L.G. Balakrishnan & Bros Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SUPERSPIN",
+          "market": "NSE",
+          "name": "Super Spinning Mills Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "EMAMI",
+      "token": null,
+      "members": [
+        {
+          "ticker": "EMAMIPAP",
+          "market": "NSE",
+          "name": "Emami Paper Mills Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "EMAMIREAL",
+          "market": "NSE",
+          "name": "Emami Realty Limited",
+          "demerger": true,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "EPACK GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "EPACK",
+          "market": "NSE",
+          "name": "Epack Durable Limited",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "EPACKPEB",
+          "market": "NSE",
+          "name": "Epack Prefab Technologies Limited",
+          "demerger": false,
+          "spin_off": true
+        }
+      ]
+    },
+    {
+      "name": "EXCEL",
+      "token": null,
+      "members": [
+        {
+          "ticker": "AIMCOPEST",
+          "market": "BSE",
+          "name": "AIMCO Pesticides Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "EXCELINDUS",
+          "market": "NSE",
+          "name": "Excel Industries Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "PUNJABCHEM",
+          "market": "NSE",
+          "name": "Punjab Chemicals & Crop Protection Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SHIVALIK",
+          "market": "NSE",
+          "name": "Shivalik Rasayan Ltd",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "FORTIS GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "FORTIS",
+          "market": "NSE",
+          "name": "Fortis Healthcare Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "FORTISMLR",
+          "market": "BSE",
+          "name": "Fortis Malar Hospitals Limited",
+          "demerger": false,
+          "spin_off": true
+        }
+      ]
+    },
+    {
+      "name": "GARWARE",
+      "token": null,
+      "members": [
+        {
+          "ticker": "GARWAMAR",
+          "market": "BSE",
+          "name": "Garware Marine Industries Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "GARWSYN",
+          "market": "BSE",
+          "name": "Garware Synthetics Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "GRWRHITECH",
+          "market": "NSE",
+          "name": "Garware Hi-Tech Films Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "GATEWAY DISTRIPARKS",
+      "token": null,
+      "members": [
+        {
+          "ticker": "GATEWAY",
+          "market": "NSE",
+          "name": "Gateway Distriparks Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SNOWMAN",
+          "market": "NSE",
+          "name": "Snowman Logistics Ltd",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "GE VERNOVA GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "GVPIL",
+          "market": "NSE",
+          "name": "GE Power India Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "GVT&D",
+          "market": "NSE",
+          "name": "GE Vernova T&D India Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "GHCL GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "GHCL",
+          "market": "NSE",
+          "name": "GHCL Limited",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "GHCLTEXTIL",
+          "market": "NSE",
+          "name": "Ghcl Textiles Ltd.",
+          "demerger": true,
+          "spin_off": true
+        }
+      ]
+    },
+    {
+      "name": "GODREJ",
+      "token": null,
+      "members": [
+        {
+          "ticker": "ASTEC",
+          "market": "NSE",
+          "name": "Astec Lifesciences Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "GODREJAGRO",
+          "market": "NSE",
+          "name": "Godrej Agrovet Limited",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "GODREJCP",
+          "market": "NSE",
+          "name": "Godrej Consumer Products Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "GODREJIND",
+          "market": "NSE",
+          "name": "Godrej Industries Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "GODREJPROP",
+          "market": "NSE",
+          "name": "Godrej Properties Limited",
+          "demerger": false,
+          "spin_off": true
+        }
+      ]
+    },
+    {
+      "name": "GPT GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "GPTHEALTH",
+          "market": "NSE",
+          "name": "GPT Healthcare Limited",
+          "demerger": false,
+          "spin_off": true
+        },
+        {
+          "ticker": "GPTINFRA",
+          "market": "NSE",
+          "name": "GPT Infraprojects Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "GROUP MANGALAM",
+      "token": null,
+      "members": [
+        {
+          "ticker": "MGEL",
+          "market": "NSE",
+          "name": "Mangalam Global Enterprise Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "MWL",
+          "market": "NSE",
+          "name": "Mangalam Worldwide Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "HCK GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "KOTARISUG",
+          "market": "NSE",
+          "name": "Kothari Sugars & Chemicals Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "KOTHARIPET",
+          "market": "NSE",
+          "name": "Kothari Petrochemicals Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "HCL GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "HCLTECH",
+          "market": "NSE",
+          "name": "HCL Technologies Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "HCL_INSYS",
+          "market": "NSE",
+          "name": "HCL Infosystems Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "HDFC GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "HDFCAMC",
+          "market": "NSE",
+          "name": "HDFC Asset Management Co. Ltd.",
+          "demerger": false,
+          "spin_off": true
+        },
+        {
+          "ticker": "HDFCBANK",
+          "market": "NSE",
+          "name": "HDFC Bank Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "HDFCLIFE",
+          "market": "NSE",
+          "name": "HDFC Life Insurance Co. Ltd.",
+          "demerger": false,
+          "spin_off": true
+        }
+      ]
+    },
+    {
+      "name": "HERO",
+      "token": null,
+      "members": [
+        {
+          "ticker": "MAJESAUT",
+          "market": "BSE",
+          "name": "Majestic Auto Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "MUNJALAU",
+          "market": "NSE",
+          "name": "Munjal Auto Industries Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "MUNJALSHOW",
+          "market": "NSE",
+          "name": "Munjal Showa Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SHIVAMAUTO",
+          "market": "NSE",
+          "name": "Shivam Autotech Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "HINDUJA",
+      "token": null,
+      "members": [
+        {
+          "ticker": "ASHOKLEY",
+          "market": "NSE",
+          "name": "Ashok Leyland Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "GOCLCORP",
+          "market": "NSE",
+          "name": "GOCL Corporation Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "GULFOILLUB",
+          "market": "NSE",
+          "name": "Gulf Oil Lubricants India Ltd",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "HGS",
+          "market": "NSE",
+          "name": "Hinduja Global Solutions Limited",
+          "demerger": true,
+          "spin_off": true
+        },
+        {
+          "ticker": "INDUSINDBK",
+          "market": "NSE",
+          "name": "IndusInd Bank Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "NDLVENTURE",
+          "market": "NSE",
+          "name": "NDL Ventures Ltd",
+          "demerger": true,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "ICICI GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "ICICIBANK",
+          "market": "NSE",
+          "name": "ICICI Bank Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "ICICIGI",
+          "market": "NSE",
+          "name": "ICICI Lombard General Insurance Co. Ltd.",
+          "demerger": false,
+          "spin_off": true
+        },
+        {
+          "ticker": "ICICIPRULI",
+          "market": "NSE",
+          "name": "ICICI Prudential Life Insurance Co. Ltd.",
+          "demerger": false,
+          "spin_off": true
+        }
+      ]
+    },
+    {
+      "name": "IFB GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "IFBAGRO",
+          "market": "NSE",
+          "name": "IFB Agro Industries Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "IFBIND",
+          "market": "NSE",
+          "name": "IFB Industries Ltd",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "IIFL",
+      "token": null,
+      "members": [
+        {
+          "ticker": "IIFL",
+          "market": "NSE",
+          "name": "IIFL Finance Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "IIFLCAPS",
+          "market": "NSE",
+          "name": "IIFL Capital Services Ltd",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "IL&FS GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "IL&FSENGG",
+          "market": "NSE",
+          "name": "IL&FS Engineering & Construction Co. Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "IL&FSTRANS",
+          "market": "NSE",
+          "name": "IL&FS Transportation Networks Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "IVC",
+          "market": "NSE",
+          "name": "IL&FS Investment Managers Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "INDIA BULLS",
+      "token": null,
+      "members": [
+        {
+          "ticker": "IBULLSLTD",
+          "market": "BSE",
+          "name": "Indiabulls Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "RTNPOWER",
+          "market": "NSE",
+          "name": "RattanIndia Power Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "INDIABULLS GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "DHANI",
+          "market": "NSE",
+          "name": "Dhani Services Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "IEL",
+          "market": "NSE",
+          "name": "Indiabulls Enterprises Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SAMMAANCAP",
+          "market": "NSE",
+          "name": "Sammaan Capital Ltd",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "YAARI",
+          "market": "NSE",
+          "name": "Yaari Digital Integrated Services Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "INDIAN BANK GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "INDBANK",
+          "market": "NSE",
+          "name": "Indbank Merchant Banking Services Limited",
+          "demerger": false,
+          "spin_off": true
+        },
+        {
+          "ticker": "INDBNK",
+          "market": "BSE",
+          "name": "Ind Bank Housing Ltd",
+          "demerger": false,
+          "spin_off": true
+        },
+        {
+          "ticker": "INDIANB",
+          "market": "NSE",
+          "name": "Indian Bank",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "INOX",
+      "token": null,
+      "members": [
+        {
+          "ticker": "GFLLIMITED",
+          "market": "NSE",
+          "name": "GFL Ltd",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "INOXGREEN",
+          "market": "NSE",
+          "name": "Inox Green Energy Services Ltd.",
+          "demerger": false,
+          "spin_off": true
+        },
+        {
+          "ticker": "INOXWIND",
+          "market": "NSE",
+          "name": "Inox Wind Ltd.",
+          "demerger": true,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "ITC GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "ITC",
+          "market": "NSE",
+          "name": "ITC Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "ITCHOTELS",
+          "market": "NSE",
+          "name": "ITC Hotels Ltd",
+          "demerger": true,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "JBM GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "JAYBARMARU",
+          "market": "NSE",
+          "name": "Jay Bharat Maruti Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "JBMA",
+          "market": "NSE",
+          "name": "JBM Auto Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "JINDAL BC",
+      "token": null,
+      "members": [
+        {
+          "ticker": "CONSOFINVT",
+          "market": "NSE",
+          "name": "Consolidated Finvest & Holdings LTd",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "HARYNACAP",
+          "market": "BSE",
+          "name": "Haryana Capfin Limited.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "JINDALPHOT",
+          "market": "NSE",
+          "name": "Jindal Photo Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "JINDALPOLY",
+          "market": "NSE",
+          "name": "Jindal Poly Films Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "JINDHOT",
+          "market": "BSE",
+          "name": "Jindal Hotels Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "JINDRILL",
+          "market": "NSE",
+          "name": "Jindal Drilling & Industries Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "MAHSEAMLES",
+          "market": "NSE",
+          "name": "Maharashtra Seamless Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "UNIVPHOTO",
+          "market": "NSE",
+          "name": "Universus Photo Imagings Ltd",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "JP GOENKA GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "DUNCANENG",
+          "market": "BSE",
+          "name": "Duncan Engineering Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "STARPAPER",
+          "market": "NSE",
+          "name": "Star Paper Mills Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "JUBILANT BHARTIA",
+      "token": null,
+      "members": [
+        {
+          "ticker": "INDIAGLYCO",
+          "market": "NSE",
+          "name": "India Glycols Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "JUBLCPL",
+          "market": "NSE",
+          "name": "Jubilant Agri and Consumer Products Limited",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "JUBLFOOD",
+          "market": "NSE",
+          "name": "Jubilant Foodworks Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "JUBLINGREA",
+          "market": "NSE",
+          "name": "Jubilant Ingrevia Ltd.",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "JUBLPHARMA",
+          "market": "NSE",
+          "name": "Jubilant Pharmova Limited",
+          "demerger": true,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "KALYANI",
+      "token": null,
+      "members": [
+        {
+          "ticker": "AUTOAXLES",
+          "market": "NSE",
+          "name": "Automotive Axles Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "BFINVEST",
+          "market": "NSE",
+          "name": "BF Investment Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "BFUTILITIE",
+          "market": "NSE",
+          "name": "BF Utilities Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "BHARATFORG",
+          "market": "NSE",
+          "name": "Bharat Forge Ltd",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "HIKAL",
+          "market": "NSE",
+          "name": "Hikal Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "KALYANIFRG",
+          "market": "NSE",
+          "name": "Kalyani Forge Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "KICL",
+          "market": "NSE",
+          "name": "Kalyani Investment Co. Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "KSL",
+          "market": "NSE",
+          "name": "Kalyani Steels Ltd",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "KAMDHENU GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "KAMDHENU",
+          "market": "NSE",
+          "name": "Kamdhenu Limited",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "KAMOPAINTS",
+          "market": "NSE",
+          "name": "Kamdhenu Ventures (Komo Paints)",
+          "demerger": true,
+          "spin_off": true
+        }
+      ]
+    },
+    {
+      "name": "KANORIA GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "KANORICHEM",
+          "market": "NSE",
+          "name": "Kanoria Chemicals & Industries Ltd",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "KEIL",
+          "market": "BSE",
+          "name": "Kanoria Energy & Infrastructure Ltd",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "KCP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "KCP",
+          "market": "NSE",
+          "name": "KCP Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "KCPSUGIND",
+          "market": "NSE",
+          "name": "KCP Sugar & Industries Corp. Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "KHAITAN",
+      "token": null,
+      "members": [
+        {
+          "ticker": "KHAICHEM",
+          "market": "NSE",
+          "name": "Khaitan Chemicals & Fertilizers Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "KHAITANLTD",
+          "market": "NSE",
+          "name": "Khaitan India Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "KIRLOSKAR",
+      "token": null,
+      "members": [
+        {
+          "ticker": "KECL",
+          "market": "NSE",
+          "name": "Kirloskar Electric Co. Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "KIRLFER",
+          "market": "BSE",
+          "name": "Kirloskar Ferrous Industries Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "KIRLOSBROS",
+          "market": "NSE",
+          "name": "Kirloskar Brothers Ltd.",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "KIRLOSENG",
+          "market": "NSE",
+          "name": "Kirloskar Oil Engines Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "KIRLOSIND",
+          "market": "NSE",
+          "name": "Kirloskar Industries Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "KIRLPNU",
+          "market": "NSE",
+          "name": "Kirloskar Pneumatic Co. Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "KKALPANA GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "DDEVPLSTIK",
+          "market": "NSE",
+          "name": "Ddev Plastiks Industries Limited",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "KKALPANAIND",
+          "market": "BSE",
+          "name": "Kkalpana Industries (India) Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "KKPLASTICK",
+          "market": "BSE",
+          "name": "Kkalpana Plastick Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "KOTHARI",
+      "token": null,
+      "members": [
+        {
+          "ticker": "GILLANDERS",
+          "market": "NSE",
+          "name": "Gillanders Arbuthnot & Co. Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "KFBL",
+          "market": "BSE",
+          "name": "Kothari Fermentation & Biochem Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "KOTHARIPRO",
+          "market": "NSE",
+          "name": "Kothari Products Limited.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "KOTHARI INDUSTRIAL",
+      "token": null,
+      "members": [
+        {
+          "ticker": "KOTIC",
+          "market": "BSE",
+          "name": "Kothari Industrial Corp. Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "KP GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "KPEL",
+          "market": "NSE",
+          "name": "K.P. Energy Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "KPGEL",
+          "market": "BSE",
+          "name": "KP Green Engineering Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "KPIGREEN",
+          "market": "NSE",
+          "name": "KPI Green Energy Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "LAKSHMI MILLS",
+      "token": null,
+      "members": [
+        {
+          "ticker": "LAKSELEC",
+          "market": "BSE",
+          "name": "Lakshmi Electrical Control Systems Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "LAKSHMIMIL",
+          "market": "BSE",
+          "name": "Lakshmi Mills Co. Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "RAJSREESUG",
+          "market": "NSE",
+          "name": "Rajshree Sugars & Chemicals Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SUPER",
+          "market": "BSE",
+          "name": "Super Sales India Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "LALBHAI",
+      "token": null,
+      "members": [
+        {
+          "ticker": "AMAL",
+          "market": "BSE",
+          "name": "Amal Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "ARVIND",
+          "market": "NSE",
+          "name": "Arvind Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "ARVINDFASN",
+          "market": "NSE",
+          "name": "Arvind Fashions Ltd.",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "ARVSMART",
+          "market": "NSE",
+          "name": "Arvind SmartSpaces Ltd.",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "ATUL",
+          "market": "NSE",
+          "name": "Atul Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "LIC GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "LICHSGFIN",
+          "market": "NSE",
+          "name": "LIC Housing Finance Ltd",
+          "demerger": false,
+          "spin_off": true
+        },
+        {
+          "ticker": "LICI",
+          "market": "NSE",
+          "name": "Life Insurance Corp. of India",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "LKP GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "LKPFIN",
+          "market": "BSE",
+          "name": "LKP Finance Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "LKPSEC",
+          "market": "BSE",
+          "name": "LKP Securities Limited",
+          "demerger": true,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "LLOYDS GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "LLOYDPP.E1",
+          "market": "NSE",
+          "name": "Lloyds Enterprises Limited TEMP",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "LLOYDS",
+          "market": "NSE",
+          "name": "Lloyds Luxuries Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "LLOYDSENGG",
+          "market": "NSE",
+          "name": "Lloyds Engineering Works Ltd",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "LLOYDSME",
+          "market": "NSE",
+          "name": "Lloyds Metals & Energy Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "MAHINDRA & MAHINDRA",
+      "token": null,
+      "members": [
+        {
+          "ticker": "CIEINDIA",
+          "market": "NSE",
+          "name": "CIE Automotive India Ltd",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "M&M",
+          "market": "NSE",
+          "name": "Mahindra & Mahindra Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "M&MFIN",
+          "market": "NSE",
+          "name": "Mahindra & Mahindra Financial Services Ltd.",
+          "demerger": false,
+          "spin_off": true
+        },
+        {
+          "ticker": "MAHEPC",
+          "market": "NSE",
+          "name": "Mahindra EPC Irrigation Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "MAHLIFE",
+          "market": "NSE",
+          "name": "Mahindra Lifespace Developers Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "MAHLOG",
+          "market": "NSE",
+          "name": "Mahindra Logistics Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "MHRIL",
+          "market": "NSE",
+          "name": "Mahindra Holidays & Resorts India Limited",
+          "demerger": false,
+          "spin_off": true
+        },
+        {
+          "ticker": "SWARAJENG",
+          "market": "NSE",
+          "name": "Swaraj Engines Ltd",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "TECHM",
+          "market": "NSE",
+          "name": "Tech Mahindra Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "MANAKSIA GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "MANAKALUCO",
+          "market": "NSE",
+          "name": "Manaksia Aluminium Company Ltd",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "MANAKCOAT",
+          "market": "NSE",
+          "name": "Manaksia Coated Metals & Industries Ltd",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "MANAKSIA",
+          "market": "NSE",
+          "name": "Manaksia Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "MANAKSTEEL",
+          "market": "NSE",
+          "name": "Manaksia Steels Ltd",
+          "demerger": true,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "MARICO",
+      "token": null,
+      "members": [
+        {
+          "ticker": "KAYA",
+          "market": "NSE",
+          "name": "Kaya Limited",
+          "demerger": false,
+          "spin_off": true
+        },
+        {
+          "ticker": "MARICO",
+          "market": "NSE",
+          "name": "Marico Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "MAX",
+      "token": null,
+      "members": [
+        {
+          "ticker": "LUMAXIND",
+          "market": "NSE",
+          "name": "Lumax Industries Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "LUMAXTECH",
+          "market": "NSE",
+          "name": "Lumax Auto Technologies Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "OMAXE",
+          "market": "NSE",
+          "name": "Omaxe Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "MOLD-TEK GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "MOLDTECH",
+          "market": "NSE",
+          "name": "Mold-Tek Technologies Limited",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "MOLDTKPAC",
+          "market": "NSE",
+          "name": "Mold Tek Packaging Ltd",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "MURUGAPPA CHETTIAR",
+      "token": null,
+      "members": [
+        {
+          "ticker": "CARBORUNIV",
+          "market": "NSE",
+          "name": "Carborundum Universal Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "CHOLAFIN",
+          "market": "NSE",
+          "name": "Cholamandalam Investment and Finance Co. Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "CHOLAHLDNG",
+          "market": "NSE",
+          "name": "Cholamandalam Financial Holdings Ltd",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "COROENGG",
+          "market": "BSE",
+          "name": "Coromandel Engineering Co. Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "COROMANDEL",
+          "market": "NSE",
+          "name": "Coromandel International Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "EIDPARRY",
+          "market": "NSE",
+          "name": "E.I.D.-Parry (India) Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SHANTIGEAR",
+          "market": "NSE",
+          "name": "Shanthi Gears Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "TIINDIA",
+          "market": "NSE",
+          "name": "Tube Investments of India Limited",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "WENDT",
+          "market": "NSE",
+          "name": "WENDT India Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "MUTHOOT",
+      "token": null,
+      "members": [
+        {
+          "ticker": "MUTHOOTCAP",
+          "market": "NSE",
+          "name": "Muthoot Capital Services Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "MUTHOOTFIN",
+          "market": "NSE",
+          "name": "Muthoot Finance Ltd",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "MUTHOOTMF",
+          "market": "NSE",
+          "name": "Muthoot Microfin Ltd",
+          "demerger": false,
+          "spin_off": true
+        }
+      ]
+    },
+    {
+      "name": "NAGARJUNA",
+      "token": null,
+      "members": [
+        {
+          "ticker": "NACLIND",
+          "market": "NSE",
+          "name": "NACL Industries Ltd",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "NAGAFERT",
+          "market": "NSE",
+          "name": "Nagarjuna Fertilizers & Chemicals Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "RAFL",
+          "market": "BSE",
+          "name": "Raghuvansh Agrofarms Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "NCL",
+      "token": null,
+      "members": [
+        {
+          "ticker": "KANANIIND",
+          "market": "NSE",
+          "name": "Kanani Industries Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "NCLIND",
+          "market": "NSE",
+          "name": "NCL Industries Ltd",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "NCLRESE",
+          "market": "BSE",
+          "name": "NCL Research & Financial Services Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "NIIT GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "NIITLTD",
+          "market": "NSE",
+          "name": "NIIT Limited",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "NIITMTS",
+          "market": "NSE",
+          "name": "NIIT Learning Systems Ltd",
+          "demerger": true,
+          "spin_off": true
+        }
+      ]
+    },
+    {
+      "name": "NMDC GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "NMDC",
+          "market": "NSE",
+          "name": "NMDC Limited",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "NSLNISP",
+          "market": "NSE",
+          "name": "NMDC Steel Limited",
+          "demerger": true,
+          "spin_off": true
+        }
+      ]
+    },
+    {
+      "name": "NRB GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "NIBL",
+          "market": "NSE",
+          "name": "NRB Industrial Bearings Ltd.",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "NRBBEARING",
+          "market": "NSE",
+          "name": "NRB Bearings Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "NTPC GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "NTPC",
+          "market": "NSE",
+          "name": "NTPC Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "NTPCGREEN",
+          "market": "NSE",
+          "name": "NTPC Green Energy Limited",
+          "demerger": false,
+          "spin_off": true
+        }
+      ]
+    },
+    {
+      "name": "OBEROI MS",
+      "token": null,
+      "members": [
+        {
+          "ticker": "EIHOTEL",
+          "market": "NSE",
+          "name": "EIH Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "OM PRAKASH JINDAL",
+      "token": null,
+      "members": [
+        {
+          "ticker": "BIOGEN",
+          "market": "BSE",
+          "name": "Biogen Pharmachem Industries Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "HEXATRADEX",
+          "market": "NSE",
+          "name": "Hexa Tradex Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "HISARMETAL",
+          "market": "NSE",
+          "name": "Hisar Metal Industries Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "JINDALSAW",
+          "market": "NSE",
+          "name": "Jindal Saw Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "JINDALSTEL",
+          "market": "NSE",
+          "name": "Jindal Steel Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "JITFINFRA",
+          "market": "NSE",
+          "name": "JITF Infralogistics Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "JSL",
+          "market": "NSE",
+          "name": "Jindal Stainless Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "JSWENERGY",
+          "market": "NSE",
+          "name": "JSW Energy Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "JSWHL",
+          "market": "NSE",
+          "name": "JSW Holdings Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "JSWSTEEL",
+          "market": "NSE",
+          "name": "JSW Steel Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "NSIL",
+          "market": "NSE",
+          "name": "Nalwa Sons Investments Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SHALPAINTS",
+          "market": "NSE",
+          "name": "Shalimar Paints Ltd",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SHIVACEM",
+          "market": "BSE",
+          "name": "Shiva Cement Ltd",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "PAREKH",
+      "token": null,
+      "members": [
+        {
+          "ticker": "PIDILITIND",
+          "market": "NSE",
+          "name": "Pidilite Industries Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "VINYLINDIA",
+          "market": "NSE",
+          "name": "Vinyl Chemicals (India) Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "PASUPATI GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "PASUFIN",
+          "market": "BSE",
+          "name": "Pasupati Fincap Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "PASUPTAC",
+          "market": "NSE",
+          "name": "Pasupati Acrylon Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "PASUSPG",
+          "market": "BSE",
+          "name": "Pasupati Spinning and Weaving Mills Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "PATANJALI",
+      "token": null,
+      "members": [
+        {
+          "ticker": "PATANJALI",
+          "market": "NSE",
+          "name": "Patanjali Foods Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "PEARL",
+      "token": null,
+      "members": [
+        {
+          "ticker": "PEARLPOLY",
+          "market": "NSE",
+          "name": "Pearl Polymers Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "PIGL",
+          "market": "NSE",
+          "name": "Power & Instrumentation (Gujarat) Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "PIRAMAL AJAY",
+      "token": null,
+      "members": [
+        {
+          "ticker": "DELTAMAGNT",
+          "market": "NSE",
+          "name": "Delta Manufacturing Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "MORARJEE",
+          "market": "NSE",
+          "name": "Morarjee Textiles Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "PEL",
+          "market": "NSE",
+          "name": "Piramal Enterprises Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "PENINLAND",
+          "market": "NSE",
+          "name": "Peninsula Land Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "PPLPHARMA",
+          "market": "NSE",
+          "name": "Piramal Pharma Limited",
+          "demerger": true,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "PNB GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "PNB",
+          "market": "NSE",
+          "name": "Punjab National Bank",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "PNBGILTS",
+          "market": "NSE",
+          "name": "PNB Gilts Limited",
+          "demerger": false,
+          "spin_off": true
+        },
+        {
+          "ticker": "PNBHOUSING",
+          "market": "NSE",
+          "name": "PNB Housing Finance Limited",
+          "demerger": false,
+          "spin_off": true
+        }
+      ]
+    },
+    {
+      "name": "PRIYADARSHINI",
+      "token": null,
+      "members": [
+        {
+          "ticker": "RAIN",
+          "market": "NSE",
+          "name": "Rain Industries Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SAGCEM",
+          "market": "NSE",
+          "name": "Sagar Cements Ltd",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "PTC INDIA GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "PFS",
+          "market": "NSE",
+          "name": "PTC India Financial Services Limited",
+          "demerger": false,
+          "spin_off": true
+        },
+        {
+          "ticker": "PTC",
+          "market": "NSE",
+          "name": "PTC India Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "RADICO",
+      "token": null,
+      "members": [
+        {
+          "ticker": "RADICO",
+          "market": "NSE",
+          "name": "Radico Khaitan Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "RAJJU SHROFF",
+      "token": null,
+      "members": [
+        {
+          "ticker": "UNIENTER",
+          "market": "NSE",
+          "name": "Uniphos Enterprises Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "RAMCO",
+      "token": null,
+      "members": [
+        {
+          "ticker": "RAJPALAYAM",
+          "market": "BSE",
+          "name": "Rajapalayam Mills Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "RAMCOCEM",
+          "market": "NSE",
+          "name": "Ramco Cements Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "RAMCOIND",
+          "market": "NSE",
+          "name": "Ramco Industries Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "RAMCOSYS",
+          "market": "NSE",
+          "name": "Ramco Systems Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "RANE",
+      "token": null,
+      "members": [
+        {
+          "ticker": "RANEHOLDIN",
+          "market": "NSE",
+          "name": "Rane Holdings Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "RML",
+          "market": "NSE",
+          "name": "Rane (Madras) Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "RAUNAQ SINGH",
+      "token": null,
+      "members": [
+        {
+          "ticker": "ARTEMISMED",
+          "market": "NSE",
+          "name": "Artemis Medicare Services Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "BHARATGEAR",
+          "market": "NSE",
+          "name": "Bharat Gears Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "PTL",
+          "market": "NSE",
+          "name": "PTL Enterprises Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "RACLGEAR",
+          "market": "NSE",
+          "name": "RACL Geartech Ltd",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "RAYMOND GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "RAYMOND",
+          "market": "NSE",
+          "name": "Raymond Limited",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "RAYMONDLSL",
+          "market": "NSE",
+          "name": "Raymond Lifestyle Limited",
+          "demerger": true,
+          "spin_off": true
+        },
+        {
+          "ticker": "RAYMONDREL",
+          "market": "NSE",
+          "name": "Raymond Realty Limited",
+          "demerger": true,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "RELIANCE GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "DEN",
+          "market": "NSE",
+          "name": "DEN Networks Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "HATHWAY",
+          "market": "NSE",
+          "name": "Hathway Cable & Datacom Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "HATHWAYB",
+          "market": "BSE",
+          "name": "Hathway Bhawani Cabletel & Datacom Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "NETWORK18",
+          "market": "NSE",
+          "name": "Network18 Media & Investments Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "RELIANCE",
+          "market": "NSE",
+          "name": "Reliance Industries Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "RIIL",
+          "market": "NSE",
+          "name": "Reliance Industrial Infrastructure Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "ROSSELL GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "ROSSELLIND",
+          "market": "NSE",
+          "name": "Rossell India Limited",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "ROSSTECH",
+          "market": "NSE",
+          "name": "Rossell Techsys Limited",
+          "demerger": true,
+          "spin_off": true
+        }
+      ]
+    },
+    {
+      "name": "RPG ENTERPRISES",
+      "token": null,
+      "members": [
+        {
+          "ticker": "CEATLTD",
+          "market": "NSE",
+          "name": "CEAT Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "CESC",
+          "market": "NSE",
+          "name": "CESC Ltd",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "FGP",
+          "market": "BSE",
+          "name": "FGP Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "FSL",
+          "market": "NSE",
+          "name": "Firstsource Solutions Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "HARRMALAYA",
+          "market": "NSE",
+          "name": "Harrisons Malayalam Ltd",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "KEC",
+          "market": "NSE",
+          "name": "KEC International Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "PCBL",
+          "market": "NSE",
+          "name": "PCBL Chemical Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "RPGLIFE",
+          "market": "NSE",
+          "name": "RPG Life Sciences Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "RPSGVENT",
+          "market": "NSE",
+          "name": "RPSG Ventures Limited",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "SAREGAMA",
+          "market": "NSE",
+          "name": "Saregama India Limited",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "SPENCERS",
+          "market": "NSE",
+          "name": "Spencer's Retail Ltd.",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "STEL",
+          "market": "NSE",
+          "name": "STEL Holdings Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SUMMITSEC",
+          "market": "NSE",
+          "name": "Summit Securities Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "ZENSARTECH",
+          "market": "NSE",
+          "name": "Zensar Technologies Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "RUCHI",
+      "token": null,
+      "members": [
+        {
+          "ticker": "ANIKINDS",
+          "market": "NSE",
+          "name": "Anik Industries Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "RUCHINFRA",
+          "market": "NSE",
+          "name": "Ruchi Infrastructure Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "SADBHAV GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "SADBHAV",
+          "market": "NSE",
+          "name": "Sadbhav Engineering Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SADBHIN",
+          "market": "NSE",
+          "name": "Sadbhav Infrastructure Project Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "SAKTHI",
+      "token": null,
+      "members": [
+        {
+          "ticker": "BANARISUG",
+          "market": "NSE",
+          "name": "Bannari Amman Sugars Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "BASML",
+          "market": "NSE",
+          "name": "Bannari Amman Spinning Mills Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SAKHTISUG",
+          "market": "NSE",
+          "name": "Sakthi Sugars Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SAKTHIFIN",
+          "market": "BSE",
+          "name": "Sakthi Finance Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SHIVATEX",
+          "market": "NSE",
+          "name": "Shiva Texyarn Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "SANJAY GUPTA",
+      "token": null,
+      "members": [
+        {
+          "ticker": "APOLLOPIPE",
+          "market": "NSE",
+          "name": "Apollo Pipes Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "SBI GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "SBICARD",
+          "market": "NSE",
+          "name": "SBI Cards & Payment Services Ltd",
+          "demerger": false,
+          "spin_off": true
+        },
+        {
+          "ticker": "SBILIFE",
+          "market": "NSE",
+          "name": "SBI Life Insurance Co. Ltd.",
+          "demerger": false,
+          "spin_off": true
+        },
+        {
+          "ticker": "SBIN",
+          "market": "NSE",
+          "name": "State Bank of India",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "SHAPOORJI PALLONJI",
+      "token": null,
+      "members": [
+        {
+          "ticker": "FORBESCO",
+          "market": "BSE",
+          "name": "Forbes & Co. Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "GOKAKTEX",
+          "market": "BSE",
+          "name": "Gokak Textiles Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "MAKS",
+          "market": "NSE",
+          "name": "Maks Energy Solutions India Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SWSOLAR",
+          "market": "NSE",
+          "name": "Sterling And Wilson Renewable Energy Limited",
+          "demerger": false,
+          "spin_off": true
+        },
+        {
+          "ticker": "VASCONEQ",
+          "market": "NSE",
+          "name": "Vascon Engineers Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "SHIV PRAKASH MITTAL",
+      "token": null,
+      "members": [
+        {
+          "ticker": "GREENPANEL",
+          "market": "NSE",
+          "name": "Greenpanel Industries Ltd",
+          "demerger": false,
+          "spin_off": true
+        },
+        {
+          "ticker": "GREENPLY",
+          "market": "NSE",
+          "name": "Greenply Industries Ltd",
+          "demerger": true,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "SHRIRAM TRANSPORT",
+      "token": null,
+      "members": [
+        {
+          "ticker": "SEPC",
+          "market": "NSE",
+          "name": "SEPC Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SILPO",
+          "market": "NSE",
+          "name": "SILPO Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SRAMSET",
+          "market": "BSE",
+          "name": "Shriram Asset Management Co. Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "SIYARAM PODDAR",
+      "token": null,
+      "members": [
+        {
+          "ticker": "SIYSIL",
+          "market": "NSE",
+          "name": "Siyaram Silk Mills Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "SMS GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "SMSLIFE",
+          "market": "NSE",
+          "name": "SMS Lifesciences India Ltd.",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "SMSPHARMA",
+          "market": "NSE",
+          "name": "SMS Pharmaceuticals Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "SOMANY",
+      "token": null,
+      "members": [
+        {
+          "ticker": "AGI",
+          "market": "NSE",
+          "name": "AGI Greenpac Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "HINDWAREAP",
+          "market": "NSE",
+          "name": "Hindware Home Innovation Limited",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "ORIENTBELL",
+          "market": "NSE",
+          "name": "Orient Bell Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SOMANYCERA",
+          "market": "NSE",
+          "name": "Somany Ceramics Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SOMATEX",
+          "market": "NSE",
+          "name": "Soma Textiles & Industries Ltd",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "SUN PHARMA",
+      "token": null,
+      "members": [
+        {
+          "ticker": "ZENOTECH",
+          "market": "BSE",
+          "name": "Zenotech Laboratories Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "SURANA UDYOG",
+      "token": null,
+      "members": [
+        {
+          "ticker": "SURANASOL",
+          "market": "NSE",
+          "name": "Surana Solar Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SURANAT&P",
+          "market": "NSE",
+          "name": "Surana Telecom & Power Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "TAPARIA",
+      "token": null,
+      "members": [
+        {
+          "ticker": "PERMAGN",
+          "market": "BSE",
+          "name": "Permanent Magnets Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "TATA",
+      "token": null,
+      "members": [
+        {
+          "ticker": "ACGL",
+          "market": "BSE",
+          "name": "Automobile Corporation of Goa Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "ASAL",
+          "market": "NSE",
+          "name": "Automotive Stampings & Assemblies Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "BENARAS",
+          "market": "BSE",
+          "name": "Benares Hotels Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "INDHOTEL",
+          "market": "NSE",
+          "name": "Indian Hotels Co. Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "NELCO",
+          "market": "NSE",
+          "name": "Nelco Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "ORIENTHOT",
+          "market": "NSE",
+          "name": "Oriental Hotels Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "RALLIS",
+          "market": "NSE",
+          "name": "Rallis India Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "TATACHEM",
+          "market": "NSE",
+          "name": "Tata Chemicals Limited",
+          "demerger": true,
+          "spin_off": false
+        },
+        {
+          "ticker": "TATACOMM",
+          "market": "NSE",
+          "name": "Tata Communications Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "TATACONSUM",
+          "market": "NSE",
+          "name": "Tata Consumer Products Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "TATAELXSI",
+          "market": "NSE",
+          "name": "Tata Elxsi Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "TATAINVEST",
+          "market": "NSE",
+          "name": "Tata Investment Corporation Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "TATAMOTORS",
+          "market": "NSE",
+          "name": "Tata Motors Limited",
+          "demerger": false,
+          "spin_off": true
+        },
+        {
+          "ticker": "TATAPOWER",
+          "market": "NSE",
+          "name": "Tata Power Company Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "TATASTEEL",
+          "market": "NSE",
+          "name": "Tata Steel Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "TCS",
+          "market": "NSE",
+          "name": "Tata Consultancy Services Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "TEJASNET",
+          "market": "NSE",
+          "name": "Tejas Networks Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "TITAN",
+          "market": "NSE",
+          "name": "Titan Company Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "TRENT",
+          "market": "NSE",
+          "name": "Trent Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "TRF",
+          "market": "NSE",
+          "name": "TRF Limited.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "TTML",
+          "market": "NSE",
+          "name": "Tata Teleservices (Maharashtra) Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "VOLTAS",
+          "market": "NSE",
+          "name": "Voltas Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "TCI BHORUKA",
+      "token": null,
+      "members": [
+        {
+          "ticker": "TCIIND",
+          "market": "BSE",
+          "name": "TCI Industries Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "TRANSCOR",
+          "market": "BSE",
+          "name": "Transcorp International Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "THAPAR",
+      "token": null,
+      "members": [
+        {
+          "ticker": "GREAVESCOT",
+          "market": "NSE",
+          "name": "Greaves Cotton Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SPTRSHI",
+          "market": "BSE",
+          "name": "Saptarishi Agro Industries Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "THOMAS COOK / MIC",
+      "token": null,
+      "members": [
+        {
+          "ticker": "QUESS",
+          "market": "NSE",
+          "name": "Quess Corp. Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "THOMASCOOK",
+          "market": "NSE",
+          "name": "Thomas Cook (India) Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "TIMES OF INDIA",
+      "token": null,
+      "members": [
+        {
+          "ticker": "ENIL",
+          "market": "NSE",
+          "name": "Entertainment Network (India) Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "TEAMGTY",
+          "market": "NSE",
+          "name": "Team India Guaranty Ltd",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "TIPS GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "TIPSFILMS",
+          "market": "NSE",
+          "name": "Tips Films Limited",
+          "demerger": true,
+          "spin_off": true
+        },
+        {
+          "ticker": "TIPSMUSIC",
+          "market": "NSE",
+          "name": "Tips Music Limited",
+          "demerger": true,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "TORRENT GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "TORNTPHARM",
+          "market": "NSE",
+          "name": "Torrent Pharmaceuticals Ltd",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "TORNTPOWER",
+          "market": "NSE",
+          "name": "Torrent Power Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "TRIDENT",
+      "token": null,
+      "members": [
+        {
+          "ticker": "IOLCP",
+          "market": "NSE",
+          "name": "IOL Chemicals & Pharmaceuticals Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "TTK",
+      "token": null,
+      "members": [
+        {
+          "ticker": "TTKHLTCARE",
+          "market": "NSE",
+          "name": "TTK Healthcare Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "TTKPRESTIG",
+          "market": "NSE",
+          "name": "TTK Prestige Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "TVS IYENGAR",
+      "token": null,
+      "members": [
+        {
+          "ticker": "AASTAFIN",
+          "market": "BSE",
+          "name": "Aastamangalam Finance Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "IMPAL",
+          "market": "NSE",
+          "name": "India Motor Parts & Accessories Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "INDNIPPON",
+          "market": "NSE",
+          "name": "India Nippon Electricals Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SUNDARMFIN",
+          "market": "NSE",
+          "name": "Sundaram Finance Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SUNDRMBRAK",
+          "market": "NSE",
+          "name": "Sundaram Brake Linings Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "SUNDRMFAST",
+          "market": "NSE",
+          "name": "Sundram Fasteners Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "TVSELECT",
+          "market": "NSE",
+          "name": "TVS Electronics Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "TVSMOTOR",
+          "market": "NSE",
+          "name": "TVS Motor Company Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "TVSSRICHAK",
+          "market": "NSE",
+          "name": "TVS Srichakra Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "WHEELS",
+          "market": "NSE",
+          "name": "Wheels India Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "VARDHMAN",
+      "token": null,
+      "members": [
+        {
+          "ticker": "VHL",
+          "market": "NSE",
+          "name": "Vardhman Holdings Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "VSSL",
+          "market": "NSE",
+          "name": "Vardhman Special Steels Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "WADIA",
+      "token": null,
+      "members": [
+        {
+          "ticker": "BBTC",
+          "market": "NSE",
+          "name": "Bombay Burmah Trading Corp. Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "BOMDYEING",
+          "market": "NSE",
+          "name": "Bombay Dyeing & Manufacturing Co. Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "BRITANNIA",
+          "market": "NSE",
+          "name": "Britannia Industries Ltd",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "WELSPUN",
+      "token": null,
+      "members": [
+        {
+          "ticker": "WELENT",
+          "market": "NSE",
+          "name": "Welspun Enterprises Ltd.",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "WELINV",
+          "market": "NSE",
+          "name": "Welspun Investments & Commercials Ltd.",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "WELSPUN GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "WELCORP",
+          "market": "NSE",
+          "name": "Welspun Corp Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "WELSPLSOL",
+          "market": "BSE",
+          "name": "Welspun Specialty Solutions Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "WELSPUNLIV",
+          "market": "NSE",
+          "name": "Welspun Living Limited",
+          "demerger": false,
+          "spin_off": false
+        }
+      ]
+    },
+    {
+      "name": "ZYDUS GROUP",
+      "token": null,
+      "members": [
+        {
+          "ticker": "ZYDUSLIFE",
+          "market": "NSE",
+          "name": "Zydus Lifesciences Limited",
+          "demerger": false,
+          "spin_off": false
+        },
+        {
+          "ticker": "ZYDUSWELL",
+          "market": "NSE",
+          "name": "Zydus Wellness Limited",
+          "demerger": true,
+          "spin_off": false
+        }
+      ]
+    }
+  ]
+}

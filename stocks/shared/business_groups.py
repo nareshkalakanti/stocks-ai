@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pandas as pd
 
+from stocks.core.config import BASE_DIR
 from stocks.core.database import (
     business_groups_count,
+    clear_all_business_groups,
     load_all_business_group_members,
+    save_business_group,
     upsert_business_group,
 )
 from stocks.core.text_utils import safe_str
 from stocks.shared.corp_tags import clear_corp_tags_cache
+
+_BUSINESS_GROUPS_SEED_PATH = BASE_DIR / "data" / "business_groups_seed.json"
 
 
 def _member(
@@ -111,10 +119,62 @@ def sync_business_groups_from_demergers(*, refresh_demergers: bool = False) -> i
     return saved
 
 
+def seed_default_business_groups(*, force: bool = False) -> int:
+    """Load bundled group definitions when SQLite is empty (or replace all when force=True)."""
+    if not _BUSINESS_GROUPS_SEED_PATH.is_file():
+        return business_groups_count()
+    if not force and business_groups_count() > 0:
+        return business_groups_count()
+
+    try:
+        payload = json.loads(_BUSINESS_GROUPS_SEED_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return business_groups_count()
+
+    groups = payload.get("groups")
+    if not isinstance(groups, list) or not groups:
+        return business_groups_count()
+
+    if force:
+        clear_all_business_groups()
+
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        name = safe_str(group.get("name"))
+        members = group.get("members")
+        if not name or not isinstance(members, list) or not members:
+            continue
+        token = safe_str(group.get("token")).upper() or None
+        normalized = [
+            _member(
+                m.get("ticker", ""),
+                name=m.get("name"),
+                market=safe_str(m.get("market")).upper() or "NSE",
+                demerger=bool(m.get("demerger")),
+                spin_off=bool(m.get("spin_off")),
+            )
+            for m in members
+            if isinstance(m, dict) and safe_str(m.get("ticker"))
+        ]
+        if not normalized:
+            continue
+        if token:
+            upsert_business_group(name, normalized, token=token)
+        else:
+            save_business_group(name, normalized, token=token)
+
+    clear_corp_tags_cache()
+    return business_groups_count()
+
+
 def ensure_business_groups(*, seed_if_empty: bool = True) -> int:
-    """Auto-sync from demerger feed when no groups are saved yet."""
+    """Seed bundled groups, else auto-sync from demerger feed when DB is empty."""
     if not seed_if_empty or business_groups_count() > 0:
         return business_groups_count()
+    seeded = seed_default_business_groups()
+    if seeded > 0:
+        return seeded
     sync_business_groups_from_demergers()
     return business_groups_count()
 
