@@ -139,6 +139,28 @@ _IV_CSS = """
     background: #f8fafc;
     border-bottom: 1px solid var(--border);
   }
+  table.iv.iv-stocks th.sortable {
+    cursor: pointer;
+    user-select: none;
+  }
+  table.iv.iv-stocks th.sortable:hover { background: #f1f5f9; }
+  table.iv.iv-stocks th .th-inner {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  table.iv.iv-stocks th.num .th-inner { justify-content: flex-end; width: 100%; }
+  table.iv.iv-stocks th .sort-ind {
+    color: #94a3b8;
+    font-size: 10px;
+    opacity: 0.75;
+    font-weight: 600;
+  }
+  table.iv.iv-stocks th .sort-ind.active {
+    color: #2563eb;
+    opacity: 1;
+    font-weight: 700;
+  }
   table.iv.iv-stocks td {
     padding: 11px 12px;
     font-size: 13px;
@@ -403,10 +425,61 @@ _IV_CSS = """
     border-bottom: 1px solid #e2e8f0;
     font-size: 11px;
     color: var(--muted);
+    flex-wrap: wrap;
   }
   .iv-expand-toolbar strong {
     color: var(--text);
     font-size: 12px;
+  }
+  .ht-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin: 0 0 12px;
+    padding: 8px 10px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+  }
+  .ht-filter-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .ht-filter-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    margin-right: 2px;
+  }
+  .ht-filter-btn {
+    padding: 5px 9px;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    color: #64748b;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .ht-filter-btn:hover { background: #f1f5f9; border-color: #cbd5e1; }
+  .ht-filter-btn.on {
+    background: #2563eb;
+    color: #fff;
+    border-color: #2563eb;
+  }
+  .ht-filter-btn.fpe.on { background: #0f766e; border-color: #0f766e; }
+  .ht-filter-btn.pcf.on { background: #b45309; border-color: #b45309; }
+  .ht-filter-count {
+    margin-left: auto;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
   }
   .iv-expand-scroll {
     max-height: min(58vh, 520px);
@@ -923,6 +996,25 @@ def build_headwind_drilldown_html(
   <div class="iv-title">H&T</div>
   <h1 class="iv-h1">{html.escape(title)}</h1>
   {meta_html}
+  <div class="ht-filter-bar" id="ht-filter-bar">
+    <div class="ht-filter-group" id="ht-fpe-filter">
+      <span class="ht-filter-label">Fwd PE</span>
+      <button type="button" class="ht-filter-btn fpe on" data-max="">All</button>
+      <button type="button" class="ht-filter-btn fpe" data-max="15">≤15</button>
+      <button type="button" class="ht-filter-btn fpe" data-max="20">≤20</button>
+      <button type="button" class="ht-filter-btn fpe" data-max="30">≤30</button>
+      <button type="button" class="ht-filter-btn fpe" data-max="40">≤40</button>
+    </div>
+    <div class="ht-filter-group" id="ht-pcf-filter">
+      <span class="ht-filter-label">P/CF</span>
+      <button type="button" class="ht-filter-btn pcf on" data-max="">All</button>
+      <button type="button" class="ht-filter-btn pcf" data-max="8">≤8</button>
+      <button type="button" class="ht-filter-btn pcf" data-max="10">≤10</button>
+      <button type="button" class="ht-filter-btn pcf" data-max="15">≤15</button>
+      <button type="button" class="ht-filter-btn pcf" data-max="20">≤20</button>
+    </div>
+    <div class="ht-filter-count" id="ht-filter-count"></div>
+  </div>
   <table class="iv" id="hw-table">
     <thead><tr>
       <th>Sector</th><th class="num">Stocks</th><th>Signal</th>
@@ -941,6 +1033,23 @@ const STOCK_COLS = 11;
 const STOCK_PAGE = 60;
 let expandedSector = null;
 const stockPageLimits = {{}};
+let fpeMax = null;
+let pcfMax = null;
+let stockSortCol = "total_score";
+let stockSortDir = -1;
+const STOCK_SORT_COLS = [
+  {{id:"rank", label:"#", key:"rank", cls:"col-rank", sortable:false}},
+  {{id:"company", label:"Company", key:"name", cls:"col-company", sortable:true}},
+  {{id:"industry", label:"Industry", key:"industry", cls:"col-industry", sortable:true}},
+  {{id:"market_cap_cr", label:"Mkt cap", key:"market_cap_cr", cls:"num col-mcap", sortable:true}},
+  {{id:"sales_growth_3y", label:"Growth 3Y", key:"sales_growth_3y", cls:"num col-growth", sortable:true}},
+  {{id:"roce_3y", label:"ROCE 3Y", key:"roce_3y", cls:"num col-roce", sortable:true}},
+  {{id:"pb", label:"P/B", key:"pb", cls:"num col-pb", sortable:true}},
+  {{id:"pe_ratio", label:"PE", key:"pe_ratio", cls:"num col-pe", sortable:true, title:"Option A: 4+ qtrs → sum last 4 EPS (TTM); 1–3 → sum available; else Yahoo trailingPE"}},
+  {{id:"forward_pe", label:"Fwd PE", key:"forward_pe", cls:"num col-fpe", sortable:true, title:"Option B: price ÷ (latest quarter EPS × 4)"}},
+  {{id:"pcf", label:"P/CF", key:"pcf", cls:"num col-pcf", sortable:true, title:"Price ÷ operating cash flow per share"}},
+  {{id:"total_score", label:"Score", key:"total_score", cls:"num col-score", sortable:true}},
+];
 
 {CORP_TAGS_JS}
 
@@ -1027,12 +1136,139 @@ function fmtIndustry(s) {{
   const label = String(s.industry || s.sector || "").trim();
   return label ? esc(label) : '<span class="na-cell">—</span>';
 }}
+function passesValuationFilters(s) {{
+  if (fpeMax !== null) {{
+    const fpe = num(s.forward_pe);
+    if (fpe === null || fpe >= 500 || fpe > fpeMax) return false;
+  }}
+  if (pcfMax !== null) {{
+    const pcf = num(s.pcf);
+    if (pcf === null || pcf <= 0 || pcf > pcfMax) return false;
+  }}
+  return true;
+}}
+function filteredStocks(sector) {{
+  return (STOCKS[sector] || []).filter(passesValuationFilters);
+}}
+function sortKeyValue(s, key) {{
+  if (key === "name") {{
+    return String(displayName(s) || s.ticker || "").toLowerCase();
+  }}
+  if (key === "industry") {{
+    return String(s.industry || s.sector || "").toLowerCase();
+  }}
+  let n = num(s[key]);
+  if (key === "forward_pe" && n !== null && n >= 500) n = null;
+  if (key === "pcf" && n !== null && n <= 0) n = null;
+  return n;
+}}
+function compareStocks(a, b) {{
+  const col = STOCK_SORT_COLS.find(c => c.id === stockSortCol) || STOCK_SORT_COLS[STOCK_SORT_COLS.length - 1];
+  const key = col.key;
+  const av = sortKeyValue(a, key);
+  const bv = sortKeyValue(b, key);
+  const aNull = av === null || av === "";
+  const bNull = bv === null || bv === "";
+  if (aNull && bNull) return 0;
+  if (aNull) return 1;
+  if (bNull) return -1;
+  if (typeof av === "string" || typeof bv === "string") {{
+    return String(av).localeCompare(String(bv)) * stockSortDir;
+  }}
+  return (av - bv) * stockSortDir;
+}}
+function sortedStocks(sector) {{
+  return filteredStocks(sector).slice().sort(compareStocks);
+}}
+function setStockSort(colId) {{
+  const col = STOCK_SORT_COLS.find(c => c.id === colId);
+  if (!col || !col.sortable) return;
+  if (stockSortCol === colId) stockSortDir *= -1;
+  else {{
+    stockSortCol = colId;
+    stockSortDir = (colId === "company" || colId === "industry") ? 1 : -1;
+  }}
+  Object.keys(stockPageLimits).forEach(k => delete stockPageLimits[k]);
+  render();
+}}
+function renderStockHead(thead) {{
+  thead.innerHTML = "";
+  const tr = document.createElement("tr");
+  STOCK_SORT_COLS.forEach(c => {{
+    const th = document.createElement("th");
+    th.className = c.cls + (c.sortable ? " sortable" : "");
+    if (c.title) th.title = c.title;
+    if (c.sortable) {{
+      const active = stockSortCol === c.id;
+      const arrow = active ? (stockSortDir < 0 ? "↓" : "↑") : "↕";
+      th.innerHTML =
+        `<span class="th-inner"><span class="th-label">${{c.label}}</span>` +
+        `<span class="sort-ind${{active ? " active" : ""}}">${{arrow}}</span></span>`;
+      th.onclick = (ev) => {{
+        ev.stopPropagation();
+        setStockSort(c.id);
+      }};
+    }} else {{
+      th.textContent = c.label;
+    }}
+    tr.appendChild(th);
+  }});
+  thead.appendChild(tr);
+}}
+function updateFilterCount() {{
+  let shown = 0;
+  let total = 0;
+  Object.keys(STOCKS).forEach(sec => {{
+    const all = STOCKS[sec] || [];
+    total += all.length;
+    shown += all.filter(passesValuationFilters).length;
+  }});
+  const el = document.getElementById("ht-filter-count");
+  if (!el) return;
+  if (fpeMax === null && pcfMax === null) {{
+    el.textContent = `${{total}} stocks`;
+  }} else {{
+    const bits = [];
+    if (fpeMax !== null) bits.push("Fwd PE ≤" + fpeMax);
+    if (pcfMax !== null) bits.push("P/CF ≤" + pcfMax);
+    el.textContent = `${{shown}} of ${{total}} · ${{bits.join(" · ")}}`;
+  }}
+}}
+function setFpeMax(val) {{
+  fpeMax = (val === "" || val === null) ? null : Number(val);
+  document.querySelectorAll("#ht-fpe-filter .ht-filter-btn").forEach(btn => {{
+    const m = btn.dataset.max || "";
+    const on = fpeMax === null ? m === "" : m !== "" && Number(m) === fpeMax;
+    btn.classList.toggle("on", on);
+  }});
+  Object.keys(stockPageLimits).forEach(k => delete stockPageLimits[k]);
+  render();
+}}
+function setPcfMax(val) {{
+  pcfMax = (val === "" || val === null) ? null : Number(val);
+  document.querySelectorAll("#ht-pcf-filter .ht-filter-btn").forEach(btn => {{
+    const m = btn.dataset.max || "";
+    const on = pcfMax === null ? m === "" : m !== "" && Number(m) === pcfMax;
+    btn.classList.toggle("on", on);
+  }});
+  Object.keys(stockPageLimits).forEach(k => delete stockPageLimits[k]);
+  render();
+}}
+document.querySelectorAll("#ht-fpe-filter .ht-filter-btn").forEach(btn => {{
+  btn.onclick = () => setFpeMax(btn.dataset.max || "");
+}});
+document.querySelectorAll("#ht-pcf-filter .ht-filter-btn").forEach(btn => {{
+  btn.onclick = () => setPcfMax(btn.dataset.max || "");
+}});
 function renderStocksForSector(sector, tbody) {{
-  const all = STOCKS[sector] || [];
+  const all = sortedStocks(sector);
   tbody.innerHTML = "";
   if (!all.length) {{
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="${{STOCK_COLS}}" class="iv-expand-meta">No stock data for this sector.</td>`;
+    const msg = (fpeMax !== null || pcfMax !== null)
+      ? "No stocks match the Fwd PE / P/CF filters."
+      : "No stock data for this sector.";
+    tr.innerHTML = `<td colspan="${{STOCK_COLS}}" class="iv-expand-meta">${{msg}}</td>`;
     tbody.appendChild(tr);
     return;
   }}
@@ -1073,18 +1309,22 @@ function renderStocksForSector(sector, tbody) {{
 }}
 function renderSectorRow(r, isOpen) {{
   const ind = (r.indicator || "").toUpperCase();
+  const stockCount = filteredStocks(r.sector).length;
   const tr = document.createElement("tr");
   tr.className = "iv-sector-row" + (isOpen ? " expanded" : "");
+  if (stockCount === 0 && (fpeMax !== null || pcfMax !== null)) {{
+    tr.style.opacity = "0.45";
+  }}
   tr.innerHTML =
     `<td><span class="expand-hint"></span>${{esc(r.sector)}}</td>` +
-    `<td class="num">${{r.companies || 0}}</td>` +
+    `<td class="num">${{stockCount}}</td>` +
     `<td><span class="badge ${{badgeCls(ind)}}">${{esc(ind)}}</span></td>` +
     `<td class="num">${{fmtPct(r.median_growth_3y)}}</td>` +
     `<td class="num">${{fmtPct(r.median_roce_3y)}}</td>` +
     `<td class="num">${{fmtNum(r.median_pb)}}</td>` +
     `<td class="num">${{fmtNum(r.avg_total_score, 1)}}</td>`;
   tr.onclick = (e) => {{
-    if (e.target.closest("a") || e.target.closest("button")) return;
+    if (e.target.closest("a") || e.target.closest("button") || e.target.closest("th.sortable")) return;
     const next = expandedSector === r.sector ? null : r.sector;
     if (next !== r.sector) delete stockPageLimits[r.sector];
     expandedSector = next;
@@ -1093,6 +1333,7 @@ function renderSectorRow(r, isOpen) {{
   return tr;
 }}
 function render() {{
+  updateFilterCount();
   const tb = document.getElementById("hw-tbody");
   tb.innerHTML = "";
   SECTORS.forEach((r, si) => {{
@@ -1103,13 +1344,20 @@ function render() {{
       tr2.className = "iv-expand-row";
       const td = document.createElement("td");
       td.colSpan = SECTOR_COLS;
-      const stockCount = (STOCKS[r.sector] || []).length;
+      const stockCount = filteredStocks(r.sector).length;
+      const filterBits = [];
+      if (fpeMax !== null) filterBits.push("Fwd PE ≤" + fpeMax);
+      if (pcfMax !== null) filterBits.push("P/CF ≤" + pcfMax);
+      const sortCol = STOCK_SORT_COLS.find(c => c.id === stockSortCol);
+      const sortLabel = sortCol ? sortCol.label : "Score";
+      const sortArrow = stockSortDir < 0 ? "↓" : "↑";
       td.innerHTML =
         `<div class="iv-expand-panel">` +
         `<div class="iv-expand-toolbar">` +
         `<span><strong>${{esc(r.sector)}}</strong> · ${{stockCount}} stocks` +
-        `${{MIN_MCAP > 0 ? " · ≥ ₹" + MIN_MCAP + " Cr" : ""}}</span>` +
-        `<span>Ranked by score · scroll for more</span>` +
+        `${{MIN_MCAP > 0 ? " · ≥ ₹" + MIN_MCAP + " Cr" : ""}}` +
+        `${{filterBits.length ? " · " + filterBits.join(" · ") : ""}}</span>` +
+        `<span>Sorted by ${{esc(sortLabel)}} ${{sortArrow}} · click headers to sort</span>` +
         `</div>` +
         `<div class="iv-expand-body">` +
         `<div class="iv-expand-scroll">` +
@@ -1117,19 +1365,13 @@ function render() {{
         `<col style="width:32px"><col style="width:220px"><col style="width:128px">` +
         `<col style="width:72px"><col style="width:88px"><col style="width:72px"><col style="width:56px">` +
         `<col style="width:56px"><col style="width:56px"><col style="width:52px"><col style="width:68px">` +
-        `</colgroup><thead><tr>` +
-        `<th class="col-rank">#</th><th class="col-company">Company</th>` +
-        `<th class="col-industry">Industry</th>` +
-        `<th class="num col-mcap">Mkt cap</th><th class="num col-growth">Growth 3Y</th>` +
-        `<th class="num col-roce">ROCE 3Y</th><th class="num col-pb">P/B</th>` +
-        `<th class="num col-pe" title="Option A: 4+ qtrs → sum last 4 EPS (TTM); 1–3 → sum available; else Yahoo trailingPE">PE</th>` +
-        `<th class="num col-fpe" title="Option B: price ÷ (latest quarter EPS × 4)">Fwd PE</th>` +
-        `<th class="num col-pcf" title="Price ÷ operating cash flow per share">P/CF</th>` +
-        `<th class="num col-score">Score</th>` +
-        `</tr></thead><tbody id="hw-stocks-${{si}}"></tbody></table></div></div></div>`;
+        `</colgroup><thead id="hw-stocks-head-${{si}}"></thead>` +
+        `<tbody id="hw-stocks-${{si}}"></tbody></table></div></div></div>`;
       tr2.appendChild(td);
       tb.appendChild(tr2);
+      const stockHead = document.getElementById("hw-stocks-head-" + si);
       const stockBody = document.getElementById("hw-stocks-" + si);
+      if (stockHead) renderStockHead(stockHead);
       if (stockBody) renderStocksForSector(r.sector, stockBody);
     }}
   }});

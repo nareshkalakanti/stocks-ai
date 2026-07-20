@@ -38,8 +38,15 @@ STRATEGY_OPTIONS = ("Both", "TQ", "Bollinger Bands")
 
 
 def render_strategy() -> None:
-    tab_scan, tab_recovery, tab_rsi, tab_pead, tab_ht = st.tabs(
-        ["TQ / Bollinger Bands", "TQ W52 Recovery", "RSI Weekly", "PEAD", "H&T"]
+    tab_scan, tab_recovery, tab_rsi, tab_pead2, tab_pead1, tab_ht = st.tabs(
+        [
+            "TQ / Bollinger Bands",
+            "TQ W52 Recovery",
+            "RSI Weekly",
+            "PEAD 2",
+            "PEAD 1",
+            "H&T",
+        ]
     )
     with tab_scan:
         render_strategy_scan()
@@ -51,10 +58,14 @@ def render_strategy() -> None:
         from stocks.pages.rsi_weekly import render_rsi_weekly
 
         render_rsi_weekly()
-    with tab_pead:
+    with tab_pead2:
         from stocks.pages.pead2 import render_pead2
 
         render_pead2(show_title=False)
+    with tab_pead1:
+        from stocks.pages.pead1 import render_pead1
+
+        render_pead1(show_title=False)
     with tab_ht:
         from stocks.pages.headwind_tailwind import render_headwind_tailwind
 

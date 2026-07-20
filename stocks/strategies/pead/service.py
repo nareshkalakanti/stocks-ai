@@ -45,6 +45,9 @@ from stocks.scans.results_utils import analysis_universe
 from stocks.shared.links import attach_research_links
 from stocks.core.text_utils import safe_str
 from stocks.market.yfinance_limits import call_fast, call_throttled
+from stocks.strategies.pead2.quarters import build_quarter_panel, sanitize_quarter_panel
+from stocks.strategies.pead2.strategy import compute_forward_pe, compute_trailing_pe
+from stocks.strategies.pead2.technicals import build_price_snapshot
 
 _EPS_FIELDS = (
     "Diluted EPS",
@@ -500,9 +503,32 @@ def analyze_pead_stock(
 
         quarter_end = pd.Timestamp(revenue.index[-1])
         result_date = estimate_result_date(yt, quarter_end, ticker=ticker, market=market)
-        hist = yt.history(period="6mo", interval="1d", auto_adjust=True)
+        # 2y history matches PEAD 2 expand (MAs / 52w); also feeds gap+volume gate.
+        hist = yt.history(period="2y", interval="1d", auto_adjust=True)
+        if hist is None:
+            hist = pd.DataFrame()
         price = evaluate_price_volume(hist, result_date, scan)
         signal = classify_signal(fund, price, require_price=scan.require_price)
+
+        price_val = None
+        if not hist.empty and "Close" in hist.columns:
+            closes = hist["Close"].dropna()
+            if not closes.empty:
+                price_val = float(closes.iloc[-1])
+
+        pe_ratio = compute_trailing_pe(price_val, eps, info)
+        forward_pe = compute_forward_pe(price_val, eps, info)
+        quarters = sanitize_quarter_panel(
+            build_quarter_panel(revenue, op_profit, net_profit, eps)
+        )
+        snapshot = build_price_snapshot(
+            info,
+            hist,
+            revenue,
+            price=price_val,
+            pe_ratio=pe_ratio,
+            forward_pe=forward_pe,
+        )
 
         float_shares = info.get("floatShares")
         row = {
@@ -514,7 +540,14 @@ def analyze_pead_stock(
             **price,
             "market_cap_cr": market_cap_cr,
             "float_shares": float(float_shares) if float_shares else None,
+            "price": round(price_val, 2) if price_val is not None else None,
+            "pe_ratio": pe_ratio,
+            "forward_pe": forward_pe,
         }
+        if quarters:
+            row["quarters"] = quarters
+        if snapshot:
+            row["snapshot"] = snapshot
         row["score"] = composite_score(row)
         return row
 

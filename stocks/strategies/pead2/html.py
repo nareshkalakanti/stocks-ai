@@ -20,7 +20,7 @@ from stocks.shared.links import screener_url, tradingview_url
 from stocks.core.text_utils import safe_str
 
 
-_PEAD2_UI_BUILD = "2026-07-17a"
+_PEAD2_UI_BUILD = "2026-07-19a"
 
 _PEAD2_FONT_LINKS = """
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -264,6 +264,8 @@ _PEAD2_DASHBOARD_CSS = """
     color: #fff;
     border-color: var(--accent);
   }
+  .signal-btn.buy.on { background: #15803d; border-color: #15803d; }
+  .signal-btn.fund.on { background: #a16207; border-color: #a16207; }
   .signal-btn.tq.on { background: #1d4ed8; border-color: #1d4ed8; }
   .signal-btn.bb.on { background: #b45309; border-color: #b45309; }
   .signal-btn.both.on { background: #7c3aed; border-color: #7c3aed; }
@@ -1795,6 +1797,14 @@ def _rows_for_json(df: pd.DataFrame) -> list[dict]:
                 "tq_timeframe": safe_str(row.get("tq_timeframe")) or None,
                 "bb_signal": safe_str(row.get("bb_signal")) or None,
                 "bb_timeframe": safe_str(row.get("bb_timeframe")) or None,
+                "rev_jump": json_safe_scalar(row.get("rev_jump")),
+                "op_jump": json_safe_scalar(row.get("op_jump")),
+                "eps_jump": json_safe_scalar(row.get("eps_jump")),
+                "opm_pct": json_safe_scalar(row.get("opm_pct")),
+                "opm_room_pp": json_safe_scalar(row.get("opm_room_pp")),
+                "gap_pct": json_safe_scalar(row.get("gap_pct")),
+                "vol_ratio": json_safe_scalar(row.get("vol_ratio")),
+                "pead1_signal": safe_str(row.get("pead1_signal") or row.get("signal")) or None,
             }
         note = row.get("stock_note")
         if isinstance(note, dict) and (
@@ -1857,15 +1867,83 @@ def build_pead2_dashboard_html(
     default_sort_dir: int = -1,
     recent_filter_days: int | None = None,
     recent_day_options: tuple[int, ...] | None = None,
+    variant: str = "pead2",
+    score_high_min: float | None = None,
 ) -> str:
     del recent_filter_days, recent_day_options
+    is_pead1 = str(variant).lower() in ("pead1", "pead_1", "1")
     list_label_js = json_dumps(list_label)
     show_scored_split_js = "true" if show_scored_split else "false"
     updated = _scan_generated_ist(df)
     data_current = json_dumps(_rows_for_json(df), separators=(",", ":"))
     prev_df = df_previous if df_previous is not None else pd.DataFrame()
+    if is_pead1:
+        prev_df = pd.DataFrame()
     data_previous = json_dumps(_rows_for_json(prev_df), separators=(",", ":"))
     has_previous = len(prev_df) > 0
+    high_min = 5.0 if is_pead1 else 40.0
+    if score_high_min is not None:
+        high_min = float(score_high_min)
+
+    if is_pead1:
+        # Default cols mirror PEAD 2 density (PE / Fwd PE visible; extras behind Columns).
+        cols_js = """[
+  {id:"company", label:"Company", fmt:"company", def:true},
+  {id:"pead_score", label:"PEAD1 Score", fmt:"score", def:true},
+  {id:"pead1_signal", label:"Signal", fmt:"signal", def:true},
+  {id:"result_date", label:"Result Date", fmt:"date", def:true},
+  {id:"pe_ratio", label:"PE", fmt:"pe", def:true, title:"Trailing P/E"},
+  {id:"forward_pe", label:"Forward PE", fmt:"fpe", def:true, title:"Forward P/E from Yahoo / snapshot"},
+  {id:"rev_jump", label:"Rev×", fmt:"jump", def:true, title:"Latest revenue ÷ avg of prior 3 quarters"},
+  {id:"op_jump", label:"Op×", fmt:"jump", def:true, title:"Latest operating profit ÷ avg of prior 3 quarters"},
+  {id:"eps_jump", label:"EPS×", fmt:"jump", def:true, title:"Latest EPS ÷ avg of prior 3 quarters"},
+  {id:"opm_pct", label:"OPM%", fmt:"num1", def:false},
+  {id:"gap_pct", label:"Gap%", fmt:"pct", def:false},
+  {id:"vol_ratio", label:"Vol×", fmt:"jump", def:false},
+  {id:"opm_room_pp", label:"Room pp", fmt:"num1", def:false},
+  {id:"quarter_end", label:"Quarter", fmt:"date_iso", def:false},
+]"""
+        default_sort_col = default_sort_col if default_sort_col else "pead_score"
+        if default_sort_col == "result_date":
+            default_sort_col = "pead_score"
+        col_btn_title = "Show OPM / gap / Vol× / room / quarter"
+        quarter_toggle = ""
+        signal_filter_btns = """
+        <button type="button" class="signal-btn" data-signal="all">All</button>
+        <button type="button" class="signal-btn buy on" data-signal="buy" title="Fundamentals + gap/volume — stocks to buy">Buy</button>
+        <button type="button" class="signal-btn fund" data-signal="fund" title="Fundamentals only — watchlist">FUND</button>
+        <button type="button" class="signal-btn tq" data-signal="tq">TQ weekly</button>
+        <button type="button" class="signal-btn bb" data-signal="bb">BB weekly</button>
+        <button type="button" class="signal-btn both" data-signal="both">TQ + BB</button>"""
+        default_signal_filter = "buy"
+    else:
+        cols_js = """[
+  {id:"company", label:"Company", fmt:"company", def:true},
+  {id:"pead_score", label:"PEAD Score", fmt:"score", def:true},
+  {id:"result_date", label:"Result Date", fmt:"date", def:true},
+  {id:"forward_pe", label:"Forward PE", fmt:"fpe", def:true, title:"Price ÷ latest quarter EPS × 4"},
+  {id:"returns_pct", label:"Returns", fmt:"pct", def:true},
+  {id:"daily_ret_pct", label:"Daily Ret", fmt:"daily", def:true},
+  {id:"sales_yoy", label:"Sales YoY", fmt:"pct", def:false},
+  {id:"sales_qoq", label:"Sales QoQ", fmt:"pct", def:false},
+  {id:"np_yoy", label:"NP YoY", fmt:"pct", def:false},
+  {id:"np_qoq", label:"NP QoQ", fmt:"pct", def:false},
+  {id:"ebidt_yoy", label:"EBIDT YoY", fmt:"pct", def:false},
+  {id:"ebidt_qoq", label:"EBIDT QoQ", fmt:"pct", def:false},
+  {id:"cf_profit", label:"CF/Profit", fmt:"cf", def:false},
+]"""
+        col_btn_title = "Show growth / CF columns"
+        quarter_toggle = f"""
+          <span class="quarter-toggle">
+            <button type="button" class="quarter-btn on" id="btn-q-current">Current Quarter</button>
+            <button type="button" class="quarter-btn" id="btn-q-previous"{" disabled" if not has_previous else ""}>Previous Quarter</button>
+          </span>"""
+        signal_filter_btns = """
+        <button type="button" class="signal-btn on" data-signal="all">All</button>
+        <button type="button" class="signal-btn tq" data-signal="tq">TQ weekly</button>
+        <button type="button" class="signal-btn bb" data-signal="bb">BB weekly</button>
+        <button type="button" class="signal-btn both" data-signal="both">TQ + BB</button>"""
+        default_signal_filter = "all"
 
     body = f"""
 <div class="dash" id="dash">
@@ -1875,10 +1953,7 @@ def build_pead2_dashboard_html(
         <h1 class="title">🏆 {html.escape(title)}</h1>
         <div class="meta">
           {html.escape(updated)} · panel {_PEAD2_UI_BUILD} · click row to expand detail
-          <span class="quarter-toggle">
-            <button type="button" class="quarter-btn on" id="btn-q-current">Current Quarter</button>
-            <button type="button" class="quarter-btn" id="btn-q-previous"{" disabled" if not has_previous else ""}>Previous Quarter</button>
-          </span>
+          {quarter_toggle}
         </div>
       </div>
       <div class="top-actions">
@@ -1890,14 +1965,11 @@ def build_pead2_dashboard_html(
       <input class="pead-search" id="pead-search" type="search" placeholder="Search ticker or name…" autocomplete="off" />
       <div class="signal-filter" id="signal-filter">
         <span class="signal-filter-label">Show</span>
-        <button type="button" class="signal-btn on" data-signal="all">All</button>
-        <button type="button" class="signal-btn tq" data-signal="tq">TQ weekly</button>
-        <button type="button" class="signal-btn bb" data-signal="bb">BB weekly</button>
-        <button type="button" class="signal-btn both" data-signal="both">TQ + BB</button>
+        {signal_filter_btns}
       </div>
       <div class="count" id="count-label">0 companies</div>
       <div class="col-toggle">
-        <button type="button" id="btn-cols" title="Show growth / CF columns">Columns (<span id="col-visible">6</span>/<span id="col-total">13</span>)</button>
+        <button type="button" id="btn-cols" title="{html.escape(col_btn_title)}">Columns (<span id="col-visible">6</span>/<span id="col-total">13</span>)</button>
       </div>
     </div>
     <div class="table-wrap" id="table-wrap">
@@ -1915,22 +1987,9 @@ const DATA_PREVIOUS = {data_previous};
 const HAS_PREVIOUS = {"true" if has_previous else "false"};
 const LIST_LABEL = {list_label_js};
 const SHOW_SCORED_SPLIT = {show_scored_split_js};
+const SCORE_HIGH_MIN = {high_min};
 let quarterMode = "current";
-const COLS = [
-  {{id:"company", label:"Company", fmt:"company", def:true}},
-  {{id:"pead_score", label:"PEAD Score", fmt:"score", def:true}},
-  {{id:"result_date", label:"Result Date", fmt:"date", def:true}},
-  {{id:"forward_pe", label:"Forward PE", fmt:"fpe", def:true, title:"Price ÷ latest quarter EPS × 4"}},
-  {{id:"returns_pct", label:"Returns", fmt:"pct", def:true}},
-  {{id:"daily_ret_pct", label:"Daily Ret", fmt:"daily", def:true}},
-  {{id:"sales_yoy", label:"Sales YoY", fmt:"pct", def:false}},
-  {{id:"sales_qoq", label:"Sales QoQ", fmt:"pct", def:false}},
-  {{id:"np_yoy", label:"NP YoY", fmt:"pct", def:false}},
-  {{id:"np_qoq", label:"NP QoQ", fmt:"pct", def:false}},
-  {{id:"ebidt_yoy", label:"EBIDT YoY", fmt:"pct", def:false}},
-  {{id:"ebidt_qoq", label:"EBIDT QoQ", fmt:"pct", def:false}},
-  {{id:"cf_profit", label:"CF/Profit", fmt:"cf", def:false}},
-];
+const COLS = {cols_js};
 let showAllCols = false;
 
 function visibleCols() {{
@@ -1953,10 +2012,19 @@ let sortCol = {json.dumps(default_sort_col)};
 let sortDir = {default_sort_dir};
 let expandedTicker = null;
 let searchQuery = "";
-let signalFilter = "all";
+let signalFilter = {json.dumps(default_signal_filter)};
+
+function pead1Signal(r) {{
+  const s = String(r.pead1_signal || r.signal || "").toUpperCase();
+  if (s === "BUY" || s === "EARNINGS_BUY") return "buy";
+  if (s === "FUND" || s === "EARNINGS_FUNDAMENTAL") return "fund";
+  return "";
+}}
 
 function rowMatchesSignal(r) {{
   if (signalFilter === "all") return true;
+  if (signalFilter === "buy") return pead1Signal(r) === "buy";
+  if (signalFilter === "fund") return pead1Signal(r) === "fund";
   const tq = !!r.has_tq;
   const bb = !!r.has_bb;
   if (signalFilter === "tq") return tq;
@@ -2037,12 +2105,16 @@ function setQuarterMode(mode) {{
   if (mode === "previous" && !HAS_PREVIOUS) return;
   quarterMode = mode;
   expandedTicker = null;
-  document.getElementById("btn-q-current").classList.toggle("on", mode === "current");
-  document.getElementById("btn-q-previous").classList.toggle("on", mode === "previous");
+  const btnCur = document.getElementById("btn-q-current");
+  const btnPrev = document.getElementById("btn-q-previous");
+  if (btnCur) btnCur.classList.toggle("on", mode === "current");
+  if (btnPrev) btnPrev.classList.toggle("on", mode === "previous");
   render();
 }}
-document.getElementById("btn-q-current").onclick = () => setQuarterMode("current");
-document.getElementById("btn-q-previous").onclick = () => setQuarterMode("previous");
+const _btnQCur = document.getElementById("btn-q-current");
+const _btnQPrev = document.getElementById("btn-q-previous");
+if (_btnQCur) _btnQCur.onclick = () => setQuarterMode("current");
+if (_btnQPrev) _btnQPrev.onclick = () => setQuarterMode("previous");
 
 function num(v) {{ return v === null || v === undefined || v === "" ? null : Number(v); }}
 function fmtPctNum(n) {{
@@ -2072,10 +2144,28 @@ function fmtScore(v) {{
   const n = num(v);
   if (n === null || isNaN(n)) return "—";
   let tier = "mid";
-  if (n > 40) tier = "high";
+  if (n > SCORE_HIGH_MIN) tier = "high";
   else if (n < 0) tier = "low";
-  else if (n <= 15) tier = "low";
+  else if (n <= SCORE_HIGH_MIN * 0.35) tier = "low";
   return `<span class="badge-score ${{tier}}">${{n.toFixed(1)}}</span>`;
+}}
+function fmtJump(v) {{
+  const n = num(v);
+  if (n === null || isNaN(n)) return "—";
+  const cls = n >= 1.5 ? "g-pos" : (n >= 1.0 ? "" : "g-neg");
+  return `<span class="${{cls}}">${{n.toFixed(2)}}×</span>`;
+}}
+function fmtNum1(v) {{
+  const n = num(v);
+  if (n === null || isNaN(n)) return "—";
+  return n.toFixed(1);
+}}
+function fmtSignal(v) {{
+  const s = String(v || "").toUpperCase();
+  if (!s) return "—";
+  if (s === "BUY" || s === "EARNINGS_BUY") return `<span class="badge-score high">BUY</span>`;
+  if (s === "FUND" || s === "EARNINGS_FUNDAMENTAL") return `<span class="badge-score mid">FUND</span>`;
+  return esc(s);
 }}
 function fmtPe(v) {{
   const n = num(v);
@@ -2178,12 +2268,16 @@ function cell(col, r) {{
     case "company": return fmtCompany(r);
     case "score": return fmtScore(r.pead_score);
     case "date": return fmtDate(r.result_date);
-    case "date_iso": return fmtDateIso(r.result_date);
+    case "date_iso": return fmtDateIso(r[col.id] || r.result_date);
+    case "pe": return fmtPe(r.pe_ratio);
     case "fpe": return fmtFpe(r.forward_pe);
     case "cf": return fmtCf(r.cf_profit);
     case "check": return fmtCheck(r[col.id]);
     case "pct": return fmtPct(r[col.id]);
     case "daily": return fmtDaily(r.daily_ret_pct);
+    case "jump": return fmtJump(r[col.id]);
+    case "num1": return fmtNum1(r[col.id]);
+    case "signal": return fmtSignal(r.pead1_signal || r.signal);
     default: return r[col.id] ?? "—";
   }}
 }}
@@ -2270,7 +2364,14 @@ function render() {{
     countText += ` · ${{scored}} with PEAD scores`;
   }}
   if (signalFilter !== "all") {{
-    const sigLabel = signalFilter === "tq" ? "TQ weekly" : signalFilter === "bb" ? "BB weekly" : "TQ + BB";
+    const sigLabels = {{
+      buy: "Buy",
+      fund: "FUND",
+      tq: "TQ weekly",
+      bb: "BB weekly",
+      both: "TQ + BB",
+    }};
+    const sigLabel = sigLabels[signalFilter] || signalFilter;
     countText += ` · ${{sigLabel}} only`;
   }}
   countText += ` · ${{quarterLabel}} quarter · latest results first)`;

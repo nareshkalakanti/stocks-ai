@@ -84,21 +84,29 @@ def enrich_pead_candidates(df: pd.DataFrame) -> pd.DataFrame:
     else:
         out["calculation_date"] = out["calculation_date"].fillna(now)
 
-    if "forward_pe" in out.columns or "snapshot" in out.columns:
+    if "forward_pe" in out.columns or "pe_ratio" in out.columns or "snapshot" in out.columns:
 
-        def _fill_pe(row: pd.Series) -> float | None:
-            for key in ("pe_ratio", "forward_pe"):
+        def _snap_num(row: pd.Series, *keys: str) -> float | None:
+            for key in keys:
                 val = row.get(key)
                 if not is_nullish(val):
                     return round(float(val), 2)
             snap = row.get("snapshot")
             if isinstance(snap, dict):
-                snap_pe = snap.get("pe")
-                if not is_nullish(snap_pe):
-                    return round(float(snap_pe), 2)
+                for key in keys:
+                    snap_val = snap.get(key)
+                    if not is_nullish(snap_val):
+                        return round(float(snap_val), 2)
             return None
 
-        out["pe_ratio"] = out.apply(_fill_pe, axis=1)
+        out["pe_ratio"] = out.apply(
+            lambda r: _snap_num(r, "pe_ratio", "pe"),
+            axis=1,
+        )
+        out["forward_pe"] = out.apply(
+            lambda r: _snap_num(r, "forward_pe"),
+            axis=1,
+        )
 
     if "eps_yoy" not in out.columns:
         out["eps_yoy"] = np.nan

@@ -10,6 +10,7 @@ from stocks.pages.strategy import render_strategy
 from stocks.pages.superstars import render_superstars
 from stocks.pages.valuepickr import render_valuepickr
 from stocks.pages.demerger import render_demerger
+from stocks.pages.order_book import render_order_book
 
 st.set_page_config(
     page_title="AI",
@@ -29,6 +30,7 @@ with st.sidebar:
             "Holdings",
             "ValuePickr",
             "Demergers",
+            "Order Book",
         ],
         label_visibility="collapsed",
     )
@@ -45,3 +47,5 @@ elif page == "ValuePickr":
     render_valuepickr()
 elif page == "Demergers":
     render_demerger()
+elif page == "Order Book":
+    render_order_book()
