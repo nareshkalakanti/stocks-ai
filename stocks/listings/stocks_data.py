@@ -352,6 +352,28 @@ def _distinct_values(frame: pd.DataFrame, column: str) -> list[str]:
     return sorted({v for v in values if v and v.lower() != "nan"})
 
 
+def format_option_with_count(label: str, count: int) -> str:
+    """Display label for filter widgets — e.g. ``Banking (42)``."""
+    return f"{label} ({count:,})"
+
+
+def sector_option_counts(frame: pd.DataFrame, labels: list[str]) -> dict[str, int]:
+    if frame.empty or "sector" not in frame.columns or not labels:
+        return {label: 0 for label in labels}
+    sectors = frame["sector"].fillna("").astype(str).str.strip()
+    return {label: int((sectors == label).sum()) for label in labels}
+
+
+def industry_option_counts(frame: pd.DataFrame, labels: list[str]) -> dict[str, int]:
+    if frame.empty or not labels:
+        return {label: 0 for label in labels}
+    from stocks.listings.sector_display import match_classifier_mask
+
+    return {
+        label: int(match_classifier_mask(frame, [label]).sum()) for label in labels
+    }
+
+
 def sector_options(stocks: pd.DataFrame, frame: pd.DataFrame | None = None) -> list[str]:
     source = frame if frame is not None else stocks
     return ["All"] + _distinct_values(source, "sector")

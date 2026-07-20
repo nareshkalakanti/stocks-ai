@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import pandas as pd
@@ -17,8 +18,11 @@ from stocks.scans.scan_playlists import (
 from stocks.scans.ds_playlist import DS_PLAYLIST_LABEL
 from stocks.listings.stocks_data import (
     filter_stocks,
+    format_option_with_count,
+    industry_option_counts,
     industry_options,
     market_options,
+    sector_option_counts,
     sector_options,
 )
 
@@ -67,6 +71,7 @@ def _multiselect(
     placeholder: str,
     help_text: str | None = None,
     disabled: bool = False,
+    format_func: Callable[[str], str] | None = None,
 ) -> list[str]:
     kwargs: dict = {
         "label": label,
@@ -77,6 +82,8 @@ def _multiselect(
     }
     if help_text:
         kwargs["help"] = help_text
+    if format_func is not None:
+        kwargs["format_func"] = format_func
     return st.multiselect(**kwargs)
 
 
@@ -96,11 +103,18 @@ def render_industry_selectbox(
     disabled: bool = False,
 ) -> str:
     mframe = market_frame if market_frame is not None else _market_frame(stocks, market)
+    opts = industry_options(stocks, mframe)
+    counts = industry_option_counts(mframe, opts[1:])
     return st.selectbox(
         "Industry",
-        industry_options(stocks, mframe),
+        opts,
         key=key,
         disabled=disabled,
+        format_func=lambda label: (
+            f"All ({len(mframe):,})"
+            if label == "All"
+            else format_option_with_count(label, counts.get(label, 0))
+        ),
     )
 
 
@@ -118,11 +132,18 @@ def render_sector_selectbox(
         sector_scope = mframe[mframe["industry"] == industry]
     else:
         sector_scope = mframe
+    opts = sector_options(stocks, sector_scope)
+    counts = sector_option_counts(sector_scope, opts[1:])
     return st.selectbox(
         "Sector",
-        sector_options(stocks, sector_scope),
+        opts,
         key=key,
         disabled=disabled,
+        format_func=lambda label: (
+            f"All ({len(sector_scope):,})"
+            if label == "All"
+            else format_option_with_count(label, counts.get(label, 0))
+        ),
     )
 
 
@@ -189,6 +210,7 @@ def render_stock_filters(
 
     mframe = _market_frame(stocks, market)
     industry_opts = industry_options(stocks, mframe)[1:]
+    industry_counts = industry_option_counts(mframe, industry_opts)
 
     with cols[1]:
         industries = _multiselect(
@@ -197,6 +219,9 @@ def render_stock_filters(
             key=key_industries,
             placeholder="All industries",
             help_text="Fine-grained label (e.g. Building Products - Pipes)",
+            format_func=lambda label: format_option_with_count(
+                label, industry_counts.get(label, 0)
+            ),
         )
     industries = _prune(key_industries, industry_opts)
 
@@ -207,6 +232,7 @@ def render_stock_filters(
     else:
         sector_scope = mframe
     sector_opts = sector_options(stocks, sector_scope)[1:]
+    sector_counts = sector_option_counts(sector_scope, sector_opts)
 
     with cols[2]:
         sectors = _multiselect(
@@ -215,6 +241,9 @@ def render_stock_filters(
             key=key_sectors,
             placeholder="All sectors",
             help_text="Broad group (e.g. Real Estate & Construction)",
+            format_func=lambda label: format_option_with_count(
+                label, sector_counts.get(label, 0)
+            ),
         )
     sectors = _prune(key_sectors, sector_opts)
 
