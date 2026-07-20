@@ -9,6 +9,7 @@ import pandas as pd
 
 from stocks.core.config import BASE_DIR
 from stocks.core.database import (
+    business_group_members_count,
     business_groups_count,
     clear_all_business_groups,
     load_all_business_group_members,
@@ -19,6 +20,8 @@ from stocks.core.text_utils import safe_str
 from stocks.shared.corp_tags import clear_corp_tags_cache
 
 _BUSINESS_GROUPS_SEED_PATH = BASE_DIR / "data" / "business_groups_seed.json"
+# Bundled seed ships ~133 groups / 451 tickers; re-seed when SQLite is far below that.
+_MIN_SEEDED_BUSINESS_GROUP_MEMBERS = 400
 
 
 def _member(
@@ -168,14 +171,21 @@ def seed_default_business_groups(*, force: bool = False) -> int:
     return business_groups_count()
 
 
+def _needs_business_group_seed() -> bool:
+    if business_groups_count() == 0:
+        return True
+    return business_group_members_count() < _MIN_SEEDED_BUSINESS_GROUP_MEMBERS
+
+
 def ensure_business_groups(*, seed_if_empty: bool = True) -> int:
     """Seed bundled groups, else auto-sync from demerger feed when DB is empty."""
-    if not seed_if_empty or business_groups_count() > 0:
-        return business_groups_count()
-    seeded = seed_default_business_groups()
-    if seeded > 0:
-        return seeded
-    sync_business_groups_from_demergers()
+    if seed_if_empty and _needs_business_group_seed():
+        force = business_groups_count() > 0
+        seeded = seed_default_business_groups(force=force)
+        if seeded > 0:
+            return seeded
+    if business_groups_count() == 0:
+        sync_business_groups_from_demergers()
     return business_groups_count()
 
 

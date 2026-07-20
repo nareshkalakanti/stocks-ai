@@ -465,14 +465,19 @@ function fmtMcapCr(n) {
   if (n === null || n === undefined || isNaN(n)) return "—";
   return Number(n).toLocaleString("en-IN", { maximumFractionDigits: 1 }) + " Cr";
 }
-function fmtSnapClass(s) {
+function listingSector(r, snap) {
+  const s = snap || {};
+  const row = r || {};
+  return String(row.sector || s.company_sector || s.sector || "").trim();
+}
+function appendListingClass(parts, r, snap) {
+  const sector = listingSector(r, snap);
+  if (sector) parts.push(sector);
+}
+function fmtSnapClass(s, r) {
   const parts = [];
-  if (s.industry) parts.push(String(s.industry));
-  if (s.sub_sector && String(s.sub_sector) !== String(s.industry || "")) {
-    parts.push(String(s.sub_sector));
-  }
+  appendListingClass(parts, r, s);
   if (!parts.length) return "";
-  const esc = (x) => String(x).replace(/&/g,"&amp;").replace(/</g,"&lt;");
   return `<div class="snap-class">${parts.map(esc).join('<span class="snap-class-sep">·</span>')}</div>`;
 }
 function fmtWebsite(url) {
@@ -496,25 +501,24 @@ function toggleCoAbout(btn) {
   btn.textContent = open ? "Show less" : "Show more";
   btn.setAttribute("aria-expanded", open ? "true" : "false");
 }
-function fmtCoMeta(s) {
-  if (!s) return "";
-  const esc = (x) => String(x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+function fmtCoMeta(s, r) {
+  if (!s && !r) return "";
   const parts = [];
-  if (s.company_sector) parts.push(esc(s.company_sector));
-  if (s.company_industry && s.company_industry !== s.company_sector) {
-    parts.push(esc(s.company_industry));
-  }
-  if (s.headquarters) parts.push(esc(s.headquarters));
+  const classParts = [];
+  appendListingClass(classParts, r, s);
+  classParts.forEach((p) => parts.push(esc(p)));
+  if (!classParts.length && s?.company_sector) parts.push(esc(s.company_sector));
+  if (s?.headquarters) parts.push(esc(s.headquarters));
   if (s.employees != null && !isNaN(Number(s.employees))) {
     parts.push(esc(Number(s.employees).toLocaleString("en-IN")) + " employees");
   }
   if (!parts.length) return "";
   return `<div class="co-profile-meta">${parts.join('<span class="co-profile-meta-sep">·</span>')}</div>`;
 }
-function renderCompanyProfileBody(s) {
+function renderCompanyProfileBody(s, r) {
   const desc = s?.long_description;
   const web = s?.website;
-  const meta = fmtCoMeta(s);
+  const meta = fmtCoMeta(s, r);
   if (!desc && !web && !meta) return "";
   const esc = (x) => String(x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
   let html = '<div class="co-profile">';
@@ -530,8 +534,8 @@ function renderCompanyProfileBody(s) {
   html += "</div>";
   return html;
 }
-function renderProfileCard(s) {
-  const body = renderCompanyProfileBody(s);
+function renderProfileCard(s, r) {
+  const body = renderCompanyProfileBody(s, r);
   if (!body) return "";
   return (
     `<div class="expand-info-card profile">` +
@@ -562,7 +566,7 @@ function renderNewsCard(r) {
   return `<div class="expand-info-card news">${head}${list}</div></div>`;
 }
 function renderDetailCards(r, snap) {
-  const profile = renderProfileCard(snap);
+  const profile = renderProfileCard(snap, r);
   const news = renderNewsCard(r);
   if (!profile && !news) return "";
   return `<div class="expand-detail-stack">${profile}${news}</div>`;
@@ -678,8 +682,7 @@ function renderPeadHero(r, snap) {
   const subParts = [];
   if (mkt && r.ticker) subParts.push(`${mkt}: ${r.ticker}`);
   else if (r.ticker) subParts.push(String(r.ticker));
-  const ind = r.industry || r.sub_sector || r.sector;
-  if (ind) subParts.push(String(ind));
+  appendListingClass(subParts, r, snap);
   const hq = snap?.headquarters || r.headquarters;
   if (hq) {
     const city = String(hq).split(",")[0].trim();
@@ -749,8 +752,7 @@ function renderPeadHeroCompact(r, snap) {
   const esc = (s) => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
   const subParts = [];
   if (r.ticker) subParts.push(String(r.ticker));
-  const ind = r.industry || r.sub_sector || r.sector;
-  if (ind) subParts.push(String(ind));
+  appendListingClass(subParts, r, snap);
   const hq = snap?.headquarters || r.headquarters;
   if (hq) {
     const city = String(hq).split(",")[0].trim();
@@ -915,16 +917,13 @@ function rowSnapshot(r) {
     if (snap.pe_ratio == null && r.pe_ratio != null) snap.pe_ratio = r.pe_ratio;
     if (snap.pe == null && r.pe_ratio != null) snap.pe = r.pe_ratio;
     if (snap.forward_pe == null && r.forward_pe != null) snap.forward_pe = r.forward_pe;
-    if (r.industry) snap.industry = r.industry;
     if (r.sub_sector) snap.sub_sector = r.sub_sector;
     if (r.buy_headroom_pct != null) snap.buy_headroom_pct = r.buy_headroom_pct;
+    if (!snap.sector && r.sector) snap.sector = r.sector;
     if (!snap.company_sector && r.sector) snap.company_sector = r.sector;
-    if (!snap.company_industry && r.industry) snap.company_industry = r.industry;
-    if (!snap.company_industry && r.sub_sector) snap.company_industry = r.sub_sector;
     if (!snap.long_description && r.long_description) snap.long_description = r.long_description;
     if (!snap.website && r.website) snap.website = r.website;
     if (!snap.company_sector && r.company_sector) snap.company_sector = r.company_sector;
-    if (!snap.company_industry && r.company_industry) snap.company_industry = r.company_industry;
     if (!snap.headquarters && r.headquarters) snap.headquarters = r.headquarters;
     if (snap.employees == null && r.employees != null) snap.employees = r.employees;
     if (!snap.price_trend && r.price_trend) snap.price_trend = r.price_trend;
@@ -1055,14 +1054,14 @@ function renderPeadMetricsCard(s, r) {
   if (!s || s.price == null) return "";
   const subParts = [];
   if (r.ticker) subParts.push(String(r.ticker));
-  const ind = r.industry || r.sub_sector || r.sector;
-  if (ind) subParts.push(String(ind));
+  appendListingClass(subParts, r, s);
   const hq = s.headquarters || r.headquarters;
   if (hq) {
     const city = String(hq).split(",")[0].trim();
     if (city) subParts.push(city);
   }
   const pe = s.pe_ratio ?? s.pe ?? r?.pe_ratio;
+  const mcap = s.market_cap_cr ?? r.market_cap_cr;
   const cagr = s.cagr == null || isNaN(s.cagr) ? null : Number(s.cagr);
   const cagrValCls = cagr === null ? "" : (cagr >= 0 ? "pos" : "neg");
   const cagrTxt = cagr === null ? "—" : `${cagr >= 0 ? "+" : ""}${fmtPctNum(cagr)}%`;
@@ -1092,6 +1091,8 @@ function renderPeadMetricsCard(s, r) {
     `<div class="snap-metrics">` +
     `<div class="snap-metric"><span class="snap-metric-label">Price</span>` +
     `<span class="snap-metric-val">${fmtSnapNum(s.price)}</span>${dailyChip}</div>` +
+    `<div class="snap-metric"><span class="snap-metric-label">Mkt cap</span>` +
+    `<span class="snap-metric-val">${fmtMcapCr(mcap)}</span></div>` +
     `<div class="snap-metric"><span class="snap-metric-label">PE</span>` +
     `<span class="snap-metric-val">${pe != null ? fmtSnapNum(pe) : "—"}</span></div>` +
     `<div class="snap-metric"><span class="snap-metric-label">CAGR</span>` +

@@ -3067,12 +3067,10 @@ def business_groups_count() -> int:
         return int(conn.execute("SELECT COUNT(*) FROM business_groups").fetchone()[0])
 
 
+def business_group_members_count() -> int:
     init_db()
     with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT DISTINCT UPPER(ticker) AS ticker FROM business_group_members"
-        ).fetchall()
-    return {str(row["ticker"]).upper() for row in rows if row["ticker"]}
+        return int(conn.execute("SELECT COUNT(*) FROM business_group_members").fetchone()[0])
 
 
 def load_ticker_group_map() -> dict[str, str]:

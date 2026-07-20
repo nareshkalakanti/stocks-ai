@@ -136,7 +136,7 @@ def base_scan_extra_widths(*page_widths: float) -> tuple[float, ...]:
 
 @contextmanager
 def scan_toolbar_row(*extra_widths: float) -> Iterator[list]:
-    """Bordered single row: Market · Industry · Sector · … page controls."""
+    """Bordered single row: Market · Sub sector · Sector · … page controls."""
     inject_scan_toolbar_css()
     widths = FILTER_COL_WIDTHS + list(extra_widths)
     with st.container(border=True):
@@ -151,7 +151,7 @@ def render_base_scan_filters(
     cap_tier_key: str,
     holdings_key: str,
 ) -> tuple["StockFilters", str, bool]:
-    """Render Market / Industry / Sector / Market cap / My industries in one toolbar row."""
+    """Render Market / Sub sector / Sector / Market cap / My industries in one toolbar row."""
     from stocks.scans.stock_filters import render_stock_filters
 
     filters = render_stock_filters(

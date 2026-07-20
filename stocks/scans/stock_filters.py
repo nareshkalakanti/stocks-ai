@@ -106,7 +106,7 @@ def render_industry_selectbox(
     opts = industry_options(stocks, mframe)
     counts = industry_option_counts(mframe, opts[1:])
     return st.selectbox(
-        "Industry",
+        "Sub sector",
         opts,
         key=key,
         disabled=disabled,
@@ -214,11 +214,11 @@ def render_stock_filters(
 
     with cols[1]:
         industries = _multiselect(
-            "Industry",
+            "Sub sector",
             industry_opts,
             key=key_industries,
-            placeholder="All industries",
-            help_text="Fine-grained label (e.g. Building Products - Pipes)",
+            placeholder="All sub sectors",
+            help_text="Fine NSE sub-sector tag (e.g. Building Products - Pipes)",
             format_func=lambda label: format_option_with_count(
                 label, industry_counts.get(label, 0)
             ),
@@ -285,7 +285,7 @@ def filter_caption_suffix(
     parts: list[str] = []
     if filters.market != "All":
         parts.append(filters.market)
-    industry_lbl = classifier_filter_label("industries", filters.industries)
+    industry_lbl = classifier_filter_label("sub sectors", filters.industries)
     if industry_lbl:
         parts.append(industry_lbl)
     sector_lbl = classifier_filter_label("sectors", filters.sectors)

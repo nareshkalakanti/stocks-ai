@@ -929,6 +929,122 @@ def analyze_pead2_ticker(
     return call_fast(_fetch, on_error=_log)
 
 
+def _refresh_returns_blob(ticker: str, market: str | None, blob: dict) -> dict | None:
+    """Recompute lag-0 returns from cached result_date + fresh Yahoo price history."""
+    norm = _normalize_cache_blob(blob)
+    if norm.get("calc_version") != PEAD2_CALC_VERSION or not _pead2_scorable_blob(norm):
+        return None
+    lag0 = (norm.get("lags") or {}).get("0")
+    if not isinstance(lag0, dict):
+        return None
+    result_date = safe_str(lag0.get("result_date")).strip()
+    if not result_date:
+        return None
+
+    symbol = to_yfinance_symbol(ticker, market)
+
+    def _fetch() -> dict | None:
+        yt = yf.Ticker(symbol)
+        info = _safe_yf_info(yt)
+        hist = yt.history(period="6y", interval="1d", auto_adjust=True)
+        if hist is None or hist.empty:
+            return None
+        price_val = _info_price(info, hist)
+        rd = pd.Timestamp(result_date)
+        if price_val is not None:
+            returns_pct = compute_returns_pct(hist, rd, current_price=price_val)
+        else:
+            returns_pct = compute_returns_pct(hist, rd, drift_days=PEAD2_DRIFT_DAYS)
+        daily_ret_pct = compute_daily_ret_ff(hist, rd)
+
+        out = dict(norm)
+        lags = dict(out.get("lags") or {})
+        row = dict(lags.get("0") or {})
+        row["returns_pct"] = returns_pct
+        row["daily_ret_pct"] = daily_ret_pct
+        if price_val is not None:
+            row["price"] = price_val
+            snap = row.get("snapshot")
+            if isinstance(snap, dict):
+                snap = dict(snap)
+                snap["price"] = price_val
+                row["snapshot"] = snap
+        lags["0"] = row
+        out["lags"] = lags
+        return out
+
+    def _log(exc: Exception) -> None:
+        log_error(
+            METRICS_ERROR,
+            "PEAD2 returns refresh failed",
+            ticker=ticker,
+            symbol=symbol,
+            error=str(exc),
+        )
+
+    return call_fast(_fetch, on_error=_log)
+
+
+def _apply_pead2_returns_refresh(
+    universe: pd.DataFrame,
+    cached: dict[str, dict],
+    *,
+    skip_tickers: set[str] | None = None,
+    max_workers: int | None = None,
+) -> tuple[dict[str, dict], int]:
+    """Refresh lag-0 returns for cached scorable tickers (skip just-fetched rows)."""
+    tickers, markets, universe_keys = _universe_ticker_lists(universe)
+    skip = skip_tickers or set()
+    jobs = [
+        (ticker, market, cached[ticker])
+        for ticker, market in zip(tickers, markets)
+        if ticker in cached
+        and ticker not in skip
+        and _pead2_scorable_blob(cached[ticker])
+    ]
+    if not jobs:
+        return cached, 0
+
+    workers = yfinance_worker_count(
+        len(jobs),
+        min(max_workers or PEAD2_MAX_WORKERS, STRATEGY_YFINANCE_MAX_INFLIGHT),
+    )
+    updated: list[dict] = []
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(_refresh_returns_blob, ticker, market, blob): ticker
+            for ticker, market, blob in jobs
+        }
+        for future in as_completed(futures):
+            row = future.result()
+            if not row:
+                continue
+            key = safe_str(row.get("ticker")).upper()
+            if key in universe_keys:
+                updated.append(row)
+                cached[key] = row
+    if updated:
+        save_pead2_cache(updated)
+    return cached, len(updated)
+
+
+def refresh_pead2_returns_only(
+    universe: pd.DataFrame,
+    *,
+    max_workers: int | None = None,
+    weights: Pead2AbsoluteWeights | None = None,
+) -> dict:
+    """Refresh Returns / Daily Ret for cached universe rows, then rescore from SQLite."""
+    return run_pead2_scan(
+        universe,
+        weights=weights,
+        max_workers=max_workers,
+        only_pending=True,
+        max_fetch=0,
+        check_breakouts=False,
+    )
+
+
 def _filter_df_by_recent_result(df: pd.DataFrame, recent_days: int) -> pd.DataFrame:
     """Keep rows whose result_date falls within the last ``recent_days`` calendar days."""
     if df is None or df.empty or "result_date" not in df.columns:
@@ -1020,6 +1136,16 @@ def run_pead2_recent_scan(
             cached, _, coverage, legacy_by_ticker = _partition_pead2_universe_cache(universe)
             rows = _scorable_cached_rows(cached, universe_keys)
             cache_hits = len(rows)
+
+    fresh_keys = {safe_str(r.get("ticker")).upper() for r in fresh_rows}
+    cached, _ = _apply_pead2_returns_refresh(
+        universe,
+        cached,
+        skip_tickers=fresh_keys,
+        max_workers=workers,
+    )
+    rows = _scorable_cached_rows(cached, universe_keys)
+    cache_hits = len(rows)
 
     if not rows:
         return _pead2_scan_result_shell(
@@ -1160,6 +1286,16 @@ def run_pead2_scan(
             rows = _scorable_cached_rows(cached, universe_keys)
             cache_hits = len(rows)
 
+    fresh_keys = {safe_str(r.get("ticker")).upper() for r in fresh_rows}
+    cached, _ = _apply_pead2_returns_refresh(
+        universe,
+        cached,
+        skip_tickers=fresh_keys,
+        max_workers=workers,
+    )
+    rows = _scorable_cached_rows(cached, universe_keys)
+    cache_hits = len(rows)
+
     if not rows:
         return _pead2_scan_result_shell(
             coverage=coverage,
@@ -1231,6 +1367,7 @@ __all__ = [
     "expand_pead_candidates_to_universe",
     "pead2_scan_coverage",
     "prepare_pead_universe",
+    "refresh_pead2_returns_only",
     "run_pead2_scan",
     "run_pead2_recent_scan",
     "Pead2AbsoluteWeights",

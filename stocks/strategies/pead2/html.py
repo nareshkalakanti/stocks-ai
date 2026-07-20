@@ -17,6 +17,7 @@ from stocks.dashboards.expand_panel_html import EXPAND_PANEL_JS
 from stocks.strategies.pead2.strategy import enrich_pead_candidates, attach_strategy_breakout_signals
 from stocks.strategies.pead2.quarters import sanitize_quarter_panel
 from stocks.shared.links import screener_url, tradingview_url
+from stocks.core.database import load_market_cap_from_db
 from stocks.core.text_utils import safe_str
 
 
@@ -1753,14 +1754,27 @@ def _rows_for_json(df: pd.DataFrame) -> list[dict]:
         if not work.empty and "ticker" in work.columns
         else []
     )
+    mcap_map: dict[str, float] = {}
+    if not work.empty and "ticker" in work.columns:
+        tickers = work["ticker"].astype(str).str.strip().str.upper().unique().tolist()
+        mcap_df = load_market_cap_from_db(tickers)
+        if not mcap_df.empty:
+            mcap_map = {
+                safe_str(t).upper(): float(v)
+                for t, v in zip(mcap_df["ticker"], mcap_df["market_cap_cr"], strict=False)
+                if safe_str(t) and v is not None and not pd.isna(v)
+            }
     rows: list[dict] = []
     for _, row in attach_strategy_breakout_signals(enrich_pead_candidates(work)).iterrows():
         ticker = safe_str(row.get("ticker"))
         market = safe_str(row.get("market")) or None
+        row_mcap = row.get("market_cap_cr")
+        if (row_mcap is None or pd.isna(row_mcap)) and ticker:
+            row_mcap = mcap_map.get(ticker.upper())
         row_data = {
                 "ticker": ticker,
                 "name": safe_str(row.get("name")),
-                "market_cap_cr": json_safe_scalar(row.get("market_cap_cr")),
+                "market_cap_cr": json_safe_scalar(row_mcap),
                 "price": json_safe_scalar(row.get("price")),
                 "pe_ratio": json_safe_scalar(row.get("pe_ratio")),
                 "pead_score": json_safe_scalar(row.get("pead_score")),
@@ -1823,9 +1837,11 @@ def _rows_for_json(df: pd.DataFrame) -> list[dict]:
         snap_price = json_safe_scalar(snapshot.get("price") if isinstance(snapshot, dict) else None)
         if isinstance(snapshot, dict) and snap_price is not None:
             snap = dict(snapshot)
-            mcap = row.get("market_cap_cr")
+            mcap = row_mcap if row_mcap is not None and not pd.isna(row_mcap) else row.get("market_cap_cr")
             if mcap is not None and pd.notna(mcap) and snap.get("market_cap_cr") is None:
                 snap["market_cap_cr"] = round(float(mcap), 1)
+            elif snap.get("market_cap_cr") is not None and row_data.get("market_cap_cr") is None:
+                row_data["market_cap_cr"] = json_safe_scalar(snap.get("market_cap_cr"))
             row_data["snapshot"] = snap
             if snap.get("long_description"):
                 row_data["long_description"] = snap["long_description"]
@@ -1937,6 +1953,7 @@ def build_pead2_dashboard_html(
           <span class="quarter-toggle">
             <button type="button" class="quarter-btn on" id="btn-q-current">Current Quarter</button>
             <button type="button" class="quarter-btn" id="btn-q-previous"{" disabled" if not has_previous else ""}>Previous Quarter</button>
+            <button type="button" class="quarter-btn" id="btn-refresh-returns" title="Update Returns &amp; Daily Ret from latest Yahoo prices">Refresh</button>
           </span>"""
         signal_filter_btns = """
         <button type="button" class="signal-btn on" data-signal="all">All</button>
@@ -2113,8 +2130,22 @@ function setQuarterMode(mode) {{
 }}
 const _btnQCur = document.getElementById("btn-q-current");
 const _btnQPrev = document.getElementById("btn-q-previous");
+const _btnRefresh = document.getElementById("btn-refresh-returns");
 if (_btnQCur) _btnQCur.onclick = () => setQuarterMode("current");
 if (_btnQPrev) _btnQPrev.onclick = () => setQuarterMode("previous");
+if (_btnRefresh) _btnRefresh.onclick = () => {{
+  _btnRefresh.disabled = true;
+  _btnRefresh.textContent = "…";
+  try {{
+    const w = window.top || window.parent;
+    const url = new URL(w.location.href);
+    url.searchParams.set("pead2_refresh", "1");
+    w.location.assign(url.toString());
+  }} catch (_) {{
+    _btnRefresh.disabled = false;
+    _btnRefresh.textContent = "Refresh";
+  }}
+}};
 
 function num(v) {{ return v === null || v === undefined || v === "" ? null : Number(v); }}
 function fmtPctNum(n) {{

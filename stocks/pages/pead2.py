@@ -13,6 +13,7 @@ from stocks.strategies.pead2.service import (
     expand_pead_candidates_to_universe,
     pead2_scan_coverage,
     prepare_pead_universe,
+    refresh_pead2_returns_only,
     run_pead2_scan,
 )
 from stocks.strategies.pead2.strategy import (
@@ -84,6 +85,13 @@ def _store_scan_result(result: dict) -> None:
         "candidates_previous", pd.DataFrame()
     )
     st.session_state.pead2_cache_hits = int(result.get("cache_hits") or 0)
+
+
+def _clear_pead2_refresh_query() -> None:
+    if st.query_params.get("pead2_refresh") != "1":
+        return
+    params = {k: v for k, v in st.query_params.items() if k != "pead2_refresh"}
+    st.query_params.from_dict(params)
 
 
 def _run_scan(
@@ -173,13 +181,32 @@ def render_pead2(*, show_title: bool = True) -> None:
                 key="pead2_scan",
                 help=(
                     f"Fetch missing or cache older than {PEAD2_CACHE_HOURS}h from Yahoo, "
-                    "score PEAD, then check BB weekly + TQ weekly breakouts."
+                    "refresh Returns from latest prices, score PEAD, then check BB/TQ weekly."
                 ),
             )
 
     coverage = pead2_scan_coverage(universe)
     st.session_state.pead2_coverage = coverage
     holdings_view = is_holdings_playlist(filters.market)
+
+    if st.query_params.get("pead2_refresh") == "1":
+        _clear_pead2_refresh_query()
+        if universe.empty:
+            st.warning("No stocks match the current filters.")
+            return
+        status_slot = st.empty()
+        with status_slot.container():
+            st.info("Refreshing returns from Yahoo...")
+        try:
+            result = refresh_pead2_returns_only(universe)
+        except Exception as exc:
+            status_slot.empty()
+            st.error(f"Returns refresh failed: {exc}")
+            return
+        status_slot.empty()
+        _store_scan_result(result)
+        st.caption("Returns refreshed from latest Yahoo prices.")
+        st.rerun()
 
     if run_clicked:
         if universe.empty:
@@ -281,7 +308,11 @@ def render_pead2(*, show_title: bool = True) -> None:
             f"filter **TQ / BB weekly** in the toolbar · "
             f"**click a row** to expand the detail panel."
         )
-    embed_html_iframe(embed_html, height=pead2_iframe_height(len(candidates)))
+    embed_html_iframe(
+        embed_html,
+        height=pead2_iframe_height(len(candidates)),
+        allow_top_navigation=True,
+    )
 
     csv = format_pead_export_df(candidates).to_csv(index=False).encode("utf-8")
     st.download_button(
