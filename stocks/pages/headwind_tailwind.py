@@ -6,9 +6,9 @@ import pandas as pd
 import streamlit as st
 
 from stocks.core.config import (
+    HEADWIND_IV_CACHE_HOURS,
     HEADWIND_SCAN_CACHE_HOURS,
     INDIA_STOCKS_DATASET,
-    INTRINSIC_VALUE_CACHE_HOURS,
     cap_tier_id_from_label,
 )
 from stocks.listings.stocks_data import load_india_stocks
@@ -200,6 +200,7 @@ def _try_restore_results(
         _scan_universe(filtered, scan_market, min_cr=mcap_floor)[0],
         min_mcap_cr=mcap_floor,
         min_sector_companies=1,
+        max_hours=HEADWIND_IV_CACHE_HOURS,
     )
     if built:
         _apply_scan_result(built, scan_market, filter_key=filter_key)
@@ -329,6 +330,7 @@ def render_headwind_tailwind() -> None:
                 universe,
                 min_mcap_cr=mcap_floor,
                 min_sector_companies=1,
+                max_hours=HEADWIND_IV_CACHE_HOURS,
             )
             if partial:
                 if wide_open:
@@ -362,7 +364,7 @@ def render_headwind_tailwind() -> None:
         return
 
     ranked = _as_df(st.session_state.get("ht_ranked"))
-    ranked = ensure_pe_ratios(ranked, max_hours=INTRINSIC_VALUE_CACHE_HOURS)
+    ranked = ensure_pe_ratios(ranked, max_hours=HEADWIND_IV_CACHE_HOURS)
     st.session_state.ht_ranked = ranked
     sectors = st.session_state.get("ht_sectors")
     if not isinstance(sectors, pd.DataFrame):
@@ -392,6 +394,16 @@ def render_headwind_tailwind() -> None:
             f"No H&T results for the current filters{(' — ' + hint) if hint else ''}."
         )
         return
+
+    universe_n = len(filtered)
+    shown_n = len(ranked)
+    suffix = filter_caption_suffix(filters, extra=holdings_industry_note)
+    extra = f" · {suffix}" if suffix else ""
+    st.caption(
+        f"**{shown_n:,}** stocks with fundamentals · **{universe_n:,}** in filter · "
+        f"cache ≤ **{HEADWIND_IV_CACHE_HOURS}h**{extra} · "
+        f"**Run scan** to refresh missing names"
+    )
 
     tab_all, tab_trend = st.tabs(["All", "Trend bars"])
 
@@ -432,7 +444,7 @@ def render_all_drilldown(
 
     ranked = ensure_pcf_values(
         ranked,
-        max_hours=INTRINSIC_VALUE_CACHE_HOURS,
+        max_hours=HEADWIND_IV_CACHE_HOURS,
         fetch_missing=False,
     )
 

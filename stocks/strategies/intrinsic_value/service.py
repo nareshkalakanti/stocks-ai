@@ -10,6 +10,7 @@ import pandas as pd
 import yfinance as yf
 
 from stocks.core.config import (
+    HEADWIND_IV_CACHE_HOURS,
     INTRINSIC_VALUE_CACHE_HOURS,
     INTRINSIC_VALUE_MAX_WORKERS,
     MIN_MARKET_CAP_CR,
@@ -444,7 +445,7 @@ def assemble_headwind_from_iv_cache(
     if universe.empty:
         return None
 
-    cache_hours = INTRINSIC_VALUE_CACHE_HOURS if max_hours is None else max_hours
+    cache_hours = HEADWIND_IV_CACHE_HOURS if max_hours is None else max_hours
     tickers = [safe_str(t).upper() for t in universe["ticker"] if safe_str(t)]
     cached_df = load_cached_iv_rows(tickers, max_hours=cache_hours)
     if cached_df.empty:
