@@ -96,11 +96,40 @@ def _cagr(series: pd.Series | None, *, years: int) -> float | None:
     return (latest / prior) ** (1 / years) - 1
 
 
+def _adaptive_cagr(
+    series: pd.Series | None,
+    *,
+    preferred_years: int,
+    min_years: int = 2,
+) -> float | None:
+    """CAGR using preferred span, then shorter spans Yahoo can support."""
+    for years in range(preferred_years, min_years - 1, -1):
+        val = _cagr(series, years=years)
+        if val is not None:
+            return val
+    return None
+
+
 def _value_n_years_ago(series: pd.Series | None, *, years: int) -> float | None:
     s = _sorted_desc(series)
     if s is None or len(s) < years + 1:
         return None
     return float(s.iloc[years])
+
+
+def _oldest_available(
+    series: pd.Series | None,
+    *,
+    preferred_years: int,
+    min_years: int = 2,
+) -> float | None:
+    """Prefer N years back; else farthest available point at least min_years back."""
+    s = _sorted_desc(series)
+    if s is None or len(s) < min_years + 1:
+        return None
+    if len(s) >= preferred_years + 1:
+        return float(s.iloc[preferred_years])
+    return float(s.iloc[-1])
 
 
 def _latest(series: pd.Series | None) -> float | None:
@@ -116,16 +145,20 @@ def cash_to_tax_ratio(
     *,
     years: int = CASH_QUALITY_LOOKBACK_YEARS,
 ) -> float | None:
-    """Cash N years back / |Tax provision| for that year (fallback: latest tax)."""
+    """Cash N years back / |Tax provision| (Yahoo often has ~4 annual cols)."""
     cash = _first_row(balance_sheet, CASH_FIELDS)
     tax = _first_row(financials, TAX_FIELDS)
-    cash_old = _value_n_years_ago(cash, years=years)
+    cash_old = _oldest_available(cash, preferred_years=years, min_years=2)
     if cash_old is None:
         return None
     tax_s = _sorted_desc(tax)
     tax_old = None
-    if tax_s is not None and len(tax_s) >= years + 1:
-        tax_old = float(tax_s.iloc[years])
+    if tax_s is not None:
+        # Prefer same lookback index when available.
+        if len(tax_s) >= years + 1:
+            tax_old = float(tax_s.iloc[years])
+        elif len(tax_s) >= 3:
+            tax_old = float(tax_s.iloc[-1])
     if tax_old is None or tax_old == 0:
         tax_old = _latest(tax)
     if tax_old is None or tax_old == 0:
@@ -197,12 +230,31 @@ def ocf_vs_ebitda_growth(
     *,
     years: int = CASH_QUALITY_LOOKBACK_YEARS,
 ) -> float | None:
-    """OCF CAGR / EBITDA CAGR over N years (both must be positive)."""
-    ocf_g = _cagr(_first_row(cashflow, CFO_FIELDS), years=years)
-    ebitda_g = _cagr(_first_row(financials, EBITDA_FIELDS), years=years)
-    if ocf_g is None or ebitda_g is None or ebitda_g <= 0:
+    """
+    Prefer OCF CAGR / EBITDA CAGR.
+
+    Fallback when Yahoo history is short: multi-year ΣOCF / ΣEBITDA.
+    """
+    ocf_s = _first_row(cashflow, CFO_FIELDS)
+    ebitda_s = _first_row(financials, EBITDA_FIELDS)
+    ocf_g = _adaptive_cagr(ocf_s, preferred_years=years, min_years=2)
+    ebitda_g = _adaptive_cagr(ebitda_s, preferred_years=years, min_years=2)
+    if ocf_g is not None and ebitda_g is not None and ebitda_g > 0:
+        return round(ocf_g / ebitda_g, 3)
+
+    # Cumulative conversion fallback (same threshold semantics: > 0.6).
+    ocf = _sorted_desc(ocf_s)
+    ebitda = _sorted_desc(ebitda_s)
+    if ocf is None or ebitda is None:
         return None
-    return round(ocf_g / ebitda_g, 3)
+    n = min(len(ocf), len(ebitda), years + 1)
+    if n < 2:
+        return None
+    ocf_sum = float(ocf.iloc[:n].sum())
+    ebitda_sum = float(ebitda.iloc[:n].sum())
+    if ebitda_sum <= 0:
+        return None
+    return round(ocf_sum / ebitda_sum, 3)
 
 
 def compute_cash_quality_metrics(
@@ -219,8 +271,10 @@ def compute_cash_quality_metrics(
     if ocf_latest is not None and ebitda_latest is not None and ebitda_latest != 0:
         ocf_to_ebitda = round(ocf_latest / ebitda_latest, 3)
 
-    ocf_cagr_raw = _cagr(_first_row(cashflow, CFO_FIELDS), years=years)
-    ebitda_cagr_raw = _cagr(_first_row(financials, EBITDA_FIELDS), years=years)
+    ocf_cagr_raw = _adaptive_cagr(_first_row(cashflow, CFO_FIELDS), preferred_years=years)
+    ebitda_cagr_raw = _adaptive_cagr(
+        _first_row(financials, EBITDA_FIELDS), preferred_years=years
+    )
 
     return {
         "cash_to_tax": cash_to_tax_ratio(balance_sheet, financials, years=years),
@@ -367,7 +421,8 @@ def cash_quality_caption() -> str:
         f"Cash Quality — **Cash({y}Y)/Tax > {CASH_QUALITY_MIN_CASH_TO_TAX:g}**, "
         f"**CROIC > {CASH_QUALITY_MIN_CROIC:g}**, "
         f"**CCC < {CASH_QUALITY_MAX_CCC_YEARS:g}Y**, "
-        f"**OCF CAGR / EBITDA CAGR > {CASH_QUALITY_MIN_OCF_EBITDA_GROWTH:g}**. "
+        f"**OCF CAGR / EBITDA CAGR > {CASH_QUALITY_MIN_OCF_EBITDA_GROWTH:g}** "
+        "(uses shorter Yahoo history when 5Y missing; ΣOCF/ΣEBITDA fallback). "
         "Contingent liabilities / equity needs annual-report review (not on Yahoo)."
     )
 

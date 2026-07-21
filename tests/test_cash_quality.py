@@ -70,8 +70,8 @@ def _sample_statements() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 
 def test_cash_to_tax_and_croic():
     financials, balance, cashflow = _sample_statements()
-    # Cash 5Y ago (2019) = 45, tax that year = 22 → 45/22 ≈ 2.045
-    assert abs(cash_to_tax_ratio(balance, financials, years=5) - 2.045) < 0.01
+    # Cash 3Y ago (2021) = 55, tax that year = 28 → 55/28 ≈ 1.964
+    assert abs(cash_to_tax_ratio(balance, financials, years=3) - 1.964) < 0.01
     # CROIC = (100 - 20) / 500 = 0.16
     assert croic_ratio(cashflow, balance) == 0.16
 
@@ -81,8 +81,7 @@ def test_ccc_and_ocf_ebitda_growth():
     years, days = cash_conversion_cycle_years(financials, balance)
     assert years is not None and years < 1
     assert days is not None and days > 0
-    # OCF CAGR 5Y and EBITDA CAGR 5Y both positive → ratio ~1
-    ratio = ocf_vs_ebitda_growth(cashflow, financials, years=5)
+    ratio = ocf_vs_ebitda_growth(cashflow, financials, years=3)
     assert ratio is not None and ratio > 0.6
 
 
@@ -112,7 +111,7 @@ def test_score_cash_quality_keeps_passers():
 
 def test_compute_metrics_bundle():
     financials, balance, cashflow = _sample_statements()
-    metrics = compute_cash_quality_metrics(financials, balance, cashflow, years=5)
+    metrics = compute_cash_quality_metrics(financials, balance, cashflow, years=3)
     assert metrics["cash_to_tax"] is not None
     assert metrics["croic"] == 0.16
     assert metrics["ccc_years"] is not None
