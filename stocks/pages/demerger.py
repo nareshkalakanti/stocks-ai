@@ -195,7 +195,7 @@ def _render_nse_actions(df: pd.DataFrame, fetched_at: str | None, lookback_years
     table_height = min(900, max(320, 38 + len(display) * 36))
     st.dataframe(
         display,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         height=table_height,
         column_config={
@@ -272,7 +272,7 @@ def _render_ds_stock_list() -> None:
     display = _ds_display_df(priced)
     st.dataframe(
         display,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "Rank": st.column_config.NumberColumn(format="%d"),
@@ -296,7 +296,7 @@ def render_demerger() -> None:
 
     c1, c2 = st.columns([1.1, 0.7])
     with c1:
-        refresh = st.button("Fetch / Refresh", type="primary", use_container_width=True)
+        refresh = st.button("Fetch / Refresh", type="primary", width="stretch")
     with c2:
         years_raw = st.text_input(
             "Years",

@@ -216,6 +216,7 @@ def format_pead_export_df(df: pd.DataFrame) -> pd.DataFrame:
 @dataclass(frozen=True)
 class Pead2AbsoluteWeights:
     """FinanciallyFree-style absolute weights (sum = 0.90)."""
+
     sales_yoy: float = 0.15
     np_yoy: float = 0.20
     sales_qoq: float = 0.10
@@ -223,6 +224,7 @@ class Pead2AbsoluteWeights:
     ebidt_yoy: float = 0.10
     ebidt_qoq: float = 0.05
     forward_pe: float = 0.15
+    peg: float = 0.0
 
     @property
     def total(self) -> float:
@@ -234,6 +236,7 @@ class Pead2AbsoluteWeights:
             + self.ebidt_yoy
             + self.ebidt_qoq
             + self.forward_pe
+            + self.peg
         )
 
 
@@ -258,6 +261,7 @@ class Pead2ScoreWeights:
     ebidt_yoy: float = 8.0
     ebidt_qoq: float = 6.0
     forward_pe: float = 8.0
+    peg: float = 0.0
     cf_profit: float = 2.0
 
     @property
@@ -273,6 +277,7 @@ class Pead2ScoreWeights:
             + self.ebidt_yoy
             + self.ebidt_qoq
             + self.forward_pe
+            + self.peg
             + self.cf_profit
         )
 
@@ -289,6 +294,7 @@ class Pead2ScoreWeights:
             ("ebidt_yoy", self.ebidt_yoy, False),
             ("ebidt_qoq", self.ebidt_qoq, False),
             ("forward_pe", self.forward_pe, True),
+            ("peg_score", self.peg, False),
             ("cf_profit", self.cf_profit, False),
         ]
 
@@ -840,6 +846,7 @@ def score_pead2_ff(
         ("ebidt_yoy", w.ebidt_yoy, "yoy"),
         ("ebidt_qoq", w.ebidt_qoq, "qoq"),
         ("forward_pe", w.forward_pe, "pe"),
+        ("peg_score", w.peg, "raw"),
         ("cf_profit", w.cf_profit, "raw"),
     ]
 
@@ -850,14 +857,14 @@ def score_pead2_ff(
             continue
         raw = pd.to_numeric(out[col], errors="coerce")
 
-        def _metric(val: float | None) -> float | None:
+        def _metric(val: float | None, *, _kind: str = kind) -> float | None:
             if val is None or (isinstance(val, float) and pd.isna(val)):
                 return None
-            if kind == "pe":
+            if _kind == "pe":
                 return _ff_signed_pe(val)
-            if kind == "yoy":
+            if _kind == "yoy":
                 return _ff_signed_growth(val, yoy=True)
-            if kind == "qoq":
+            if _kind == "qoq":
                 return _ff_signed_growth(val, yoy=False)
             return max(-100.0, min(100.0, float(val)))
 
@@ -892,6 +899,7 @@ def score_pead2_absolute(
         "ebidt_yoy": (w.ebidt_yoy, "growth"),
         "ebidt_qoq": (w.ebidt_qoq, "growth"),
         "forward_pe": (w.forward_pe, "pe"),
+        "peg_score": (w.peg, "peg"),
     }
 
     composite = pd.Series(0.0, index=out.index)
@@ -903,6 +911,12 @@ def score_pead2_absolute(
         has_val = raw.notna()
         if kind == "growth":
             sub = raw.apply(lambda v: _absolute_growth_score(v, cap=p.growth_cap))
+        elif kind == "peg":
+            sub = raw.apply(
+                lambda v: None
+                if v is None or (isinstance(v, float) and pd.isna(v))
+                else _clamp_score(float(v))
+            )
         else:
             sub = raw.apply(
                 lambda v: _absolute_pe_score(v, ideal=p.pe_ideal, bad=p.pe_bad)

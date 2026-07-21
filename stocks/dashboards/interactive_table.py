@@ -31,6 +31,11 @@ def rows_for_json(df: pd.DataFrame, *, extra_cols: tuple[str, ...] = ()) -> list
         "score", "date", "upper_band", "signal", "timeframe",
         "tq_w52", "tq_w52_prev", "tq_change", "tq_zone", "recovery_score",
         "industry", "sub_sector", "market_cap_cr", "pe_ratio", "forward_pe",
+        "growth_score", "growth_checks", "sales_cagr", "profit_cagr",
+        "sales_growth", "operating_margin", "gross_margin", "net_margin",
+        "roe", "roa", "debt_to_equity",
+        "cq_score", "cq_checks", "cash_to_tax", "croic", "ccc_years", "ccc_days",
+        "ocf_ebitda_growth", "ocf_to_ebitda", "ocf_cagr", "ebitda_cagr",
     ) + extra_cols
     for _, row in work.iterrows():
         ticker = safe_str(row.get("ticker"))

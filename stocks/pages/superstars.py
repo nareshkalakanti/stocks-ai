@@ -510,7 +510,7 @@ def render_superstars() -> None:
             refresh = st.button(
                 "Refresh all",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
                 help=(
                     f"Fetch all {len(SUPERSTAR_INVESTORS)} investors from Trendlyne "
                     f"and save to database (bypasses {SUPERSTAR_CACHE_HOURS}h cache)"
@@ -597,7 +597,7 @@ def render_superstars() -> None:
             st.session_state[load_key] = expanded
         with st.expander(_investor_expander_label(name, data), expanded=expanded):
             if not st.session_state[load_key]:
-                if st.button("Show holdings", key=f"ss_show_{slug}", use_container_width=True):
+                if st.button("Show holdings", key=f"ss_show_{slug}", width="stretch"):
                     st.session_state[load_key] = True
                     st.rerun()
             else:

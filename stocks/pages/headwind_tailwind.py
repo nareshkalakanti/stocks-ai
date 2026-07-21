@@ -226,7 +226,7 @@ def render_headwind_tailwind() -> None:
             holdings_key="ht_holdings_industries_only",
         )
         with row[5]:
-            run_clicked = st.button("Run scan", type="primary", use_container_width=True)
+            run_clicked = st.button("Run scan", type="primary", width="stretch")
 
     filtered = apply_stock_filters(stocks, filters)
     applied = apply_holdings_industries_if_checked(

@@ -1789,6 +1789,25 @@ def _rows_for_json(df: pd.DataFrame) -> list[dict]:
                 "sales_yoy": json_safe_scalar(row.get("sales_yoy")),
                 "np_yoy": json_safe_scalar(row.get("np_yoy")),
                 "eps_yoy": json_safe_scalar(row.get("eps_yoy")),
+                "surprise_growth": json_safe_scalar(row.get("surprise_growth")),
+                "peg": json_safe_scalar(row.get("peg")),
+                "napkin_pe": json_safe_scalar(row.get("napkin_pe")),
+                "napkin_near_pe": json_safe_scalar(row.get("napkin_near_pe")),
+                "napkin_required_cagr": json_safe_scalar(row.get("napkin_required_cagr")),
+                "napkin_growth": json_safe_scalar(row.get("napkin_growth")),
+                "napkin_gap": json_safe_scalar(row.get("napkin_gap")),
+                "napkin_fair_pe": json_safe_scalar(row.get("napkin_fair_pe")),
+                "surv_type": safe_str(row.get("surv_type")) or None,
+                "surv_stage": safe_str(row.get("surv_stage")) or None,
+                "drawdown_pct": json_safe_scalar(row.get("drawdown_pct")),
+                "bounce_pct": json_safe_scalar(row.get("bounce_pct")),
+                "distress_flags": safe_str(row.get("distress_flags")) or None,
+                "distress_reason": safe_str(row.get("distress_reason")) or None,
+                "fisher_growth": json_safe_scalar(row.get("fisher_growth")),
+                "fisher_margin": json_safe_scalar(row.get("fisher_margin")),
+                "fisher_quality": json_safe_scalar(row.get("fisher_quality")),
+                "fisher_checks": safe_str(row.get("fisher_checks")) or None,
+                "fisher_manual": safe_str(row.get("fisher_manual")) or None,
                 "calculation_date": safe_str(row.get("calculation_date")) or None,
                 "sc": row.get("screener_link") or screener_url(ticker, market),
                 "tv": row.get("tv_link") or tradingview_url(ticker, market),
@@ -1888,6 +1907,16 @@ def build_pead2_dashboard_html(
 ) -> str:
     del recent_filter_days, recent_day_options
     is_pead1 = str(variant).lower() in ("pead1", "pead_1", "1")
+    is_psq = str(variant).lower() in ("psq", "positive_surprise", "positive_surprise_quant")
+    is_peg_aware = str(variant).lower() in ("peg_aware", "peg-aware", "pegaware")
+    is_fisher = str(variant).lower() in ("fisher", "fisher_multibagger", "multibagger")
+    is_napkin = str(variant).lower() in ("napkin", "napkin_investing", "lotusdew")
+    is_distress = str(variant).lower() in (
+        "distress",
+        "distressed",
+        "surveillance",
+        "turnaround",
+    )
     list_label_js = json_dumps(list_label)
     show_scored_split_js = "true" if show_scored_split else "false"
     updated = _scan_generated_ist(df)
@@ -1898,6 +1927,16 @@ def build_pead2_dashboard_html(
     data_previous = json_dumps(_rows_for_json(prev_df), separators=(",", ":"))
     has_previous = len(prev_df) > 0
     high_min = 5.0 if is_pead1 else 40.0
+    if is_psq:
+        high_min = 55.0
+    if is_peg_aware:
+        high_min = 40.0
+    if is_fisher:
+        high_min = 55.0
+    if is_napkin:
+        high_min = 50.0
+    if is_distress:
+        high_min = 55.0
     if score_high_min is not None:
         high_min = float(score_high_min)
 
@@ -1932,6 +1971,155 @@ def build_pead2_dashboard_html(
         <button type="button" class="signal-btn bb" data-signal="bb">BB weekly</button>
         <button type="button" class="signal-btn both" data-signal="both">TQ + BB</button>"""
         default_signal_filter = "buy"
+    elif is_distress:
+        cols_js = """[
+  {id:"company", label:"Company", fmt:"company", def:true},
+  {id:"pead_score", label:"Distress Score", fmt:"score", def:true, title:"Recovery optionality among surveillance / seed names"},
+  {id:"surv_type", label:"List", fmt:"text", def:true, title:"ASM / GSM / SEED"},
+  {id:"surv_stage", label:"Stage", fmt:"text", def:true},
+  {id:"drawdown_pct", label:"vs 52W High", fmt:"pct", def:true},
+  {id:"bounce_pct", label:"vs 52W Low", fmt:"pct", def:true},
+  {id:"eps_yoy", label:"EPS YoY", fmt:"pct", def:true},
+  {id:"sales_yoy", label:"Sales YoY", fmt:"pct", def:true},
+  {id:"returns_pct", label:"Returns", fmt:"pct", def:true},
+  {id:"forward_pe", label:"Forward PE", fmt:"fpe", def:false},
+  {id:"distress_flags", label:"Flags", fmt:"text", def:false},
+  {id:"distress_reason", label:"Why", fmt:"text", def:false},
+]"""
+        default_sort_col = "pead_score"
+        col_btn_title = "Show PE / flags / reason columns"
+        quarter_toggle = f"""
+          <span class="quarter-toggle">
+            <button type="button" class="quarter-btn on" id="btn-q-current">Current Quarter</button>
+            <button type="button" class="quarter-btn" id="btn-q-previous" {"disabled" if not has_previous else ""}>Previous Quarter</button>
+          </span>"""
+        signal_filter_btns = """
+        <button type="button" class="signal-btn on" data-signal="all">All</button>
+        <button type="button" class="signal-btn tq" data-signal="tq">TQ weekly</button>
+        <button type="button" class="signal-btn bb" data-signal="bb">BB weekly</button>
+        <button type="button" class="signal-btn both" data-signal="both">TQ + BB</button>"""
+        default_signal_filter = "all"
+    elif is_napkin:
+        cols_js = """[
+  {id:"company", label:"Company", fmt:"company", def:true},
+  {id:"pead_score", label:"Napkin Score", fmt:"score", def:true, title:"Growth coverage of required near-term CAGR (1× = 50)"},
+  {id:"napkin_pe", label:"PE", fmt:"num1", def:true, title:"Forward PE preferred, else trailing"},
+  {id:"napkin_near_pe", label:"Near PE", fmt:"num1", def:true, title:"Near-term slice ≈ 30% × PE (terminal ~70%)"},
+  {id:"napkin_required_cagr", label:"Req CAGR", fmt:"pct", def:true, title:"Earnings CAGR baked into near-term PE over 5Y"},
+  {id:"napkin_growth", label:"Growth", fmt:"pct", def:true, title:"EPS/sales/NP YoY or assumed market growth"},
+  {id:"napkin_gap", label:"Gap", fmt:"pct", def:true, title:"Growth − required CAGR (pp)"},
+  {id:"napkin_fair_pe", label:"Fair PE", fmt:"num1", def:true, title:"PE justified by growth under napkin weights"},
+  {id:"result_date", label:"Result Date", fmt:"date", def:false},
+  {id:"returns_pct", label:"Returns", fmt:"pct", def:false},
+  {id:"eps_yoy", label:"EPS YoY", fmt:"pct", def:false},
+  {id:"sales_yoy", label:"Sales YoY", fmt:"pct", def:false},
+]"""
+        default_sort_col = "pead_score"
+        col_btn_title = "Show result date / returns / YoY columns"
+        quarter_toggle = f"""
+          <span class="quarter-toggle">
+            <button type="button" class="quarter-btn on" id="btn-q-current">Current Quarter</button>
+            <button type="button" class="quarter-btn" id="btn-q-previous" {"disabled" if not has_previous else ""}>Previous Quarter</button>
+          </span>"""
+        signal_filter_btns = """
+        <button type="button" class="signal-btn on" data-signal="all">All</button>
+        <button type="button" class="signal-btn tq" data-signal="tq">TQ weekly</button>
+        <button type="button" class="signal-btn bb" data-signal="bb">BB weekly</button>
+        <button type="button" class="signal-btn both" data-signal="both">TQ + BB</button>"""
+        default_signal_filter = "all"
+    elif is_psq:
+        cols_js = """[
+  {id:"company", label:"Company", fmt:"company", def:true},
+  {id:"pead_score", label:"PSQ Score", fmt:"score", def:true},
+  {id:"result_date", label:"Result Date", fmt:"date", def:true},
+  {id:"surprise_growth", label:"Surprise YoY", fmt:"pct", def:true, title:"Seasonality-adjusted YoY (EPS → sales → NP)"},
+  {id:"peg", label:"PEG", fmt:"num1", def:true, title:"Forward PE ÷ floored YoY growth"},
+  {id:"forward_pe", label:"Forward PE", fmt:"fpe", def:true},
+  {id:"eps_yoy", label:"EPS YoY", fmt:"pct", def:true},
+  {id:"returns_pct", label:"Returns", fmt:"pct", def:true},
+  {id:"sales_yoy", label:"Sales YoY", fmt:"pct", def:false},
+  {id:"np_yoy", label:"NP YoY", fmt:"pct", def:false},
+  {id:"daily_ret_pct", label:"Daily Ret", fmt:"daily", def:false},
+  {id:"cf_profit", label:"CF/Profit", fmt:"cf", def:false},
+]"""
+        default_sort_col = "pead_score"
+        col_btn_title = "Show sales / NP / daily / CF columns"
+        quarter_toggle = f"""
+          <span class="quarter-toggle">
+            <button type="button" class="quarter-btn on" id="btn-q-current">Current Quarter</button>
+            <button type="button" class="quarter-btn" id="btn-q-previous" {"disabled" if not has_previous else ""}>Previous Quarter</button>
+          </span>"""
+        signal_filter_btns = """
+        <button type="button" class="signal-btn on" data-signal="all">All</button>
+        <button type="button" class="signal-btn tq" data-signal="tq">TQ weekly</button>
+        <button type="button" class="signal-btn bb" data-signal="bb">BB weekly</button>
+        <button type="button" class="signal-btn both" data-signal="both">TQ + BB</button>"""
+        default_signal_filter = "all"
+    elif is_peg_aware:
+        cols_js = """[
+  {id:"company", label:"Company", fmt:"company", def:true},
+  {id:"pead_score", label:"PEG-aware Score", fmt:"score", def:true},
+  {id:"result_date", label:"Result Date", fmt:"date", def:true},
+  {id:"surprise_growth", label:"Surprise YoY", fmt:"pct", def:true, title:"Seasonality-adjusted YoY (EPS → sales → NP)"},
+  {id:"peg", label:"PEG", fmt:"num1", def:true, title:"Forward PE ÷ floored YoY growth (gate ≤ 2)"},
+  {id:"forward_pe", label:"Forward PE", fmt:"fpe", def:true, title:"Price ÷ latest quarter EPS × 4"},
+  {id:"returns_pct", label:"Returns", fmt:"pct", def:true},
+  {id:"napkin_near_pe", label:"Near PE", fmt:"num1", def:false, title:"Napkin readout: ~30% × PE (not scored)"},
+  {id:"napkin_required_cagr", label:"Req CAGR", fmt:"pct", def:false, title:"Napkin readout: CAGR baked into near-term PE"},
+  {id:"napkin_gap", label:"Gap", fmt:"pct", def:false, title:"Napkin readout: growth − required CAGR (pp)"},
+  {id:"daily_ret_pct", label:"Daily Ret", fmt:"daily", def:false},
+  {id:"sales_yoy", label:"Sales YoY", fmt:"pct", def:false},
+  {id:"sales_qoq", label:"Sales QoQ", fmt:"pct", def:false},
+  {id:"np_yoy", label:"NP YoY", fmt:"pct", def:false},
+  {id:"np_qoq", label:"NP QoQ", fmt:"pct", def:false},
+  {id:"ebidt_yoy", label:"EBIDT YoY", fmt:"pct", def:false},
+  {id:"ebidt_qoq", label:"EBIDT QoQ", fmt:"pct", def:false},
+  {id:"cf_profit", label:"CF/Profit", fmt:"cf", def:false},
+]"""
+        default_sort_col = "pead_score"
+        col_btn_title = "Show napkin / growth / CF columns"
+        quarter_toggle = f"""
+          <span class="quarter-toggle">
+            <button type="button" class="quarter-btn on" id="btn-q-current">Current Quarter</button>
+            <button type="button" class="quarter-btn" id="btn-q-previous" {"disabled" if not has_previous else ""}>Previous Quarter</button>
+          </span>"""
+        signal_filter_btns = """
+        <button type="button" class="signal-btn on" data-signal="all">All</button>
+        <button type="button" class="signal-btn tq" data-signal="tq">TQ weekly</button>
+        <button type="button" class="signal-btn bb" data-signal="bb">BB weekly</button>
+        <button type="button" class="signal-btn both" data-signal="both">TQ + BB</button>"""
+        default_signal_filter = "all"
+    elif is_fisher:
+        cols_js = """[
+  {id:"company", label:"Company", fmt:"company", def:true},
+  {id:"pead_score", label:"Fisher Score", fmt:"score", def:true},
+  {id:"fisher_checks", label:"Checks", fmt:"text", def:true, title:"Quantitative Fisher proxy checks passed"},
+  {id:"result_date", label:"Result Date", fmt:"date", def:true},
+  {id:"sales_yoy", label:"Sales YoY", fmt:"pct", def:true, title:"Fisher #1 sales runway"},
+  {id:"np_yoy", label:"NP YoY", fmt:"pct", def:true, title:"Fisher #5/#6 margins"},
+  {id:"cf_profit", label:"CF/Profit", fmt:"cf", def:true, title:"Fisher #10 cash quality"},
+  {id:"forward_pe", label:"Forward PE", fmt:"fpe", def:true},
+  {id:"fisher_growth", label:"Growth", fmt:"num1", def:false},
+  {id:"fisher_margin", label:"Margin", fmt:"num1", def:false},
+  {id:"fisher_quality", label:"Quality", fmt:"num1", def:false},
+  {id:"returns_pct", label:"Returns", fmt:"pct", def:false},
+  {id:"eps_yoy", label:"EPS YoY", fmt:"pct", def:false},
+  {id:"sales_qoq", label:"Sales QoQ", fmt:"pct", def:false},
+  {id:"fisher_manual", label:"Scuttlebutt", fmt:"text", def:false, title:"Qualitative points needing manual research"},
+]"""
+        default_sort_col = "pead_score"
+        col_btn_title = "Show sub-scores / scuttlebutt / QoQ"
+        quarter_toggle = f"""
+          <span class="quarter-toggle">
+            <button type="button" class="quarter-btn on" id="btn-q-current">Current Quarter</button>
+            <button type="button" class="quarter-btn" id="btn-q-previous" {"disabled" if not has_previous else ""}>Previous Quarter</button>
+          </span>"""
+        signal_filter_btns = """
+        <button type="button" class="signal-btn on" data-signal="all">All</button>
+        <button type="button" class="signal-btn tq" data-signal="tq">TQ weekly</button>
+        <button type="button" class="signal-btn bb" data-signal="bb">BB weekly</button>
+        <button type="button" class="signal-btn both" data-signal="both">TQ + BB</button>"""
+        default_signal_filter = "all"
     else:
         cols_js = """[
   {id:"company", label:"Company", fmt:"company", def:true},

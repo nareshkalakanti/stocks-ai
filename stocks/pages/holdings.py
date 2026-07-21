@@ -88,7 +88,7 @@ def render_holdings() -> None:
     display = _holdings_display_df(priced)
     st.dataframe(
         display,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "Rank": st.column_config.NumberColumn(format="%d"),

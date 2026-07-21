@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 
 import pandas as pd
 import streamlit as st
@@ -53,14 +54,10 @@ class StockFilters:
         return self.market == "NSE"
 
 
-def _prune(key: str, options: list[str]) -> list[str]:
-    current = st.session_state.get(key, [])
-    if not isinstance(current, list):
-        current = []
-    pruned = sorted({v for v in current if v in options})
-    if pruned != current:
-        st.session_state[key] = pruned
-    return pruned
+def _clear_keys(*keys: str) -> None:
+    """Reset widget keys from an ``on_change`` callback (safe outside widget body)."""
+    for key in keys:
+        st.session_state[key] = []
 
 
 def _multiselect(
@@ -72,6 +69,7 @@ def _multiselect(
     help_text: str | None = None,
     disabled: bool = False,
     format_func: Callable[[str], str] | None = None,
+    on_change: Callable[[], None] | None = None,
 ) -> list[str]:
     kwargs: dict = {
         "label": label,
@@ -84,7 +82,13 @@ def _multiselect(
         kwargs["help"] = help_text
     if format_func is not None:
         kwargs["format_func"] = format_func
-    return st.multiselect(**kwargs)
+    if on_change is not None:
+        kwargs["on_change"] = on_change
+    selected = st.multiselect(**kwargs)
+    # Drop stale values if options shrank (do not write back to session_state).
+    if not isinstance(selected, list):
+        return []
+    return [v for v in selected if v in options]
 
 
 def _market_frame(stocks: pd.DataFrame, market: str) -> pd.DataFrame:
@@ -94,7 +98,7 @@ def _market_frame(stocks: pd.DataFrame, market: str) -> pd.DataFrame:
         return scan_playlist_listings(stocks, market)
     return stocks[stocks["market"] == market]
 
-def render_industry_selectbox(
+def render_sector_selectbox(
     stocks: pd.DataFrame,
     market: str,
     *,
@@ -103,10 +107,10 @@ def render_industry_selectbox(
     disabled: bool = False,
 ) -> str:
     mframe = market_frame if market_frame is not None else _market_frame(stocks, market)
-    opts = industry_options(stocks, mframe)
-    counts = industry_option_counts(mframe, opts[1:])
+    opts = sector_options(stocks, mframe)
+    counts = sector_option_counts(mframe, opts[1:])
     return st.selectbox(
-        "Sub sector",
+        "Sector",
         opts,
         key=key,
         disabled=disabled,
@@ -118,29 +122,29 @@ def render_industry_selectbox(
     )
 
 
-def render_sector_selectbox(
+def render_industry_selectbox(
     stocks: pd.DataFrame,
     market: str,
-    industry: str,
+    sector: str,
     *,
     key: str,
     market_frame: pd.DataFrame | None = None,
     disabled: bool = False,
 ) -> str:
     mframe = market_frame if market_frame is not None else _market_frame(stocks, market)
-    if industry != "All" and "industry" in mframe.columns:
-        sector_scope = mframe[mframe["industry"] == industry]
+    if sector != "All" and "sector" in mframe.columns:
+        industry_scope = mframe[mframe["sector"].astype(str).str.strip() == sector]
     else:
-        sector_scope = mframe
-    opts = sector_options(stocks, sector_scope)
-    counts = sector_option_counts(sector_scope, opts[1:])
+        industry_scope = mframe
+    opts = industry_options(stocks, industry_scope)
+    counts = industry_option_counts(industry_scope, opts[1:])
     return st.selectbox(
-        "Sector",
+        "Sub sector",
         opts,
         key=key,
         disabled=disabled,
         format_func=lambda label: (
-            f"All ({len(sector_scope):,})"
+            f"All ({len(industry_scope):,})"
             if label == "All"
             else format_option_with_count(label, counts.get(label, 0))
         ),
@@ -155,13 +159,13 @@ def render_industry_sector_selectboxes(
     sector_key: str,
     market_frame: pd.DataFrame | None = None,
 ) -> tuple[str, str]:
-    """Single-select Industry + Sector (both widgets in current Streamlit column)."""
+    """Single-select Sector + Sub sector (both widgets in current Streamlit column)."""
     mframe = market_frame if market_frame is not None else _market_frame(stocks, market)
-    industry = render_industry_selectbox(
-        stocks, market, key=industry_key, market_frame=mframe
-    )
     sector = render_sector_selectbox(
-        stocks, market, industry, key=sector_key, market_frame=mframe
+        stocks, market, key=sector_key, market_frame=mframe
+    )
+    industry = render_industry_selectbox(
+        stocks, market, sector, key=industry_key, market_frame=mframe
     )
     return industry, sector
 
@@ -174,7 +178,12 @@ def render_stock_filters(
     cols: tuple | None = None,
     key_prefix: str = _DEFAULT_KEY_PREFIX,
 ) -> StockFilters:
-    """Render Market · Industry · Sector filter row."""
+    """Render Market · Sector · Sub sector filter row.
+
+    Sector is the parent: Sub sector options come only from stocks in the
+    selected display sector(s), so options stay aligned and nothing in that
+    sector is hidden from the parent filter.
+    """
     key_market, key_industries, key_sectors, key_search = _filter_session_keys(key_prefix)
 
     if key_market not in st.session_state:
@@ -206,46 +215,47 @@ def render_stock_filters(
             market_opts,
             key=key_market,
             format_func=lambda m: format_market_option(stocks, m),
+            on_change=partial(_clear_keys, key_sectors, key_industries),
         )
 
     mframe = _market_frame(stocks, market)
-    industry_opts = industry_options(stocks, mframe)[1:]
-    industry_counts = industry_option_counts(mframe, industry_opts)
+    sector_opts = sector_options(stocks, mframe)[1:]
+    sector_counts = sector_option_counts(mframe, sector_opts)
 
     with cols[1]:
-        industries = _multiselect(
-            "Sub sector",
-            industry_opts,
-            key=key_industries,
-            placeholder="All sub sectors",
-            help_text="Fine NSE sub-sector tag (e.g. Building Products - Pipes)",
-            format_func=lambda label: format_option_with_count(
-                label, industry_counts.get(label, 0)
-            ),
-        )
-    industries = _prune(key_industries, industry_opts)
-
-    if industries:
-        from stocks.listings.sector_display import match_classifier_mask
-
-        sector_scope = mframe.loc[match_classifier_mask(mframe, industries)]
-    else:
-        sector_scope = mframe
-    sector_opts = sector_options(stocks, sector_scope)[1:]
-    sector_counts = sector_option_counts(sector_scope, sector_opts)
-
-    with cols[2]:
         sectors = _multiselect(
             "Sector",
             sector_opts,
             key=key_sectors,
             placeholder="All sectors",
-            help_text="Broad group (e.g. Real Estate & Construction)",
+            help_text="Broad display group (e.g. Agriculture & Agro)",
             format_func=lambda label: format_option_with_count(
                 label, sector_counts.get(label, 0)
             ),
+            on_change=partial(_clear_keys, key_industries),
         )
-    sectors = _prune(key_sectors, sector_opts)
+
+    if sectors and "sector" in mframe.columns:
+        industry_scope = mframe[mframe["sector"].astype(str).str.strip().isin(sectors)]
+    else:
+        industry_scope = mframe
+    industry_opts = industry_options(stocks, industry_scope)[1:]
+    industry_counts = industry_option_counts(industry_scope, industry_opts)
+
+    with cols[2]:
+        industries = _multiselect(
+            "Sub sector",
+            industry_opts,
+            key=key_industries,
+            placeholder="All sub sectors",
+            help_text=(
+                "Fine tags inside the selected sector "
+                "(e.g. Agro Products, Seeds under Agriculture & Agro)"
+            ),
+            format_func=lambda label: format_option_with_count(
+                label, industry_counts.get(label, 0)
+            ),
+        )
 
     search = ""
     if include_search:
@@ -285,12 +295,12 @@ def filter_caption_suffix(
     parts: list[str] = []
     if filters.market != "All":
         parts.append(filters.market)
-    industry_lbl = classifier_filter_label("sub sectors", filters.industries)
-    if industry_lbl:
-        parts.append(industry_lbl)
     sector_lbl = classifier_filter_label("sectors", filters.sectors)
     if sector_lbl:
         parts.append(sector_lbl)
+    industry_lbl = classifier_filter_label("sub sectors", filters.industries)
+    if industry_lbl:
+        parts.append(industry_lbl)
     extra = safe_str(extra).strip()
     if extra:
         parts.append(extra.strip(" ·"))

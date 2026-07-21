@@ -38,13 +38,14 @@ STRATEGY_OPTIONS = ("Both", "TQ", "Bollinger Bands")
 
 
 def render_strategy() -> None:
-    tab_scan, tab_recovery, tab_rsi, tab_pead2, tab_pead1, tab_ht = st.tabs(
+    tab_scan, tab_recovery, tab_rsi, tab_pead2, tab_growth, tab_cashq, tab_ht = st.tabs(
         [
             "TQ / Bollinger Bands",
             "TQ W52 Recovery",
             "RSI Weekly",
-            "PEAD 2",
-            "PEAD 1",
+            "PEAD",
+            "Growth",
+            "Cash Quality",
             "H&T",
         ]
     )
@@ -62,10 +63,14 @@ def render_strategy() -> None:
         from stocks.pages.pead2 import render_pead2
 
         render_pead2(show_title=False)
-    with tab_pead1:
-        from stocks.pages.pead1 import render_pead1
+    with tab_growth:
+        from stocks.pages.growth import render_growth
 
-        render_pead1(show_title=False)
+        render_growth(show_title=False)
+    with tab_cashq:
+        from stocks.pages.cash_quality import render_cash_quality
+
+        render_cash_quality(show_title=False)
     with tab_ht:
         from stocks.pages.headwind_tailwind import render_headwind_tailwind
 
@@ -125,9 +130,9 @@ def render_strategy_scan() -> None:
                 help="Parallel workers for **TQ** and throttled scans (PEAD, Earnings, Turtle). Max 32.",
             )
         with row[8]:
-            run_clicked = st.button("Scan", type="primary", use_container_width=True, key="strat_scan")
+            run_clicked = st.button("Scan", type="primary", width="stretch", key="strat_scan")
         with row[9]:
-            stop_clicked = st.button("Stop", use_container_width=True, key="strat_stop")
+            stop_clicked = st.button("Stop", width="stretch", key="strat_stop")
 
     cap_tier_id = resolve_cap_tier_id(filters.market, cap_tier_id_from_label(cap_tier_label_ui))
     filtered = apply_stock_filters(stocks, filters)

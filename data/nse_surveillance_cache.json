@@ -1,0 +1,285 @@
+{
+  "fetched_at": "2026-07-21T07:16:26.509442+00:00",
+  "rows": [
+    {
+      "ticker": "AUSOMENT",
+      "name": "Ausom Enterprise Limited",
+      "surv_type": "ASM",
+      "surv_stage": "I",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "ALPHAGEO",
+      "name": "Alphageo (India) Limited",
+      "surv_type": "ASM",
+      "surv_stage": "I",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "APOLLO",
+      "name": "Apollo Micro Systems Limited",
+      "surv_type": "ASM",
+      "surv_stage": "I",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "AROGRANITE",
+      "name": "Aro Granite Industries Limited",
+      "surv_type": "ASM",
+      "surv_stage": "I",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "BLKASHYAP",
+      "name": "B. L. Kashyap and Sons Limited",
+      "surv_type": "ASM",
+      "surv_stage": "I",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "ACEINTEG",
+      "name": "Ace Integrated Solutions Limited",
+      "surv_type": "ASM",
+      "surv_stage": "I",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "CINEVISTA",
+      "name": "Cinevista Limited",
+      "surv_type": "ASM",
+      "surv_stage": "II",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "AYMSYNTEX",
+      "name": "AYM Syntex Limited",
+      "surv_type": "ASM",
+      "surv_stage": "I",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "ANANDRATHI",
+      "name": "Anand Rathi Wealth Limited",
+      "surv_type": "ASM",
+      "surv_stage": "I",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "GLOBALE",
+      "name": "Globale Tessile Limited",
+      "surv_type": "ASM",
+      "surv_stage": "I",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "ARVIND",
+      "name": "Arvind Limited",
+      "surv_type": "ASM",
+      "surv_stage": "I",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "AARVEEDEN",
+      "name": "Aarvee Denims & Exports Limited",
+      "surv_type": "ASM",
+      "surv_stage": "I",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "AARTECH",
+      "name": "Aartech Solonics Limited",
+      "surv_type": "ASM",
+      "surv_stage": "I",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "BIOFILCHEM",
+      "name": "Biofil Chemicals & Pharmaceuticals Limited",
+      "surv_type": "ASM",
+      "surv_stage": "I",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "AZAD",
+      "name": "Azad Engineering Limited",
+      "surv_type": "ASM",
+      "surv_stage": "I",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "CONSOFINVT",
+      "name": "Consolidated Finvest & Holdings Limited",
+      "surv_type": "ASM",
+      "surv_stage": "I",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "BALPHARMA",
+      "name": "Bal Pharma Limited",
+      "surv_type": "ASM",
+      "surv_stage": "I",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "AMBICAAGAR",
+      "name": "Ambica Agarbathies & Aroma industries Limited",
+      "surv_type": "ASM",
+      "surv_stage": "I",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "CONTI",
+      "name": "Continental Seeds and Chemicals Limited",
+      "surv_type": "ASM",
+      "surv_stage": "I",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "ASIANENE",
+      "name": "Asian Energy Services Limited",
+      "surv_type": "ASM",
+      "surv_stage": "I",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "AGSTRA",
+      "name": "AGS Transact Technologies Limited",
+      "surv_type": "GSM",
+      "surv_stage": "LVIII",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "ANKITMETAL",
+      "name": "Ankit Metal & Power Limited",
+      "surv_type": "GSM",
+      "surv_stage": "LXII",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "AQYLON",
+      "name": "Aqylon Nexus Limited",
+      "surv_type": "GSM",
+      "surv_stage": "LVI",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "ASIL",
+      "name": "Amit Spinning Industries Limited",
+      "surv_type": "GSM",
+      "surv_stage": "VI",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "ATNINTER",
+      "name": "ATN International Limited",
+      "surv_type": "GSM",
+      "surv_stage": "VI",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "BILVYAPAR",
+      "name": "Binani Industries Limited",
+      "surv_type": "GSM",
+      "surv_stage": "LXII",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "BLAL",
+      "name": "BEML Land Assets Limited",
+      "surv_type": "GSM",
+      "surv_stage": "0",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "BLUECHIP",
+      "name": "Blue Chip India Limited",
+      "surv_type": "GSM",
+      "surv_stage": "II",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "NOIDATOLL",
+      "name": "Noida Toll Bridge Company Limited",
+      "surv_type": "GSM",
+      "surv_stage": "0",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "GTL",
+      "name": "GTL Limited",
+      "surv_type": "GSM",
+      "surv_stage": "0",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "DGCONTENT",
+      "name": "Digicontent Limited",
+      "surv_type": "GSM",
+      "surv_stage": "III",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "ARENTERP",
+      "name": "Rajdarshan Industries Limited",
+      "surv_type": "GSM",
+      "surv_stage": "L",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "INSPIRISYS",
+      "name": "Inspirisys Solutions Limited",
+      "surv_type": "GSM",
+      "surv_stage": "III",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "SILLYMONKS",
+      "name": "Silly Monks Entertainment Limited",
+      "surv_type": "GSM",
+      "surv_stage": "I",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "SANCO",
+      "name": "Sanco Industries Limited",
+      "surv_type": "GSM",
+      "surv_stage": "0",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "UMESLTD",
+      "name": "Usha Martin Education & Solutions Limited",
+      "surv_type": "GSM",
+      "surv_stage": "L",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "EASTSILK",
+      "name": "Eastern Silk Industries Limited",
+      "surv_type": "GSM",
+      "surv_stage": "0",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "METALFORGE",
+      "name": "Metalyst Forgings Limited",
+      "surv_type": "GSM",
+      "surv_stage": "0",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "NAGREEKCAP",
+      "name": "Nagreeka Capital & Infrastructure Limited",
+      "surv_type": "GSM",
+      "surv_stage": "I",
+      "source": "pocketful"
+    },
+    {
+      "ticker": "BALKRISHNA",
+      "name": "Balkrishna Paper Mills Limited",
+      "surv_type": "GSM",
+      "surv_stage": "0",
+      "source": "pocketful"
+    }
+  ]
+}

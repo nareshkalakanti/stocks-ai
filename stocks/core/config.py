@@ -128,6 +128,54 @@ PEAD_FACTOR_MAX_WORKERS = YFINANCE_THROTTLED_MAX_WORKERS
 PEAD_FACTOR_SUE_WEIGHT = float(os.getenv("PEAD_FACTOR_SUE_WEIGHT", "0.65"))
 PEAD_FACTOR_PEG_GROWTH_FLOOR = float(os.getenv("PEAD_FACTOR_PEG_GROWTH_FLOOR", "5"))
 PEAD_FACTOR_FRESH_DAYS = int(os.getenv("PEAD_FACTOR_FRESH_DAYS", "10"))
+# PEG-aware PEAD strategy (separate tab — not PEAD 2 defaults).
+PEAD_PEG_MAX = float(os.getenv("PEAD_PEG_MAX", "2.0"))
+PEAD_PEG_REQUIRE_POSITIVE = os.getenv("PEAD_PEG_REQUIRE_POSITIVE", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+PEAD_PEG_MAX_FORWARD_PE = float(os.getenv("PEAD_PEG_MAX_FORWARD_PE", "200"))
+
+# Philip Fisher multibagger scorecard (separate strategy tab).
+FISHER_MIN_SALES_YOY = float(os.getenv("FISHER_MIN_SALES_YOY", "10"))
+FISHER_MIN_CF_PROFIT = float(os.getenv("FISHER_MIN_CF_PROFIT", "0.7"))
+FISHER_MIN_CHECKS = int(os.getenv("FISHER_MIN_CHECKS", "7"))
+FISHER_MCAP_MAX_CR = float(os.getenv("FISHER_MCAP_MAX_CR", "15000"))
+FISHER_PE_MIN = float(os.getenv("FISHER_PE_MIN", "5"))
+FISHER_PE_MAX = float(os.getenv("FISHER_PE_MAX", "60"))
+
+# Distressed / surveillance turnaround (experimental monitoring).
+DISTRESS_ASSUMED_DRAWDOWN_MIN = float(os.getenv("DISTRESS_ASSUMED_DRAWDOWN_MIN", "20"))
+DISTRESS_MCAP_SWEET_MAX_CR = float(os.getenv("DISTRESS_MCAP_SWEET_MAX_CR", "500"))
+DISTRESS_CACHE_HOURS = int(os.getenv("DISTRESS_CACHE_HOURS", "24"))
+
+# LotusDew Napkin Investing: near-term (~30%) vs terminal (~70%) value split.
+NAPKIN_NEAR_WEIGHT = float(os.getenv("NAPKIN_NEAR_WEIGHT", "0.30"))
+NAPKIN_HORIZON_YEARS = int(os.getenv("NAPKIN_HORIZON_YEARS", "5"))
+NAPKIN_ASSUMED_GROWTH_PCT = float(os.getenv("NAPKIN_ASSUMED_GROWTH_PCT", "15"))
+
+# Growth strategy — quantitative screen (annual statements via yfinance).
+GROWTH_MAX_DEBT_EQUITY = float(os.getenv("GROWTH_MAX_DEBT_EQUITY", "2"))
+GROWTH_MIN_SALES_CAGR = float(os.getenv("GROWTH_MIN_SALES_CAGR", "15"))
+GROWTH_MIN_PROFIT_CAGR = float(os.getenv("GROWTH_MIN_PROFIT_CAGR", "15"))
+GROWTH_MIN_OPERATING_MARGIN = float(os.getenv("GROWTH_MIN_OPERATING_MARGIN", "15"))
+GROWTH_MIN_ROE = float(os.getenv("GROWTH_MIN_ROE", "15"))
+GROWTH_MIN_CHECKS = int(os.getenv("GROWTH_MIN_CHECKS", "4"))
+GROWTH_CACHE_HOURS = int(os.getenv("GROWTH_CACHE_HOURS", "24"))
+GROWTH_MAX_WORKERS = YFINANCE_THROTTLED_MAX_WORKERS
+
+# Cash Quality — CROIC / CCC / OCF vs EBITDA (annual yfinance statements).
+CASH_QUALITY_MIN_CASH_TO_TAX = float(os.getenv("CASH_QUALITY_MIN_CASH_TO_TAX", "0.6"))
+CASH_QUALITY_MIN_CROIC = float(os.getenv("CASH_QUALITY_MIN_CROIC", "0.2"))
+CASH_QUALITY_MAX_CCC_YEARS = float(os.getenv("CASH_QUALITY_MAX_CCC_YEARS", "1"))
+CASH_QUALITY_MIN_OCF_EBITDA_GROWTH = float(
+    os.getenv("CASH_QUALITY_MIN_OCF_EBITDA_GROWTH", "0.6")
+)
+CASH_QUALITY_MIN_CHECKS = int(os.getenv("CASH_QUALITY_MIN_CHECKS", "3"))
+CASH_QUALITY_LOOKBACK_YEARS = int(os.getenv("CASH_QUALITY_LOOKBACK_YEARS", "5"))
+CASH_QUALITY_CACHE_HOURS = int(os.getenv("CASH_QUALITY_CACHE_HOURS", "24"))
+CASH_QUALITY_MAX_WORKERS = YFINANCE_THROTTLED_MAX_WORKERS
 
 # Reject distorted Yahoo EPS rows (low YoY base, NP/EPS share-count drift).
 EARNINGS_MIN_PRIOR_EPS = float(os.getenv("EARNINGS_MIN_PRIOR_EPS", "0.10"))

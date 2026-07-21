@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
     from stocks.scans.stock_filters import StockFilters
 
-# Market, industry, sector filter columns.
+# Market, sector, sub-sector filter columns.
 FILTER_COL_WIDTHS = [0.78, 1.05, 1.05]
 
 CAP_TIER_COL_WIDTH = 0.82
@@ -37,8 +37,8 @@ BB_TIMEFRAME_COL_WIDTH = 0.68
 
 # Indices after FILTER_COL_WIDTHS in every scan toolbar row.
 IDX_MARKET = 0
-IDX_INDUSTRY = 1
-IDX_SECTOR = 2
+IDX_SECTOR = 1
+IDX_INDUSTRY = 2  # Sub sector (fine industry / sub_sector tags)
 IDX_CAP_TIER = 3
 IDX_HOLDINGS = 4
 
@@ -136,7 +136,7 @@ def base_scan_extra_widths(*page_widths: float) -> tuple[float, ...]:
 
 @contextmanager
 def scan_toolbar_row(*extra_widths: float) -> Iterator[list]:
-    """Bordered single row: Market · Sub sector · Sector · … page controls."""
+    """Bordered single row: Market · Sector · Sub sector · … page controls."""
     inject_scan_toolbar_css()
     widths = FILTER_COL_WIDTHS + list(extra_widths)
     with st.container(border=True):
@@ -151,12 +151,12 @@ def render_base_scan_filters(
     cap_tier_key: str,
     holdings_key: str,
 ) -> tuple["StockFilters", str, bool]:
-    """Render Market / Sub sector / Sector / Market cap / My industries in one toolbar row."""
+    """Render Market / Sector / Sub sector / Market cap / My industries in one toolbar row."""
     from stocks.scans.stock_filters import render_stock_filters
 
     filters = render_stock_filters(
         stocks,
-        cols=(row[IDX_MARKET], row[IDX_INDUSTRY], row[IDX_SECTOR]),
+        cols=(row[IDX_MARKET], row[IDX_SECTOR], row[IDX_INDUSTRY]),
         key_prefix=key_prefix,
     )
     with row[IDX_CAP_TIER]:

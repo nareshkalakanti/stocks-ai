@@ -18,10 +18,16 @@ def embed_html_iframe(
     key: str | None = None,
     allow_top_navigation: bool = False,
 ) -> None:
-    """Render HTML inline in the app (no temp files or file:// URLs)."""
-    _ = key  # reserved for callers; components.html has no key param
+    """Render HTML inline in the app (no temp files or file:// URLs).
+
+    Large dashboards must use Streamlit's iframe embed. Markdown ``srcdoc`` is
+    only safe for tiny HTML; PEAD/H&T boards are far too large.
+    """
+    _ = key  # reserved for callers
     h = _embed_height(height)
-    if allow_top_navigation:
+
+    # Prefer markdown srcdoc only for small HTML that needs top navigation.
+    if allow_top_navigation and len(html_content) < 40_000:
         import streamlit as st
 
         sandbox = (
@@ -35,6 +41,13 @@ def embed_html_iframe(
             f'title="dashboard"></iframe>',
             unsafe_allow_html=True,
         )
+        return
+
+    import streamlit as st
+
+    # Streamlit 1.58+: st.iframe replaces components.v1.html.
+    if hasattr(st, "iframe"):
+        st.iframe(html_content, width="stretch", height=h)
         return
 
     import streamlit.components.v1 as components

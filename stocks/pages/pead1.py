@@ -113,7 +113,7 @@ def render_pead1(*, show_title: bool = True) -> None:
             run_clicked = st.button(
                 "Scan",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
                 key="pead1_scan",
                 help="Run PEAD 1 Earnings Explosion screen on the current universe.",
             )

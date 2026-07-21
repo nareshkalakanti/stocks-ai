@@ -177,7 +177,7 @@ def render_pead2(*, show_title: bool = True) -> None:
             run_clicked = st.button(
                 "Scan",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
                 key="pead2_scan",
                 help=(
                     f"Fetch missing or cache older than {PEAD2_CACHE_HOURS}h from Yahoo, "
@@ -311,7 +311,6 @@ def render_pead2(*, show_title: bool = True) -> None:
     embed_html_iframe(
         embed_html,
         height=pead2_iframe_height(len(candidates)),
-        allow_top_navigation=True,
     )
 
     csv = format_pead_export_df(candidates).to_csv(index=False).encode("utf-8")

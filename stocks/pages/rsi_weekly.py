@@ -63,9 +63,9 @@ def render_rsi_weekly() -> None:
                 key="rsiw_max_workers",
             )
         with row[6]:
-            run_scan = st.button("Scan", type="primary", use_container_width=True, key="rsiw_scan")
+            run_scan = st.button("Scan", type="primary", width="stretch", key="rsiw_scan")
         with row[7]:
-            if st.button("Stop", use_container_width=True, key="rsiw_stop"):
+            if st.button("Stop", width="stretch", key="rsiw_stop"):
                 st.session_state.rsiw_scan_stop = True
 
     cap_tier_id = resolve_cap_tier_id(filters.market, cap_tier_id_from_label(cap_tier_label_ui))
