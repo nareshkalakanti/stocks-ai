@@ -4,6 +4,7 @@ __pycache__/
 .streamlit/
 .pytest_cache/
 data/stocks_ai.db
+data/governance.db
 data/logs/
 data/models/
 data/dashboard_cache/

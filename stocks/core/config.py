@@ -8,6 +8,8 @@ ENV_PATH = BASE_DIR / ".env"
 DATA_DIR = BASE_DIR / "data"
 LOGS_DIR = DATA_DIR / "logs"
 DB_PATH = DATA_DIR / "stocks_ai.db"
+# Separate SQLite for board / director graph (NSE governance — quality over breadth).
+GOVERNANCE_DB_PATH = DATA_DIR / "governance.db"
 STOCK_NOTES_PATH = DATA_DIR / "stock_notes.json"
 ERROR_LOG_FILE = LOGS_DIR / "errors.log"
 

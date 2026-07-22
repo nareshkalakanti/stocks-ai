@@ -88,7 +88,9 @@ def _export_scan_csv(df: pd.DataFrame) -> bytes:
 
 
 def render_strategy() -> None:
-    tab_quant, tab_pead2, tab_ht = st.tabs(["Quant Tab", "PEAD", "H&T"])
+    tab_quant, tab_pead2, tab_ht, tab_gov = st.tabs(
+        ["Quant Tab", "PEAD", "H&T", "Governance"]
+    )
 
     with tab_quant:
         render_strategy_scan()
@@ -101,7 +103,10 @@ def render_strategy() -> None:
         from stocks.pages.headwind_tailwind import render_headwind_tailwind
 
         render_headwind_tailwind()
+    with tab_gov:
+        from stocks.pages.governance import render_governance
 
+        render_governance(show_title=False)
 
 def _show_ema_daily_results(result: pd.DataFrame) -> None:
     st.caption(

@@ -4,6 +4,7 @@ from stocks.market.yfinance_utils import install_yfinance_noise_filters
 
 install_yfinance_noise_filters()
 from stocks.core.database import init_db
+from stocks.governance.db import init_governance_db
 from stocks.pages.holdings import render_holdings
 from stocks.pages.sector_landscape import render_sector_landscape
 from stocks.pages.strategy import render_strategy
@@ -18,6 +19,7 @@ st.set_page_config(
 )
 
 init_db()
+init_governance_db()
 
 with st.sidebar:
     page = st.radio(
