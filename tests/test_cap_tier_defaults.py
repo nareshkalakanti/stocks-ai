@@ -17,7 +17,7 @@ def test_default_cap_tier_is_all():
 
 def test_holdings_respects_cap_tier_ds_uses_all_caps():
     assert resolve_cap_tier_id(HOLDINGS_PLAYLIST_LABEL, "micro") == "micro"
-    assert resolve_cap_tier_id(DS_PLAYLIST_LABEL, "range_100_3000") == "all"
+    assert resolve_cap_tier_id(DS_PLAYLIST_LABEL, "small") == "all"
     assert cap_tier_min_mcap_cr("all") is None
 
 

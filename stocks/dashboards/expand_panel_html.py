@@ -398,6 +398,175 @@ EXPAND_PANEL_CSS = """
   .co-news-link:hover { color: #2563eb; text-decoration: underline; }
   .expand-news-only { max-width: 720px; }
   .q-empty { color: #6b7280; font-size: 11px; padding: 4px 0; }
+  .q-table th.q-latest, .q-table td.q-latest { background: rgba(37, 99, 235, 0.08); }
+  .pead-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fff;
+    padding: 10px 12px 8px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .pead-card.pead-card-compact { gap: 8px; }
+  .pead-main-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px 18px;
+    width: 100%;
+  }
+  .pead-main-row .pead-metrics-card {
+    flex: 0 0 min(380px, 38%);
+    max-width: 400px;
+    min-width: 260px;
+  }
+  .pead-main-row .pead-q-section {
+    flex: 1 1 280px;
+    min-width: 0;
+    overflow-x: auto;
+  }
+  .pead-metrics-card {
+    margin-top: 0;
+    width: 100%;
+    font-size: 11px;
+    line-height: 1.25;
+  }
+  .pead-panel-sub {
+    font-size: 11px;
+    font-weight: 600;
+    color: #6b7280;
+    margin-bottom: 6px;
+    line-height: 1.3;
+  }
+  .pead-ma-pills {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 5px;
+  }
+  .pead-ma-pills .ma-pill:nth-child(4) { grid-column: 1; }
+  .pead-insight-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 10px 14px;
+    padding: 8px 0 0;
+    border-top: 1px solid #e5e7eb;
+    margin-top: 8px;
+  }
+  .pead-insight-row.single { grid-template-columns: 1fr; }
+  .pead-insight-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: #6b7280;
+    margin-bottom: 5px;
+  }
+  .pead-insight-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 5px;
+  }
+  .pead-insight-head .pead-insight-label { margin-bottom: 0; }
+  .expand-card-action {
+    font-size: 10px;
+    font-weight: 600;
+    color: #2563eb;
+    text-decoration: none;
+  }
+  .expand-card-action:hover { text-decoration: underline; }
+  .pead-news-compact-list { display: flex; flex-direction: column; gap: 4px; }
+  .pead-news-compact-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 6px 8px;
+    align-items: start;
+    padding: 4px 0;
+    text-decoration: none;
+    color: inherit;
+  }
+  .pead-news-compact-title { font-size: 11px; font-weight: 600; line-height: 1.35; color: #0f172a; }
+  .pead-news-when { font-size: 10px; color: #6b7280; white-space: nowrap; }
+  .pead-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .pead-section-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 8px;
+  }
+  .pead-section-head .pead-section-title { margin-bottom: 0; }
+  .pead-news-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 8px 10px;
+    align-items: start;
+    padding: 8px 0;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .pead-news-row:last-child { border-bottom: none; }
+  .pead-sent {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .pead-sent.sent-pos { color: #166534; background: rgba(34, 197, 94, 0.18); }
+  .pead-sent.sent-neu { color: #57534e; background: rgba(120, 113, 108, 0.15); }
+  .pead-news-link {
+    font-size: 12px;
+    font-weight: 600;
+    color: #0f172a;
+    text-decoration: none;
+    line-height: 1.35;
+  }
+  .pead-news-link:hover { color: #2563eb; text-decoration: underline; }
+  .pead-chip {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 999px;
+    margin-left: 4px;
+  }
+  .pead-chip.pos { color: #166534; background: rgba(34, 197, 94, 0.15); }
+  .pead-chip.neg { color: #991b1b; background: rgba(239, 68, 68, 0.12); }
+  .pead-card-compact .pead-q-section .q-block {
+    border: 1px solid rgba(148, 163, 184, 0.32);
+    border-radius: 8px;
+    padding: 8px 10px 6px;
+    background: rgba(248, 250, 252, 0.55);
+  }
+  .q-block-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 8px;
+  }
+  .q-note {
+    font-size: 11px;
+    color: #6b7280;
+    margin: -2px 0 8px;
+    line-height: 1.35;
+  }
+  @media (max-width: 720px) {
+    .pead-main-row { flex-direction: column; }
+    .pead-main-row .pead-metrics-card {
+      flex: 1 1 auto;
+      max-width: none;
+      width: 100%;
+    }
+    .pead-main-row .pead-q-section {
+      width: 100%;
+      border-top: 1px solid #e5e7eb;
+      padding-top: 8px;
+    }
+  }
 """
 
 CORP_TAGS_JS = """
@@ -888,8 +1057,16 @@ function renderQuarterPanel(q) {
   }
   const skipRows = new Set(["Current PE", "Forward PE", "Forward EPS"]);
   const rows = q.rows.filter(row => !skipRows.has(String(row.label || "")));
+  const salesRow = rows.find(row => String(row.label || "") === "Sales");
+  const allZeroSales = salesRow
+    && salesRow.values.length
+    && salesRow.values.every(v => v == null || Number(v) === 0);
   const n = q.labels.length;
-  let h = '<div class="q-block"><div class="q-block-title">Quarterly (Rs Cr)</div><div class="q-panel"><table class="q-table pead-q-table"><thead><tr><th></th>';
+  let h = '<div class="q-block"><div class="q-block-title">Quarterly (Rs Cr)</div>';
+  if (allZeroSales) {
+    h += '<div class="q-note">No operating sales — profit driven by other income / one-offs</div>';
+  }
+  h += '<div class="q-panel"><table class="q-table pead-q-table"><thead><tr><th></th>';
   q.labels.forEach((lb, i) => {
     const latest = i === n - 1 ? "q-latest" : "";
     h += `<th class="${latest}">${lb}</th>`;
@@ -931,6 +1108,8 @@ function rowSnapshot(r) {
     if (snap.pe_ratio == null && r.pe_ratio != null) snap.pe_ratio = r.pe_ratio;
     if (snap.pe == null && r.pe_ratio != null) snap.pe = r.pe_ratio;
     if (snap.forward_pe == null && r.forward_pe != null) snap.forward_pe = r.forward_pe;
+    if (snap.cagr == null && r.sales_cagr != null) snap.cagr = r.sales_cagr;
+    if (snap.cagr == null && r.profit_cagr != null) snap.cagr = r.profit_cagr;
     if (r.sub_sector) snap.sub_sector = r.sub_sector;
     if (r.buy_headroom_pct != null) snap.buy_headroom_pct = r.buy_headroom_pct;
     if (!snap.sector && r.sector) snap.sector = r.sector;

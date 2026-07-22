@@ -115,6 +115,7 @@ def build_quarter_panel(
     net_profit: pd.Series,
     eps: pd.Series,
     *,
+    other_income: pd.Series | None = None,
     max_quarters: int = PEAD2_QUARTER_PANEL,
 ) -> dict | None:
     """Build screener-style quarterly rows for the PEAD expand panel."""
@@ -139,6 +140,20 @@ def build_quarter_panel(
             "good_up": True,
             "decimals": 0,
         },
+    ]
+    if other_income is not None and not other_income.dropna().empty:
+        oi_vals = _values_from_series(other_income, index, decimals=0)
+        if any(v not in (None, 0) for v in oi_vals):
+            rows.append(
+                {
+                    "label": "Other Income",
+                    "values": oi_vals,
+                    "good_up": True,
+                    "decimals": 0,
+                }
+            )
+    rows.extend(
+        [
         {
             "label": "Net Profit",
             "values": _values_from_series(net_profit, index, decimals=0),
@@ -151,7 +166,8 @@ def build_quarter_panel(
             "good_up": True,
             "decimals": 2,
         },
-    ]
+        ]
+    )
 
     return {"labels": labels, "rows": rows}
 

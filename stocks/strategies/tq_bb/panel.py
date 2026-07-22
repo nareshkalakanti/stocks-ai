@@ -5,18 +5,10 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pandas as pd
-import yfinance as yf
 
 from stocks.core.config import STRATEGY_MAX_WORKERS_CAP
-from stocks.strategies.earnings.strategy import EBIDT_FIELDS, EPS_FIELDS
-from stocks.core.log_service import METRICS_ERROR, log_error
-from stocks.strategies.pead2.quarters import build_quarter_panel
-from stocks.strategies.pead2.strategy import NET_INCOME_FIELDS
-from stocks.strategies.pead2.service import REVENUE_FIELDS, _series_from_income
-from stocks.strategies.pead2.technicals import build_price_snapshot
-from stocks.market.price_service import to_yfinance_symbol
 from stocks.core.text_utils import safe_str
-from stocks.market.yfinance_limits import call_fast
+from stocks.strategies.pead2.expand_data import fetch_pead_expand_data
 
 
 def fetch_ticker_detail(
@@ -25,43 +17,8 @@ def fetch_ticker_detail(
     *,
     price: float | None = None,
 ) -> dict | None:
-    """Quarters + screener-style snapshot (price, mcap, PE, CAGR, MAs, 52w)."""
-    symbol = to_yfinance_symbol(ticker, market)
-
-    def _fetch() -> dict | None:
-        yt = yf.Ticker(symbol)
-        info = yt.info or {}
-        hist = yt.history(period="2y", interval="1d")
-        if hist is None or hist.empty:
-            hist = pd.DataFrame()
-        income = yt.quarterly_income_stmt
-        revenue = _series_from_income(income, REVENUE_FIELDS)
-        ebit = _series_from_income(income, EBIDT_FIELDS)
-        net_profit = _series_from_income(income, NET_INCOME_FIELDS)
-        eps = _series_from_income(income, EPS_FIELDS)
-        detail: dict = {}
-        quarters = build_quarter_panel(revenue, ebit, net_profit, eps)
-        if quarters:
-            detail["quarters"] = quarters
-        px = price
-        if px is None:
-            raw = info.get("regularMarketPrice") or info.get("currentPrice")
-            px = float(raw) if raw is not None and not pd.isna(raw) else None
-        snapshot = build_price_snapshot(info, hist, revenue, price=px)
-        if snapshot:
-            detail["snapshot"] = snapshot
-        return detail if detail else None
-
-    def _log(exc: Exception) -> None:
-        log_error(
-            METRICS_ERROR,
-            "Strategy detail fetch failed",
-            ticker=ticker,
-            symbol=symbol,
-            error=str(exc),
-        )
-
-    return call_fast(_fetch, on_error=_log)
+    """Quarters + screener-style snapshot (same fetch path as PEAD expand)."""
+    return fetch_pead_expand_data(ticker, market, price=price)
 
 
 def enrich_strategy_dataframe(

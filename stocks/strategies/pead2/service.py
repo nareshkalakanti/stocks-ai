@@ -66,6 +66,12 @@ REVENUE_FIELDS = (
     "Revenue",
 )
 
+OTHER_INCOME_FIELDS = (
+    "Other Non Operating Income Expenses",
+    "Other Income Expenses",
+    "Other Income",
+)
+
 # Banks and some industrials omit EBIT/EBITDA on Yahoo — fall back before skipping.
 _PEAD2_EBIDT_FALLBACK_FIELDS = (
     "Pretax Income",
@@ -90,6 +96,10 @@ def _pead2_ebidt_series(income: pd.DataFrame) -> pd.Series | None:
     if series is not None and not series.empty:
         return series
     return _series_from_income(income, _PEAD2_EBIDT_FALLBACK_FIELDS)
+
+
+def _pead2_other_income_series(income: pd.DataFrame) -> pd.Series | None:
+    return _series_from_income(income, OTHER_INCOME_FIELDS)
 
 
 def _pead2_passes_earnings_quality(net_profit: pd.Series, eps: pd.Series) -> bool:
@@ -633,6 +643,7 @@ def _pead2_row_for_lag(
     net_profit: pd.Series,
     eps: pd.Series,
     cfo: pd.Series | None,
+    other_income: pd.Series | None,
     yt: yf.Ticker,
     info: dict,
     hist: pd.DataFrame,
@@ -736,7 +747,10 @@ def _pead2_row_for_lag(
         np_p = np_s
     if ep_p is None:
         ep_p = ep
-    quarters = sanitize_quarter_panel(build_quarter_panel(rev_p, eb_p, np_p, ep_p))
+    oi_p = series_through_lag(other_income, panel_lag) if other_income is not None else None
+    quarters = sanitize_quarter_panel(
+        build_quarter_panel(rev_p, eb_p, np_p, ep_p, other_income=oi_p)
+    )
     sales_bust, sales_streak = is_sales_bust(
         rev,
         growth.get("sales_qoq"),
@@ -848,6 +862,7 @@ def analyze_pead2_ticker(
         net_profit = _series_from_income(income, NET_INCOME_FIELDS)
         eps = _series_from_income(income, EPS_FIELDS)
         cfo = _series_from_income(cashflow, CFO_FIELDS) if cashflow is not None else None
+        other_income = _pead2_other_income_series(income)
 
         revenue = trim_reported_quarters(revenue)
         ebidt = trim_reported_quarters(ebidt)
@@ -855,6 +870,8 @@ def analyze_pead2_ticker(
         eps = trim_reported_quarters(eps)
         if cfo is not None:
             cfo = trim_reported_quarters(cfo)
+        if other_income is not None:
+            other_income = trim_reported_quarters(other_income)
 
         if (
             revenue is None
@@ -896,6 +913,7 @@ def analyze_pead2_ticker(
                 net_profit=net_profit,
                 eps=eps,
                 cfo=cfo,
+                other_income=other_income,
                 yt=yt,
                 info=info,
                 hist=hist,

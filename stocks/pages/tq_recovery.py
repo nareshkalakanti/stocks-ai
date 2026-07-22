@@ -8,7 +8,6 @@ from stocks.core.config import (
 )
 from stocks.dashboards.report_html import embed_html_iframe
 from stocks.scans.results_utils import analysis_universe
-from stocks.scans.holdings_industry_filter import apply_holdings_industries_if_checked
 from stocks.scans.scan_toolbar import (
     SCAN_BTN_COL_WIDTH,
     STOP_BTN_COL_WIDTH,
@@ -51,14 +50,13 @@ def render_tq_recovery() -> None:
     with scan_toolbar_row(
         *base_scan_extra_widths(WORKERS_COL_WIDTH, SCAN_BTN_COL_WIDTH, STOP_BTN_COL_WIDTH)
     ) as row:
-        filters, cap_tier_label_ui, holdings_industries_only = render_base_scan_filters(
+        filters, cap_tier_label_ui = render_base_scan_filters(
             stocks,
             row,
             key_prefix="tqrec",
             cap_tier_key="tqrec_cap_tier",
-            holdings_key="tqrec_holdings_industries_only",
         )
-        with row[5]:
+        with row[4]:
             max_workers = st.number_input(
                 "Workers",
                 min_value=1,
@@ -66,20 +64,14 @@ def render_tq_recovery() -> None:
                 value=STRATEGY_MAX_WORKERS,
                 key="tqrec_max_workers",
             )
-        with row[6]:
+        with row[5]:
             run_scan = st.button("Scan", type="primary", width="stretch", key="tqrec_scan")
-        with row[7]:
+        with row[6]:
             if st.button("Stop", width="stretch", key="tqrec_stop"):
                 st.session_state.tqrec_scan_stop = True
 
     cap_tier_id = resolve_cap_tier_id(filters.market, cap_tier_id_from_label(cap_tier_label_ui))
     filtered = apply_stock_filters(stocks, filters)
-    applied = apply_holdings_industries_if_checked(
-        filtered, enabled=holdings_industries_only
-    )
-    if applied is None:
-        return
-    filtered, _holdings_industry_note = applied
 
     if not run_scan:
         return

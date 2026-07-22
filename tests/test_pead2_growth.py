@@ -123,6 +123,25 @@ def test_yoy_pair_newest_first_panel():
     assert prior == 5.1
 
 
+def test_build_quarter_panel_includes_other_income_when_material():
+    idx = pd.to_datetime(
+        ["2024-12-31", "2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31"]
+    )
+    revenue = pd.Series([0, 0, 0, 0, 0], index=idx)
+    ebit = pd.Series([-4_000_000, -4_000_000, -4_000_000, -4_000_000, -4_000_000], index=idx)
+    net_profit = pd.Series([-2_000_000, -2_000_000, -2_000_000, 50_000_000, -2_000_000], index=idx)
+    eps = pd.Series([-0.2, -0.2, -0.2, 7.1, -0.2], index=idx)
+    other_income = pd.Series([1_000_000, 1_000_000, 1_000_000, 74_000_000, 1_000_000], index=idx)
+
+    from stocks.strategies.pead2.quarters import build_quarter_panel
+
+    panel = build_quarter_panel(revenue, ebit, net_profit, eps, other_income=other_income)
+    labels = [row["label"] for row in panel["rows"]]
+    assert labels == ["Sales", "Operating Profit", "Other Income", "Net Profit", "EPS in Rs"]
+    oi = next(row for row in panel["rows"] if row["label"] == "Other Income")
+    assert oi["values"][-2] == 7
+
+
 def test_eps_yoy_from_quarters_matches_headline():
     quarters = {
         "labels": ["Mar 2024", "Dec 2024", "Mar 2025", "Dec 2025", "Mar 2026"],
@@ -186,6 +205,7 @@ def test_pead2_row_for_lag_builds_without_name_error(monkeypatch):
         net_profit=net_profit,
         eps=eps,
         cfo=None,
+        other_income=None,
         yt=yt,
         info={},
         hist=hist,

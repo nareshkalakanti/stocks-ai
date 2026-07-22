@@ -22,6 +22,7 @@ from stocks.strategies.pead2.service import (
     _info_price,
     _normalize_cache_blob,
     _pead2_ebidt_series,
+    _pead2_other_income_series,
     _safe_yf_info,
     _series_from_income,
 )
@@ -31,6 +32,64 @@ from stocks.strategies.pead2.strategy import (
     trim_reported_quarters,
 )
 from stocks.strategies.pead2.technicals import build_price_snapshot
+
+
+def apply_scan_price_to_payload(payload: dict | None, scan_price: float | None) -> dict | None:
+    """Refresh stale cached snapshot price/PE/MA flags from a live scan row."""
+    if not payload or scan_price is None or pd.isna(scan_price):
+        return payload
+    snap = payload.get("snapshot")
+    if not isinstance(snap, dict):
+        return payload
+
+    px = round(float(scan_price), 2)
+    old_px_raw = snap.get("price")
+    if old_px_raw is not None and not pd.isna(old_px_raw):
+        old_px = float(old_px_raw)
+        if abs(old_px - px) <= max(0.02 * px, 0.05):
+            return payload
+    else:
+        old_px = None
+
+    out = dict(payload)
+    new_snap = dict(snap)
+    new_snap["price"] = px
+    for key in ("moving_averages", "ema_averages"):
+        rows = new_snap.get(key)
+        if not isinstance(rows, list):
+            continue
+        updated: list[dict] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            item = dict(row)
+            val = item.get("value")
+            if val is not None and not pd.isna(val):
+                item["above"] = px >= float(val)
+            updated.append(item)
+        new_snap[key] = updated
+    emas = new_snap.get("ema_averages")
+    if isinstance(emas, list) and emas:
+        new_snap["above_all_emas"] = all(
+            bool(row.get("above"))
+            for row in emas
+            if isinstance(row, dict) and row.get("value") is not None
+        )
+
+    pe_ratio = out.get("pe_ratio")
+    if pe_ratio is not None and not pd.isna(pe_ratio) and old_px and old_px > 0:
+        pe_scaled = round(float(pe_ratio) * old_px / px, 1)
+        out["pe_ratio"] = pe_scaled
+        new_snap["pe"] = pe_scaled
+        new_snap["pe_ratio"] = pe_scaled
+        forward_pe = out.get("forward_pe")
+        if forward_pe is not None and not pd.isna(forward_pe):
+            fwd_scaled = round(float(forward_pe) * old_px / px, 1)
+            out["forward_pe"] = fwd_scaled
+            new_snap["forward_pe"] = fwd_scaled
+
+    out["snapshot"] = new_snap
+    return out
 
 
 def expand_from_lag_row(lag_row: dict | None) -> dict:
@@ -89,7 +148,7 @@ def fetch_pead_expand_data(
     hours = PEAD2_CACHE_HOURS if cache_hours is None else int(cache_hours)
     cached = _expand_from_cache(ticker_key, cache_hours=hours)
     if cached:
-        return cached
+        return apply_scan_price_to_payload(cached, price)
 
     symbol = to_yfinance_symbol(ticker_key, market)
 
@@ -99,9 +158,24 @@ def fetch_pead_expand_data(
         income = yt.quarterly_income_stmt
         hist = yt.history(period="6y", interval="1d", auto_adjust=True)
         revenue = trim_reported_quarters(_series_from_income(income, REVENUE_FIELDS))
+        price_val = price if price is not None else _info_price(info, hist)
 
         if revenue is None or revenue.empty:
-            return None
+            snapshot = None
+            if price_val is not None:
+                snapshot = build_price_snapshot(
+                    info,
+                    hist,
+                    None,
+                    price=price_val,
+                )
+                if snapshot:
+                    snapshot = merge_company_profile(
+                        snapshot,
+                        ticker=ticker_key,
+                        market=market,
+                    )
+            return apply_scan_price_to_payload({"snapshot": snapshot} if snapshot else None, price)
 
         def _align(base: pd.Series | None) -> pd.Series:
             if base is not None and not base.empty:
@@ -111,10 +185,10 @@ def fetch_pead_expand_data(
         ebidt = _align(trim_reported_quarters(_pead2_ebidt_series(income)))
         net_profit = _align(trim_reported_quarters(_series_from_income(income, NET_INCOME_FIELDS)))
         eps = _align(trim_reported_quarters(_series_from_income(income, EPS_FIELDS)))
-        price_val = price if price is not None else _info_price(info, hist)
+        other_income = _align(trim_reported_quarters(_pead2_other_income_series(income)))
 
         quarters = sanitize_quarter_panel(
-            build_quarter_panel(revenue, ebidt, net_profit, eps)
+            build_quarter_panel(revenue, ebidt, net_profit, eps, other_income=other_income)
         )
 
         pe_ratio = compute_trailing_pe(price_val, eps, info)
@@ -149,7 +223,7 @@ def fetch_pead_expand_data(
             out["pe_ratio"] = pe_ratio
         if forward_pe is not None:
             out["forward_pe"] = forward_pe
-        return out or None
+        return apply_scan_price_to_payload(out or None, price)
 
     def _log(exc: Exception) -> None:
         log_error(
@@ -197,11 +271,15 @@ def attach_pead_expand(
             lag0 = (norm.get("lags") or {}).get("0")
             payload = expand_from_lag_row(lag0 if isinstance(lag0, dict) else None)
             if payload.get("quarters") or payload.get("snapshot"):
-                prefilled[idx] = payload
+                prefilled[idx] = apply_scan_price_to_payload(payload, price_f)
                 continue
         jobs.append((idx, ticker, market, price_f))
 
-    workers = max_workers or yfinance_worker_count(len(jobs), 4)
+    workers = min(
+        max(1, int(max_workers or 8)),
+        8,
+        yfinance_worker_count(len(jobs), 4),
+    )
     fetched: dict[int, dict] = {}
     total = len(jobs)
     done = 0
@@ -214,7 +292,7 @@ def attach_pead_expand(
                     ticker,
                     market,
                     price=price,
-                    cache_hours=0 if cache_hours is None else cache_hours,
+                    cache_hours=cache_hours,
                 ): idx
                 for idx, ticker, market, price in jobs
             }

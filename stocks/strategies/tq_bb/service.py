@@ -41,8 +41,13 @@ BB_TIMEFRAMES = ("daily", "weekly", "monthly", "3months")
 
 def strategy_timeframe_options(strategy_choice: str) -> tuple[str, ...]:
     """Shared scan timeframe dropdown options (TQ supports daily/weekly only)."""
-    if safe_str(strategy_choice) == "Bollinger Bands":
+    choice = safe_str(strategy_choice)
+    if choice == "Bollinger Bands":
         return BB_TIMEFRAMES
+    if choice in {"TQ W52 Recovery", "RSI Weekly"}:
+        return ("weekly",)
+    if choice == "Above All EMAs":
+        return ("daily",)
     return TQ_TIMEFRAMES
 
 BB_INTERVAL_MAP = {

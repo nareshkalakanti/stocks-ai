@@ -308,61 +308,6 @@ def test_industry_filter_matches_display_sector_peers_without_tags():
     assert list(filtered["ticker"]) == ["ACC", "JKCEMENT"]
 
 
-def test_my_industries_matches_sub_sector_peers():
-    from stocks.scans.holdings_playlist import filter_stocks_by_holdings_industries
-
-    stocks = pd.DataFrame(
-        {
-            "ticker": ["EPACKPEB", "PEER", "OTHER"],
-            "market": ["NSE", "NSE", "NSE"],
-            "name": ["Epack Prefab", "Peer Prefab", "Other Co"],
-            "sector": ["Industrials", "Industrials", "Technology"],
-            "industry": ["", "", "Software"],
-            "sub_sector": [
-                "Building Products - Prefab Structures",
-                "Building Products - Prefab Structures",
-                "Software",
-            ],
-        }
-    )
-    fine_labels = {"Building Products - Prefab Structures", "Finance"}
-    with patch(
-        "stocks.scans.holdings_playlist.holdings_industry_match_spec",
-        return_value=(fine_labels, set()),
-    ):
-        with patch(
-            "stocks.listings.classification_service.enrich_stocks_classification",
-            side_effect=lambda df, **_: df,
-        ):
-            out = filter_stocks_by_holdings_industries(stocks)
-    assert list(out["ticker"]) == ["EPACKPEB", "PEER"]
-
-
-def test_my_industries_matches_display_sector_peers():
-    from stocks.scans.holdings_playlist import filter_stocks_by_holdings_industries
-
-    stocks = pd.DataFrame(
-        {
-            "ticker": ["HDFCBANK", "ICICIBANK", "INFY"],
-            "market": ["NSE", "NSE", "NSE"],
-            "name": ["HDFC Bank", "ICICI Bank", "Infosys"],
-            "sector": ["Banking & Finance", "Banking & Finance", "IT & Technology"],
-            "industry": ["", "", ""],
-            "sub_sector": ["", "", ""],
-        }
-    )
-    with patch(
-        "stocks.scans.holdings_playlist.holdings_industry_match_spec",
-        return_value=(set(), {"Banking & Finance"}),
-    ):
-        with patch(
-            "stocks.listings.classification_service.enrich_stocks_classification",
-            side_effect=lambda df, **_: df,
-        ):
-            out = filter_stocks_by_holdings_industries(stocks)
-    assert list(out["ticker"]) == ["HDFCBANK", "ICICIBANK"]
-
-
 def test_resolve_scan_group_col_falls_back_when_industry_tags_sparse():
     from stocks.strategies.intrinsic_value.service import resolve_scan_group_col
 

@@ -14,7 +14,6 @@ from stocks.core.config import (
 from stocks.listings.stocks_data import load_india_stocks
 from stocks.dashboards.report_html import embed_html_iframe
 from stocks.market.fundamentals_service import apply_cap_tier_filter
-from stocks.scans.holdings_industry_filter import apply_holdings_industries_if_checked
 from stocks.scans.results_utils import analysis_universe
 from stocks.scans.scan_universe import cap_tier_min_mcap_cr, resolve_cap_tier_id
 from stocks.scans.scan_toolbar import (
@@ -77,7 +76,6 @@ def _apply_scan_result(result: dict, scan_market: str, *, filter_key: tuple) -> 
 def _ht_filter_key(
     filters,
     *,
-    holdings_industries_only: bool,
     cap_tier_id: str,
 ) -> tuple:
     return (
@@ -85,7 +83,6 @@ def _ht_filter_key(
         tuple(filters.sectors),
         tuple(filters.industries),
         filters.search,
-        holdings_industries_only,
         cap_tier_id,
     )
 
@@ -218,23 +215,16 @@ def render_headwind_tailwind() -> None:
     st.markdown("### H&T")
 
     with scan_toolbar_row(*base_scan_extra_widths(SCAN_BTN_COL_WIDTH)) as row:
-        filters, cap_tier_label_ui, holdings_industries_only = render_base_scan_filters(
+        filters, cap_tier_label_ui = render_base_scan_filters(
             stocks,
             row,
             key_prefix="htf",
             cap_tier_key="ht_cap_tier",
-            holdings_key="ht_holdings_industries_only",
         )
-        with row[5]:
+        with row[4]:
             run_clicked = st.button("Run scan", type="primary", width="stretch")
 
     filtered = apply_stock_filters(stocks, filters)
-    applied = apply_holdings_industries_if_checked(
-        filtered, enabled=holdings_industries_only
-    )
-    if applied is None:
-        return
-    filtered, holdings_industry_note = applied
 
     scan_market = _resolve_scan_market(filters.market)
     cap_tier_id = resolve_cap_tier_id(
@@ -243,7 +233,6 @@ def render_headwind_tailwind() -> None:
     mcap_floor = _resolve_mcap_floor(cap_tier_id)
     filter_key = _ht_filter_key(
         filters,
-        holdings_industries_only=holdings_industries_only,
         cap_tier_id=cap_tier_id,
     )
     wide_open = (
@@ -251,7 +240,6 @@ def render_headwind_tailwind() -> None:
         and not filters.sectors
         and not filters.industries
         and not filters.search.strip()
-        and not holdings_industries_only
     )
 
     if not run_clicked:
@@ -356,7 +344,7 @@ def render_headwind_tailwind() -> None:
         st.rerun()
 
     if st.session_state.get("ht_filter_key") not in (None, filter_key):
-        hint = filter_caption_suffix(filters, extra=holdings_industry_note)
+        hint = filter_caption_suffix(filters, extra="")
         if hint:
             st.info(f"Filters changed — click **Run scan** — {hint}.")
         else:
@@ -377,7 +365,7 @@ def render_headwind_tailwind() -> None:
         sectors = None
 
     if sectors is None or sectors.empty:
-        hint = filter_caption_suffix(filters, extra=holdings_industry_note)
+        hint = filter_caption_suffix(filters, extra="")
         if hint:
             st.info(f"Click **Run scan** — {hint}.")
         else:
@@ -389,7 +377,7 @@ def render_headwind_tailwind() -> None:
     )
     ranked, sectors = _narrow_ht_results(ranked, sectors, filtered, industry_col)
     if sectors is None or sectors.empty or ranked.empty:
-        hint = filter_caption_suffix(filters, extra=holdings_industry_note)
+        hint = filter_caption_suffix(filters, extra="")
         st.warning(
             f"No H&T results for the current filters{(' — ' + hint) if hint else ''}."
         )
@@ -397,7 +385,7 @@ def render_headwind_tailwind() -> None:
 
     universe_n = len(filtered)
     shown_n = len(ranked)
-    suffix = filter_caption_suffix(filters, extra=holdings_industry_note)
+    suffix = filter_caption_suffix(filters, extra="")
     extra = f" · {suffix}" if suffix else ""
     st.caption(
         f"**{shown_n:,}** stocks with fundamentals · **{universe_n:,}** in filter · "

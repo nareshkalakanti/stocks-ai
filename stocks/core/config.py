@@ -51,12 +51,6 @@ SCAN_UNIVERSE_MAX_WITHOUT_SECTOR = int(os.getenv("SCAN_UNIVERSE_MAX_WITHOUT_SECT
 # Market-cap tiers (INR Crores). Upper bound is exclusive except Large-cap (open-ended).
 CAP_TIERS: list[dict[str, str | float | None]] = [
     {"id": "all", "label": "All caps", "min": None, "max": None},
-    {
-        "id": "range_100_3000",
-        "label": "300–3,000 Cr",
-        "min": SCAN_MCAP_MIN_CR,
-        "max": SCAN_MCAP_MAX_CR + 0.01,
-    },
     {"id": "nano", "label": "Nano-cap (< 100 Cr)", "min": 0, "max": 100},
     {"id": "inst_entry", "label": "Inst Entry (20–100 Cr)", "min": 20, "max": 100},
     {"id": "alpha_hide", "label": "Alpha Hide (50–1,000 Cr)", "min": 50, "max": 1000},
@@ -199,6 +193,14 @@ MICRO_VALUE_MCAP_MAX_CR = float(os.getenv("MICRO_VALUE_MCAP_MAX_CR", "200"))
 MICRO_VALUE_MAX_PRICE_TO_SALES = float(os.getenv("MICRO_VALUE_MAX_PRICE_TO_SALES", "1"))
 MICRO_VALUE_CACHE_HOURS = int(os.getenv("MICRO_VALUE_CACHE_HOURS", "24"))
 MICRO_VALUE_MAX_WORKERS = YFINANCE_THROTTLED_MAX_WORKERS
+
+# Small + Cheap — mcap 20–200 Cr · Mcap/Sales < 1 · optional debt-free (yfinance).
+SMALL_CHEAP_MCAP_MIN_CR = float(os.getenv("SMALL_CHEAP_MCAP_MIN_CR", "20"))
+SMALL_CHEAP_MCAP_MAX_CR = float(os.getenv("SMALL_CHEAP_MCAP_MAX_CR", "200"))
+SMALL_CHEAP_MAX_PRICE_TO_SALES = float(os.getenv("SMALL_CHEAP_MAX_PRICE_TO_SALES", "1"))
+SMALL_CHEAP_MAX_DEBT_EQUITY = float(os.getenv("SMALL_CHEAP_MAX_DEBT_EQUITY", "0.1"))
+SMALL_CHEAP_CACHE_HOURS = int(os.getenv("SMALL_CHEAP_CACHE_HOURS", "24"))
+SMALL_CHEAP_MAX_WORKERS = YFINANCE_THROTTLED_MAX_WORKERS
 
 # Inst Entry — micro-cap deep value + first institutional (DII/FII) entry.
 INST_ENTRY_MCAP_MIN_CR = float(os.getenv("INST_ENTRY_MCAP_MIN_CR", "20"))

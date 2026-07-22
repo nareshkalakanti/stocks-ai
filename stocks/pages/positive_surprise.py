@@ -13,7 +13,6 @@ from stocks.core.config import (
 )
 from stocks.dashboards.report_html import embed_html_iframe
 from stocks.listings.stocks_data import load_india_stocks
-from stocks.scans.holdings_industry_filter import apply_holdings_industries_if_checked
 from stocks.scans.holdings_playlist import is_holdings_playlist
 from stocks.scans.scan_toolbar import (
     COMPACT_SCAN_BTN_COL_WIDTH,
@@ -43,14 +42,13 @@ def _inject_css() -> None:
     st.session_state["_psq_scan_css"] = True
 
 
-def _filter_key(filters, *, cap_tier_id: str, holdings_industries_only: bool) -> tuple:
+def _filter_key(filters, *, cap_tier_id: str) -> tuple:
     return (
         filters.market,
         tuple(filters.sectors),
         tuple(filters.industries),
         filters.search,
         cap_tier_id,
-        holdings_industries_only,
     )
 
 
@@ -68,37 +66,29 @@ def render_positive_surprise(*, show_title: bool = True) -> None:
     st.caption(psq_caption())
 
     with scan_toolbar_row(*base_scan_extra_widths(COMPACT_SCAN_BTN_COL_WIDTH)) as row:
-        filters, cap_tier_label_ui, holdings_industries_only = render_base_scan_filters(
+        filters, cap_tier_label_ui = render_base_scan_filters(
             stocks,
             row,
             key_prefix="psq",
             cap_tier_key="psq_cap_tier",
-            holdings_key="psq_holdings_industries_only",
         )
         cap_tier_id = resolve_cap_tier_id(
             filters.market, cap_tier_id_from_label(cap_tier_label_ui)
         )
         min_mcap_cr = cap_tier_min_mcap_cr(cap_tier_id)
         filtered = apply_stock_filters(stocks, filters)
-        applied = apply_holdings_industries_if_checked(
-            filtered, enabled=holdings_industries_only
-        )
-        if applied is None:
-            return
-        filtered, _note = applied
 
         filter_key = _filter_key(
             filters,
             cap_tier_id=cap_tier_id,
-            holdings_industries_only=holdings_industries_only,
-        )
+            )
         if st.session_state.get("psq_filter_key") != filter_key:
             st.session_state.psq_filter_key = filter_key
             st.session_state.pop("psq_candidates", None)
 
         universe, _, _ = prepare_pead_universe(filtered, cap_tier_id=cap_tier_id)
 
-        with row[5]:
+        with row[4]:
             run_clicked = st.button(
                 "Scan",
                 type="primary",

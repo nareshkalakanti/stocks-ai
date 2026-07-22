@@ -1,4 +1,4 @@
-"""Interactive TQ / BB strategy HTML — expand row shows Google News only."""
+"""Interactive TQ / BB strategy HTML — expand row shows quarterly panel + links."""
 
 from __future__ import annotations
 
