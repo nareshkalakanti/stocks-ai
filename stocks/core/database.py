@@ -416,6 +416,24 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_nse_result_dates_cache_fetched
                 ON nse_result_dates_cache(fetched_at);
 
+            CREATE TABLE IF NOT EXISTS shareholding_qtr (
+                ticker TEXT NOT NULL,
+                quarter_end TEXT NOT NULL,
+                disclosure_date TEXT,
+                promoter_pct REAL,
+                fii_pct REAL,
+                dii_pct REAL,
+                public_pct REAL,
+                source TEXT,
+                fetched_at TEXT NOT NULL,
+                PRIMARY KEY (ticker, quarter_end)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_shareholding_qtr_ticker
+                ON shareholding_qtr(ticker);
+            CREATE INDEX IF NOT EXISTS idx_shareholding_qtr_quarter
+                ON shareholding_qtr(quarter_end);
+
             CREATE INDEX IF NOT EXISTS idx_google_news_cache_fetched
                 ON google_news_cache(fetched_at);
             """
@@ -1728,6 +1746,92 @@ def load_company_profiles_from_db(tickers: list[str]) -> dict[str, dict]:
 def save_company_profiles(rows: list[dict]) -> None:
     """Persist company profile rows to SQLite."""
     save_company_profile_cache(rows)
+
+
+def save_shareholding_qtr(rows: list[dict]) -> None:
+    """Upsert quarterly shareholding rows (ticker + quarter_end)."""
+    if not rows:
+        return
+    init_db()
+    now = _utc_now()
+    with get_connection() as conn:
+        for row in rows:
+            ticker = safe_str(row.get("ticker")).upper()
+            quarter = safe_str(row.get("quarter_end"))
+            if not ticker or not quarter:
+                continue
+            conn.execute(
+                """
+                INSERT INTO shareholding_qtr (
+                    ticker, quarter_end, disclosure_date,
+                    promoter_pct, fii_pct, dii_pct, public_pct,
+                    source, fetched_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(ticker, quarter_end) DO UPDATE SET
+                    disclosure_date=excluded.disclosure_date,
+                    promoter_pct=excluded.promoter_pct,
+                    fii_pct=excluded.fii_pct,
+                    dii_pct=excluded.dii_pct,
+                    public_pct=excluded.public_pct,
+                    source=excluded.source,
+                    fetched_at=excluded.fetched_at
+                """,
+                (
+                    ticker,
+                    quarter,
+                    safe_str(row.get("disclosure_date")) or None,
+                    row.get("promoter_pct"),
+                    row.get("fii_pct"),
+                    row.get("dii_pct"),
+                    row.get("public_pct"),
+                    safe_str(row.get("source")) or "manual",
+                    now,
+                ),
+            )
+
+
+def load_shareholding_qtr(
+    tickers: list[str] | None = None,
+) -> pd.DataFrame:
+    """Load shareholding quarters; optionally filter to tickers."""
+    init_db()
+    with get_connection() as conn:
+        if tickers:
+            keys = [safe_str(t).upper() for t in tickers if safe_str(t)]
+            if not keys:
+                return pd.DataFrame()
+            placeholders = ",".join("?" for _ in keys)
+            rows = conn.execute(
+                f"""
+                SELECT ticker, quarter_end, disclosure_date,
+                       promoter_pct, fii_pct, dii_pct, public_pct, source, fetched_at
+                FROM shareholding_qtr
+                WHERE ticker IN ({placeholders})
+                ORDER BY ticker, quarter_end DESC
+                """,
+                keys,
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT ticker, quarter_end, disclosure_date,
+                       promoter_pct, fii_pct, dii_pct, public_pct, source, fetched_at
+                FROM shareholding_qtr
+                ORDER BY ticker, quarter_end DESC
+                """
+            ).fetchall()
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame([dict(r) for r in rows])
+
+
+def latest_shareholding_quarter() -> str | None:
+    init_db()
+    with get_connection() as conn:
+        row = conn.execute("SELECT MAX(quarter_end) AS q FROM shareholding_qtr").fetchone()
+    if not row or row["q"] is None:
+        return None
+    return str(row["q"])
 
 
 def save_company_profile_cache(rows: list[dict]) -> None:

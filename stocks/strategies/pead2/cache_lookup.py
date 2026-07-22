@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pandas as pd
 
 from stocks.core.config import PEAD2_CALC_VERSION
 from stocks.core.database import load_pead2_cache, save_pead2_cache
 from stocks.core.text_utils import safe_str
-from stocks.strategies.pead2.service import _expand_lag_rows, _pead2_scorable_blob
+from stocks.strategies.pead2.service import (
+    _expand_lag_rows,
+    _normalize_cache_blob,
+    _pead2_scorable_blob,
+)
 from stocks.strategies.pead2.strategy import score_pead2_candidates
 
 
@@ -94,6 +100,26 @@ def pead_missing_reason(ticker: str, market: str | None) -> str:
         return result or "Insufficient quarterly data"
     except Exception:
         return "Could not fetch earnings data"
+
+
+def _pead_result_dates_from_cache(tickers: list[str], *, max_hours: int) -> dict[str, str]:
+    keys = [safe_str(t).upper() for t in tickers if safe_str(t)]
+    if not keys:
+        return {}
+    cached = load_pead2_cache(keys, max_hours=max_hours)
+    out: dict[str, str] = {}
+    for key in keys:
+        blob = cached.get(key)
+        if not blob:
+            continue
+        norm = _normalize_cache_blob(blob)
+        lag0 = (norm.get("lags") or {}).get("0")
+        if not isinstance(lag0, dict):
+            continue
+        rd = safe_str(lag0.get("result_date"))
+        if rd:
+            out[key] = rd
+    return out
 
 
 def _pead_notes_from_cache(tickers: list[str], *, max_hours: int) -> dict[str, str]:
@@ -223,8 +249,10 @@ def attach_pead_scores(
     out = frame.copy()
     tickers = out["ticker"].astype(str).str.upper().tolist()
     scores = load_pead_scores_by_ticker(tickers, max_hours=max_hours)
+    dates = _pead_result_dates_from_cache(tickers, max_hours=max_hours)
     notes = _pead_notes_from_cache(tickers, max_hours=max_hours)
     out[column] = out["ticker"].astype(str).str.upper().map(scores)
+    out["result_date"] = out["ticker"].astype(str).str.upper().map(dates)
     out["pead_note"] = out["ticker"].astype(str).str.upper().map(notes)
     out.loc[out[column].notna(), "pead_note"] = pd.NA
     return out
@@ -236,6 +264,7 @@ def backfill_pead_cache_for_tickers(
     *,
     max_fetch: int = 50,
     max_workers: int = 4,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> int:
     """
     Fetch and cache PEAD2 payloads for tickers missing or not scorable in SQLite.
@@ -265,12 +294,17 @@ def backfill_pead_cache_for_tickers(
 
     fresh: list[dict] = []
     workers = max(1, min(max_workers, len(pending)))
+    total = len(pending)
+    done = 0
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
             pool.submit(analyze_pead2_ticker, ticker, market): (ticker, market)
             for ticker, market in pending
         }
         for fut in as_completed(futures):
+            done += 1
+            if progress_callback:
+                progress_callback(done, total)
             ticker, market = futures[fut]
             try:
                 row = fut.result()

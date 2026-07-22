@@ -1233,11 +1233,10 @@ def earnings_iframe_height(row_count: int) -> int:
 
 
 _HOLDINGS_COLS: list[tuple[str, str, str | int]] = [
-    ("momentum_pct", "Momentum", "mom"),
     ("current_price", "Price", 2),
-    ("price_1y", "Price 1 Y", 2),
-    ("price_1m", "Price 1 M", 2),
+    ("chg_from_snapshot_pct", "Δ snap %", "pct"),
     ("industry", "Industry", "text"),
+    ("sector", "Sector", "text"),
 ]
 
 
@@ -1390,9 +1389,15 @@ def _holdings_table_rows(
         ]
         for col, _, fmt in _HOLDINGS_COLS:
             val = row.get(col)
+            if col == "current_price" and (
+                val is None or (isinstance(val, float) and pd.isna(val))
+            ):
+                val = row.get("price")
             if fmt == "text":
                 cells.append(f'<td class="muted col-text">{_cell(val)}</td>')
             elif fmt == "mom":
+                cells.append(_momentum_cell(val))
+            elif fmt == "pct":
                 cells.append(_momentum_cell(val))
             else:
                 cells.append(f'<td class="num">{_num_cell(val, decimals=int(fmt))}</td>')
@@ -1426,21 +1431,17 @@ def build_holdings_html(
     news_feed: list[dict] | None = None,
     standalone: bool = True,
 ) -> str:
+    del subtitle
     if holdings_df.empty:
         df = holdings_df
-    elif "momentum_rank" in holdings_df.columns:
-        df = (
-            holdings_df.sort_values("momentum_rank", ascending=True, na_position="last")
-            .reset_index(drop=True)
-        )
-    elif "momentum_pct" in holdings_df.columns:
-        df = (
-            holdings_df.sort_values("momentum_pct", ascending=False, na_position="last")
-            .reset_index(drop=True)
-        )
-        df["momentum_rank"] = range(1, len(df) + 1)
     else:
-        df = holdings_df.sort_values("ticker").reset_index(drop=True)
+        sort_cols = [c for c in ("name", "ticker") if c in holdings_df.columns]
+        df = (
+            holdings_df.sort_values(sort_cols, ascending=True, na_position="last")
+            .reset_index(drop=True)
+            if sort_cols
+            else holdings_df.reset_index(drop=True)
+        )
     show_news = news_feed is not None
     news_map = _news_map_from_feed(news_feed) if show_news else None
     has_sentiment = (
@@ -1466,7 +1467,6 @@ def build_holdings_html(
         news_map=news_map if show_news else None,
         include_sentiment=has_sentiment,
     )
-    meta = ""
     priced = int(df["current_price"].notna().sum()) if "current_price" in df.columns else len(df)
     body = (
         f'<div class="fund-page">'

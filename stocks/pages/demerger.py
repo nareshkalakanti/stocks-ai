@@ -242,7 +242,11 @@ def _render_ds_stock_list() -> None:
 
     if _DS_CACHE_KEY not in st.session_state:
         with st.spinner("Fetching prices and momentum…"):
-            priced = enrich_demerger_stocks(work if role_filter != "All" else stocks, use_cache=True)
+            priced = enrich_demerger_stocks(
+                work if role_filter != "All" else stocks,
+                use_cache=True,
+                with_momentum=True,
+            )
         st.session_state[_DS_CACHE_KEY] = pd.DataFrame(
             json_safe_obj(priced.to_dict(orient="records"))
         )

@@ -443,6 +443,11 @@ _PEAD2_DASHBOARD_CSS = """
     min-height: 0;
   }
   .company-tags-row:empty { display: none; margin: 0; }
+  .pead-skip {
+    color: var(--muted);
+    cursor: help;
+    border-bottom: 1px dotted var(--muted);
+  }
   .ss-holders { margin-top: 6px; font-size: 11px; color: var(--muted); line-height: 1.4; }
   .ss-holders strong { color: var(--text); font-weight: 600; }
   .ss-best-tag {
@@ -969,6 +974,20 @@ _PEAD2_DASHBOARD_CSS = """
     color: var(--text);
     margin-top: 0;
     line-height: 1.35;
+  }
+  .pead-detail-subsector {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.35;
+    margin-top: 2px;
+  }
+  .pead-holdings-head {
+    padding: 0 0 12px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .pead-holdings-head .pead-detail-name {
+    margin-bottom: 4px;
   }
   .pead-detail-links {
     display: flex;
@@ -1775,15 +1794,25 @@ def _rows_for_json(df: pd.DataFrame) -> list[dict]:
                 "ticker": ticker,
                 "name": safe_str(row.get("name")),
                 "market_cap_cr": json_safe_scalar(row_mcap),
-                "price": json_safe_scalar(row.get("price")),
+                "price": json_safe_scalar(
+                    row.get("price")
+                    if row.get("price") is not None and not (
+                        isinstance(row.get("price"), float) and pd.isna(row.get("price"))
+                    )
+                    else row.get("current_price")
+                ),
                 "pe_ratio": json_safe_scalar(row.get("pe_ratio")),
                 "pead_score": json_safe_scalar(row.get("pead_score")),
+                "pead_note": safe_str(row.get("pead_note")) or None,
                 "comfortable_buy_price": json_safe_scalar(row.get("comfortable_buy_price")),
                 "buy_headroom_pct": json_safe_scalar(row.get("buy_headroom_pct")),
                 "valuation_pass": json_safe_scalar(row.get("valuation_pass")),
                 "sector": safe_str(row.get("sector")) or None,
                 "industry": safe_str(row.get("industry")) or None,
                 "sub_sector": safe_str(row.get("sub_sector")) or None,
+                "chg_from_snapshot_pct": json_safe_scalar(row.get("chg_from_snapshot_pct")),
+                "pnl_pct": json_safe_scalar(row.get("pnl_pct")),
+                "snapshot_price": json_safe_scalar(row.get("snapshot_price")),
                 **corp_tags_dict_for_ticker(ticker),
                 **{k: v for k, v in (ss_map.get(ticker.upper()) or {}).items() if k != "ss_holders"},
                 "sales_yoy": json_safe_scalar(row.get("sales_yoy")),
@@ -1917,12 +1946,13 @@ def build_pead2_dashboard_html(
         "surveillance",
         "turnaround",
     )
+    is_holdings = str(variant).lower() in ("holdings", "portfolio", "holding")
     list_label_js = json_dumps(list_label)
     show_scored_split_js = "true" if show_scored_split else "false"
     updated = _scan_generated_ist(df)
     data_current = json_dumps(_rows_for_json(df), separators=(",", ":"))
     prev_df = df_previous if df_previous is not None else pd.DataFrame()
-    if is_pead1:
+    if is_pead1 or is_holdings:
         prev_df = pd.DataFrame()
     data_previous = json_dumps(_rows_for_json(prev_df), separators=(",", ":"))
     has_previous = len(prev_df) > 0
@@ -1940,7 +1970,27 @@ def build_pead2_dashboard_html(
     if score_high_min is not None:
         high_min = float(score_high_min)
 
-    if is_pead1:
+    if is_holdings:
+        cols_js = """[
+  {id:"company", label:"Company", fmt:"company", def:true},
+  {id:"price", label:"Price", fmt:"num2", def:true},
+  {id:"result_date", label:"Result Date", fmt:"date", def:true, title:"Latest earnings result date (PEAD)"},
+  {id:"pead_score", label:"PEAD Score", fmt:"score", def:true},
+  {id:"pe_ratio", label:"PE", fmt:"pe", def:true, title:"Trailing P/E"},
+  {id:"forward_pe", label:"Forward PE", fmt:"fpe", def:true, title:"Forward P/E from Yahoo / snapshot"},
+  {id:"market_cap_cr", label:"Mcap Cr", fmt:"num1", def:false},
+  {id:"pnl_pct", label:"PnL %", fmt:"pct", def:false, title:"Vs average buy price when set"},
+]"""
+        default_sort_col = "company" if not default_sort_col or default_sort_col == "name" else default_sort_col
+        col_btn_title = "Show mcap / PnL"
+        quarter_toggle = ""
+        signal_filter_btns = """
+        <button type="button" class="signal-btn on" data-signal="all">All</button>
+        <button type="button" class="signal-btn tq" data-signal="tq">TQ weekly</button>
+        <button type="button" class="signal-btn bb" data-signal="bb">BB weekly</button>
+        <button type="button" class="signal-btn both" data-signal="both">TQ + BB</button>"""
+        default_signal_filter = "all"
+    elif is_pead1:
         # Default cols mirror PEAD 2 density (PE / Fwd PE visible; extras behind Columns).
         cols_js = """[
   {id:"company", label:"Company", fmt:"company", def:true},
@@ -2193,6 +2243,7 @@ const HAS_PREVIOUS = {"true" if has_previous else "false"};
 const LIST_LABEL = {list_label_js};
 const SHOW_SCORED_SPLIT = {show_scored_split_js};
 const SCORE_HIGH_MIN = {high_min};
+const IS_HOLDINGS = {"true" if is_holdings else "false"};
 let quarterMode = "current";
 const COLS = {cols_js};
 let showAllCols = false;
@@ -2359,9 +2410,14 @@ function fmtDaily(v) {{
   const sign = n >= 0 ? "+" : "";
   return `<span class="${{cls}}">${{sign}}${{fmtPctNum(n)}}%</span>`;
 }}
-function fmtScore(v) {{
+function fmtScore(v, r) {{
   const n = num(v);
-  if (n === null || isNaN(n)) return "—";
+  if (n === null || isNaN(n)) {{
+    if (IS_HOLDINGS && r && r.pead_note) {{
+      return `<span class="pead-skip" title="${{esc(r.pead_note)}}">—</span>`;
+    }}
+    return "—";
+  }}
   let tier = "mid";
   if (n > SCORE_HIGH_MIN) tier = "high";
   else if (n < 0) tier = "low";
@@ -2378,6 +2434,11 @@ function fmtNum1(v) {{
   const n = num(v);
   if (n === null || isNaN(n)) return "—";
   return n.toFixed(1);
+}}
+function fmtNum2(v) {{
+  const n = num(v);
+  if (n === null || isNaN(n)) return "—";
+  return n.toFixed(2);
 }}
 function fmtSignal(v) {{
   const s = String(v || "").toUpperCase();
@@ -2468,11 +2529,12 @@ function fmtCompany(r) {{
     `<a href="${{esc(r.tv)}}" target="_blank" rel="noopener noreferrer" title="TradingView">TV</a>`;
   if (web) links += fmtWebPill(web);
   links += `</span>`;
+  const label = (IS_HOLDINGS && r.ticker) ? String(r.ticker) : name;
   return (
     `<div class="company-cell">` +
     `<div class="company-top">` +
     `<div class="company-name-wrap">` +
-    `<span class="company-name" title="${{esc(name)}}">${{esc(name)}}</span>` +
+    `<span class="company-name" title="${{esc(name)}}">${{esc(label)}}</span>` +
     `</div>` +
     `<span class="company-actions">` +
     `<span class="expand-hint" title="Click row for price, quarterly data &amp; news"></span>` +
@@ -2485,7 +2547,7 @@ function fmtCompany(r) {{
 function cell(col, r) {{
   switch(col.fmt) {{
     case "company": return fmtCompany(r);
-    case "score": return fmtScore(r.pead_score);
+    case "score": return fmtScore(r.pead_score, r);
     case "date": return fmtDate(r.result_date);
     case "date_iso": return fmtDateIso(r[col.id] || r.result_date);
     case "pe": return fmtPe(r.pe_ratio);
@@ -2496,6 +2558,8 @@ function cell(col, r) {{
     case "daily": return fmtDaily(r.daily_ret_pct);
     case "jump": return fmtJump(r[col.id]);
     case "num1": return fmtNum1(r[col.id]);
+    case "num2": return fmtNum2(r[col.id]);
+    case "text": return (r[col.id] == null || r[col.id] === "") ? "—" : String(r[col.id]);
     case "signal": return fmtSignal(r.pead1_signal || r.signal);
     default: return r[col.id] ?? "—";
   }}

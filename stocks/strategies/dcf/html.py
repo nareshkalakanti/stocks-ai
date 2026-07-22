@@ -1,4 +1,4 @@
-"""HTML report for Cash Quality strategy scan."""
+"""HTML report for DCF strategy scan."""
 
 from __future__ import annotations
 
@@ -6,26 +6,25 @@ import pandas as pd
 
 from stocks.dashboards.interactive_table import build_interactive_section, wrap_interactive_page
 
-CASH_QUALITY_JS_COLS = [
+DCF_JS_COLS = [
     {"id": "rank", "label": "#", "fmt": "int"},
     {"id": "company", "label": "Stock", "fmt": "company"},
-    {"id": "cq_score", "label": "Score", "fmt": "num1"},
-    {"id": "cq_checks", "label": "Checks", "fmt": "text"},
-    {"id": "cash_to_tax", "label": "Cash/Tax", "fmt": "num2"},
-    {"id": "croic", "label": "CROIC", "fmt": "num2"},
-    {"id": "ccc_years", "label": "CCC Y", "fmt": "num2"},
-    {"id": "ccc_days", "label": "CCC d", "fmt": "num1"},
-    {"id": "ocf_ebitda_growth", "label": "OCF/EBITDA g", "fmt": "num2"},
-    {"id": "ocf_to_ebitda", "label": "OCF/EBITDA", "fmt": "num2"},
-    {"id": "ocf_cagr", "label": "OCF CAGR", "fmt": "num1"},
-    {"id": "ebitda_cagr", "label": "EBITDA CAGR", "fmt": "num1"},
+    {"id": "verdict", "label": "Verdict", "fmt": "text"},
+    {"id": "price", "label": "Price", "fmt": "num2"},
+    {"id": "fair_price", "label": "Fair", "fmt": "num2"},
+    {"id": "upside_pct", "label": "Upside %", "fmt": "num1"},
+    {"id": "implied_growth", "label": "Implied g%", "fmt": "num1"},
+    {"id": "growth", "label": "Assumed g%", "fmt": "num1"},
+    {"id": "discount_rate", "label": "r%", "fmt": "num1"},
+    {"id": "terminal_growth", "label": "Term g%", "fmt": "num1"},
+    {"id": "base_fcf", "label": "Base FCF", "fmt": "num0"},
+    {"id": "equity_value", "label": "Equity val", "fmt": "num0"},
     {"id": "market_cap_cr", "label": "Mcap Cr", "fmt": "num1"},
     {"id": "sector", "label": "Sector", "fmt": "text"},
 ]
 
 
 def _with_rank(df: pd.DataFrame) -> pd.DataFrame:
-    """Ensure a 1…N rank column (covers pre-rank session_state caches)."""
     if df is None or df.empty:
         return df if df is not None else pd.DataFrame()
     out = df.copy()
@@ -38,21 +37,21 @@ def _with_rank(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def build_cash_quality_html(
+def build_dcf_html(
     df: pd.DataFrame,
     *,
-    title: str = "Cash Quality",
+    title: str = "DCF",
     subtitle: str | None = None,
     standalone: bool = True,
 ) -> str:
     del title, subtitle
     work = _with_rank(df)
     section = build_interactive_section(
-        "cashq",
-        "Cash Quality — CROIC, CCC, Cash/Tax, OCF vs EBITDA growth",
+        "dcf",
+        "DCF — forecast FCF + terminal value vs market price",
         work,
-        CASH_QUALITY_JS_COLS,
-        kind="cash_quality",
+        DCF_JS_COLS,
+        kind="dcf",
         open_section=True,
     )
     return wrap_interactive_page(
@@ -62,5 +61,5 @@ def build_cash_quality_html(
     )
 
 
-def cash_quality_iframe_height(row_count: int) -> int:
+def dcf_iframe_height(row_count: int) -> int:
     return min(2200, max(560, 400 + min(row_count, 50) * 22))

@@ -58,6 +58,9 @@ CAP_TIERS: list[dict[str, str | float | None]] = [
         "max": SCAN_MCAP_MAX_CR + 0.01,
     },
     {"id": "nano", "label": "Nano-cap (< 100 Cr)", "min": 0, "max": 100},
+    {"id": "inst_entry", "label": "Inst Entry (20–100 Cr)", "min": 20, "max": 100},
+    {"id": "alpha_hide", "label": "Alpha Hide (50–1,000 Cr)", "min": 50, "max": 1000},
+    {"id": "micro_value", "label": "Micro Value (20–200 Cr)", "min": 20, "max": 200},
     {"id": "micro", "label": "Micro-cap (100–500 Cr)", "min": 100, "max": 500},
     {"id": "small", "label": "Small-cap (500–5,000 Cr)", "min": 500, "max": 5000},
     {"id": "mid", "label": "Mid-cap (5,000–20,000 Cr)", "min": 5000, "max": 20000},
@@ -107,6 +110,8 @@ PEAD2_MIN_QUARTERS = int(os.getenv("PEAD2_MIN_QUARTERS", "4"))
 PEAD2_SALES_BUST_QOQ_MIN = float(os.getenv("PEAD2_SALES_BUST_QOQ_MIN", "25"))
 PEAD2_SALES_BUST_STREAK = int(os.getenv("PEAD2_SALES_BUST_STREAK", "2"))
 PEAD2_CACHE_HOURS = int(os.getenv("PEAD2_CACHE_HOURS", "24"))
+# Holdings display — reuse cached PEAD rows longer than the live scan TTL.
+HOLDINGS_PEAD_CACHE_HOURS = int(os.getenv("HOLDINGS_PEAD_CACHE_HOURS", "8760"))
 HEADWIND_PEAD_CACHE_HOURS = int(os.getenv("HEADWIND_PEAD_CACHE_HOURS", "168"))
 HEADWIND_PEAD_BACKFILL_MAX = int(os.getenv("HEADWIND_PEAD_BACKFILL_MAX", "50"))
 # Post-earnings return window: 0 = drift to latest close; >0 = cap at N trading days.
@@ -176,6 +181,77 @@ CASH_QUALITY_MIN_CHECKS = int(os.getenv("CASH_QUALITY_MIN_CHECKS", "3"))
 CASH_QUALITY_LOOKBACK_YEARS = int(os.getenv("CASH_QUALITY_LOOKBACK_YEARS", "3"))
 CASH_QUALITY_CACHE_HOURS = int(os.getenv("CASH_QUALITY_CACHE_HOURS", "24"))
 CASH_QUALITY_MAX_WORKERS = YFINANCE_THROTTLED_MAX_WORKERS
+
+# DCF — forecast FCF + Gordon terminal value (LearnApp-style).
+DCF_FORECAST_YEARS = int(os.getenv("DCF_FORECAST_YEARS", "10"))
+DCF_DISCOUNT_RATE = float(os.getenv("DCF_DISCOUNT_RATE", "0.085"))
+DCF_TERMINAL_GROWTH = float(os.getenv("DCF_TERMINAL_GROWTH", "0.03"))
+# If unset, use historical FCF CAGR (capped); else force this growth (e.g. 0 = flat).
+DCF_GROWTH_PCT = os.getenv("DCF_GROWTH_PCT")  # percent string or None
+DCF_GROWTH_CAP_PCT = float(os.getenv("DCF_GROWTH_CAP_PCT", "25"))
+DCF_FAIR_BAND_PCT = float(os.getenv("DCF_FAIR_BAND_PCT", "15"))
+DCF_CACHE_HOURS = int(os.getenv("DCF_CACHE_HOURS", "24"))
+DCF_MAX_WORKERS = YFINANCE_THROTTLED_MAX_WORKERS
+
+# Micro Value — mcap 20–200 Cr · Market cap / Sales < 1 (rerating runway).
+MICRO_VALUE_MCAP_MIN_CR = float(os.getenv("MICRO_VALUE_MCAP_MIN_CR", "20"))
+MICRO_VALUE_MCAP_MAX_CR = float(os.getenv("MICRO_VALUE_MCAP_MAX_CR", "200"))
+MICRO_VALUE_MAX_PRICE_TO_SALES = float(os.getenv("MICRO_VALUE_MAX_PRICE_TO_SALES", "1"))
+MICRO_VALUE_CACHE_HOURS = int(os.getenv("MICRO_VALUE_CACHE_HOURS", "24"))
+MICRO_VALUE_MAX_WORKERS = YFINANCE_THROTTLED_MAX_WORKERS
+
+# Inst Entry — micro-cap deep value + first institutional (DII/FII) entry.
+INST_ENTRY_MCAP_MIN_CR = float(os.getenv("INST_ENTRY_MCAP_MIN_CR", "20"))
+INST_ENTRY_MCAP_MAX_CR = float(os.getenv("INST_ENTRY_MCAP_MAX_CR", "100"))
+INST_ENTRY_MAX_PRICE_TO_SALES = float(os.getenv("INST_ENTRY_MAX_PRICE_TO_SALES", "1.5"))
+# 0.1 was too tight for real microcaps; Yahoo often reports 0.3–1.0+.
+INST_ENTRY_MAX_DEBT_EQUITY = float(os.getenv("INST_ENTRY_MAX_DEBT_EQUITY", "0.5"))
+INST_ENTRY_MIN_SALES_CAGR = float(os.getenv("INST_ENTRY_MIN_SALES_CAGR", "10"))
+INST_ENTRY_MIN_AVG_VOLUME = int(os.getenv("INST_ENTRY_MIN_AVG_VOLUME", "5000"))
+INST_ENTRY_MIN_LISTED_YEARS = float(os.getenv("INST_ENTRY_MIN_LISTED_YEARS", "3"))
+INST_ENTRY_MIN_DII_FII_DELTA = float(os.getenv("INST_ENTRY_MIN_DII_FII_DELTA", "0.3"))
+INST_ENTRY_REQUIRE_SIGNAL = os.getenv("INST_ENTRY_REQUIRE_SIGNAL", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+# NSE XBRL is the primary source; screener.in is usually blocked.
+INST_ENTRY_FETCH_NSE = os.getenv("INST_ENTRY_FETCH_NSE", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+INST_ENTRY_FETCH_SCREENER = os.getenv("INST_ENTRY_FETCH_SCREENER", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+INST_ENTRY_CACHE_HOURS = int(os.getenv("INST_ENTRY_CACHE_HOURS", "24"))
+INST_ENTRY_MAX_WORKERS = YFINANCE_THROTTLED_MAX_WORKERS
+
+# Alpha Hide (SARVADA-style) — under-owned small caps + multi-bagger ingredients.
+ALPHA_HIDE_MCAP_MIN_CR = float(os.getenv("ALPHA_HIDE_MCAP_MIN_CR", "50"))
+ALPHA_HIDE_MCAP_MAX_CR = float(os.getenv("ALPHA_HIDE_MCAP_MAX_CR", "1000"))
+ALPHA_HIDE_PHASE1_MAX_CR = float(os.getenv("ALPHA_HIDE_PHASE1_MAX_CR", "300"))
+ALPHA_HIDE_PHASE2_MAX_CR = float(os.getenv("ALPHA_HIDE_PHASE2_MAX_CR", "1000"))
+ALPHA_HIDE_MAX_PE = float(os.getenv("ALPHA_HIDE_MAX_PE", "10"))
+ALPHA_HIDE_MAX_EV_EBITDA = float(os.getenv("ALPHA_HIDE_MAX_EV_EBITDA", "6"))
+ALPHA_HIDE_MIN_SALES_CAGR = float(os.getenv("ALPHA_HIDE_MIN_SALES_CAGR", "20"))
+ALPHA_HIDE_MIN_DRAWDOWN_PCT = float(os.getenv("ALPHA_HIDE_MIN_DRAWDOWN_PCT", "25"))
+ALPHA_HIDE_MIN_INGREDIENTS = int(os.getenv("ALPHA_HIDE_MIN_INGREDIENTS", "3"))
+ALPHA_HIDE_MIN_PROMOTER_DELTA = float(os.getenv("ALPHA_HIDE_MIN_PROMOTER_DELTA", "0.1"))
+ALPHA_HIDE_CACHE_HOURS = int(os.getenv("ALPHA_HIDE_CACHE_HOURS", "24"))
+ALPHA_HIDE_MAX_WORKERS = YFINANCE_THROTTLED_MAX_WORKERS
+ALPHA_HIDE_FETCH_NSE = os.getenv("ALPHA_HIDE_FETCH_NSE", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+ALPHA_HIDE_FETCH_SCREENER = os.getenv("ALPHA_HIDE_FETCH_SCREENER", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
 
 # Reject distorted Yahoo EPS rows (low YoY base, NP/EPS share-count drift).
 EARNINGS_MIN_PRIOR_EPS = float(os.getenv("EARNINGS_MIN_PRIOR_EPS", "0.10"))

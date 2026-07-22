@@ -383,15 +383,18 @@ def score_cash_quality(df: pd.DataFrame) -> pd.DataFrame:
     out = out[out["cq_score"].notna()].copy()
     if out.empty:
         return out
-    return out.sort_values(
+    out = out.sort_values(
         ["cq_checks_pass", "cq_score", "croic"],
         ascending=[False, False, False],
         na_position="last",
     ).reset_index(drop=True)
+    out.insert(0, "rank", range(1, len(out) + 1))
+    return out
 
 
 def format_cash_quality_export_df(df: pd.DataFrame) -> pd.DataFrame:
     cols = [
+        ("rank", "rank"),
         ("ticker", "ticker"),
         ("name", "name"),
         ("cq_score", "cq_score"),
@@ -404,6 +407,7 @@ def format_cash_quality_export_df(df: pd.DataFrame) -> pd.DataFrame:
         ("ocf_to_ebitda", "ocf_to_ebitda"),
         ("ocf_cagr", "ocf_cagr"),
         ("ebitda_cagr", "ebitda_cagr"),
+        ("website", "website"),
         ("market_cap_cr", "market_cap_cr"),
         ("sector", "sector"),
     ]

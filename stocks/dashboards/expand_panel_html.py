@@ -679,15 +679,28 @@ function renderPeadHero(r, snap) {
   const esc = (s) => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
   const name = r.name || r.ticker;
   const mkt = safeStrMarket(r.market);
+  const holdingsMode = typeof IS_HOLDINGS !== "undefined" && IS_HOLDINGS;
   const subParts = [];
-  if (mkt && r.ticker) subParts.push(`${mkt}: ${r.ticker}`);
-  else if (r.ticker) subParts.push(String(r.ticker));
+  if (holdingsMode) {
+    if (r.ticker) subParts.push(String(r.ticker));
+  } else if (mkt && r.ticker) {
+    subParts.push(`${mkt}: ${r.ticker}`);
+  } else if (r.ticker) {
+    subParts.push(String(r.ticker));
+  }
   appendListingClass(subParts, r, snap);
   const hq = snap?.headquarters || r.headquarters;
   if (hq) {
     const city = String(hq).split(",")[0].trim();
     if (city) subParts.push(city);
   }
+  const subsector = String(r.sub_sector || snap?.sub_sector || "").trim();
+  const subLine = subParts.length
+    ? `<div class="pead-detail-sub">${esc(subParts.join(" · "))}</div>`
+    : "";
+  const subsectorLine = subsector
+    ? `<div class="pead-detail-subsector">${esc(subsector)}</div>`
+    : "";
   const px = snap?.price ?? r.price;
   const daily = r.daily_ret_pct;
   const cagr = snap?.cagr;
@@ -718,7 +731,8 @@ function renderPeadHero(r, snap) {
     `<div class="pead-top">` +
     `<div class="pead-top-left">` +
     `<div class="pead-detail-name">${esc(name)}</div>` +
-    `<div class="pead-detail-sub">${esc(subParts.join(" · "))}</div>` +
+    subLine +
+    subsectorLine +
     (tags ? `<div class="company-tags-row">${tags}</div>` : "") +
     links +
     `</div>` +
@@ -1050,15 +1064,41 @@ function renderMaPills(s) {
   });
   return maHtml;
 }
-function renderPeadMetricsCard(s, r) {
-  if (!s || s.price == null) return "";
+function renderHoldingsExpandHeader(r, snap) {
+  const holdingsMode = typeof IS_HOLDINGS !== "undefined" && IS_HOLDINGS;
+  if (!holdingsMode) return "";
+  const name = r.name || r.ticker;
   const subParts = [];
   if (r.ticker) subParts.push(String(r.ticker));
-  appendListingClass(subParts, r, s);
-  const hq = s.headquarters || r.headquarters;
+  appendListingClass(subParts, r, snap);
+  const hq = snap?.headquarters || r.headquarters;
   if (hq) {
     const city = String(hq).split(",")[0].trim();
     if (city) subParts.push(city);
+  }
+  const subsector = String(r.sub_sector || snap?.sub_sector || "").trim();
+  if (!name && !subParts.length && !subsector) return "";
+  let html = `<div class="pead-holdings-head">`;
+  if (name) html += `<div class="pead-detail-name">${esc(name)}</div>`;
+  if (subParts.length) {
+    html += `<div class="pead-detail-sub">${esc(subParts.join(" · "))}</div>`;
+  }
+  if (subsector) html += `<div class="pead-detail-subsector">${esc(subsector)}</div>`;
+  html += `</div>`;
+  return html;
+}
+function renderPeadMetricsCard(s, r) {
+  if (!s || s.price == null) return "";
+  const holdingsMode = typeof IS_HOLDINGS !== "undefined" && IS_HOLDINGS;
+  const subParts = [];
+  if (!holdingsMode) {
+    if (r.ticker) subParts.push(String(r.ticker));
+    appendListingClass(subParts, r, s);
+    const hq = s.headquarters || r.headquarters;
+    if (hq) {
+      const city = String(hq).split(",")[0].trim();
+      if (city) subParts.push(city);
+    }
   }
   const pe = s.pe_ratio ?? s.pe ?? r?.pe_ratio;
   const mcap = s.market_cap_cr ?? r.market_cap_cr;
@@ -1113,6 +1153,8 @@ function renderPeadExpandPanel(r) {
     return renderExpandPanelNews(r);
   }
   let body = `<div class="pead-card pead-card-compact">`;
+  const holdingsHead = renderHoldingsExpandHeader(r, snap);
+  if (holdingsHead) body += holdingsHead;
   if (metrics || qHtml) {
     body += `<div class="pead-main-row">`;
     if (metrics) body += metrics;

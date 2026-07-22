@@ -107,6 +107,7 @@ def test_score_cash_quality_keeps_passers():
     scored = score_cash_quality(df)
     assert list(scored["ticker"]) == ["GOOD"]
     assert scored.iloc[0]["cq_checks_pass"] >= 3
+    assert scored.iloc[0]["rank"] == 1
 
 
 def test_compute_metrics_bundle():

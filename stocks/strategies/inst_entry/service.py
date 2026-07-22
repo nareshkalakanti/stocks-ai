@@ -1,4 +1,4 @@
-"""Cash Quality scan — fetch annual cash metrics via yfinance."""
+"""Inst Entry scan — quant gates via yfinance + shareholding trigger."""
 
 from __future__ import annotations
 
@@ -9,48 +9,34 @@ import pandas as pd
 import yfinance as yf
 
 from stocks.core.config import (
-    CASH_QUALITY_MAX_WORKERS,
-    MIN_MARKET_CAP_CR,
+    INST_ENTRY_FETCH_NSE,
+    INST_ENTRY_FETCH_SCREENER,
+    INST_ENTRY_MAX_WORKERS,
+    INST_ENTRY_MCAP_MAX_CR,
+    INST_ENTRY_MCAP_MIN_CR,
+    INST_ENTRY_MIN_DII_FII_DELTA,
+    INST_ENTRY_REQUIRE_SIGNAL,
     YFINANCE_REQUEST_DELAY,
     yfinance_worker_count,
 )
-from stocks.core.database import save_market_cap_to_db, load_company_profiles_from_db
+from stocks.core.database import init_db, save_market_cap_to_db
 from stocks.core.log_service import METRICS_ERROR, log_error
 from stocks.core.text_utils import resolve_company_name, safe_str
+from stocks.market.fundamentals_service import attach_market_cap_for_scan_filter
 from stocks.market.price_service import to_yfinance_symbol
+from stocks.market.shareholding import (
+    ensure_shareholding_for_ticker,
+    import_shareholding_seed_csv,
+    institutional_entry_signal,
+)
 from stocks.market.yfinance_limits import call_throttled
 from stocks.shared.links import attach_research_links
-from stocks.strategies.cash_quality.strategy import (
-    compute_cash_quality_metrics,
-    score_cash_quality,
+from stocks.strategies.inst_entry.strategy import (
+    compute_inst_entry_metrics,
+    in_inst_entry_mcap_band,
+    score_inst_entry,
 )
 from stocks.strategies.pead.service import prepare_pead_universe
-
-
-def _attach_websites(df: pd.DataFrame) -> pd.DataFrame:
-    """Fill missing website from SQLite company_profile_cache."""
-    if df is None or df.empty or "ticker" not in df.columns:
-        return df if df is not None else pd.DataFrame()
-    out = df.copy()
-    if "website" not in out.columns:
-        out["website"] = None
-    missing = out["website"].isna() | (
-        out["website"].astype(str).str.strip().isin(["", "None", "nan"])
-    )
-    if not missing.any():
-        return out
-    tickers = (
-        out.loc[missing, "ticker"].astype(str).str.strip().str.upper().unique().tolist()
-    )
-    profiles = load_company_profiles_from_db(tickers)
-    if not profiles:
-        return out
-    for idx in out.index[missing]:
-        ticker = safe_str(out.at[idx, "ticker"]).upper()
-        web = safe_str((profiles.get(ticker) or {}).get("website"))
-        if web:
-            out.at[idx, "website"] = web
-    return out
 
 
 def _cache_market_cap(
@@ -89,16 +75,37 @@ def _merge_listing_meta(result: dict, src: pd.Series) -> dict:
     return result
 
 
-def analyze_cash_quality_stock(
+def prepare_inst_entry_universe(
+    stocks: pd.DataFrame,
+    *,
+    cap_tier_id: str = "inst_entry",
+) -> tuple[pd.DataFrame, int, int]:
+    init_db()
+    import_shareholding_seed_csv()
+    tier = cap_tier_id if cap_tier_id not in ("", None, "all") else "inst_entry"
+    universe, cap_ex, missing = prepare_pead_universe(stocks, cap_tier_id=tier)
+    if universe.empty:
+        return universe, cap_ex, missing
+    universe = attach_market_cap_for_scan_filter(universe)
+    if "market_cap_cr" in universe.columns:
+        lo, hi = INST_ENTRY_MCAP_MIN_CR, INST_ENTRY_MCAP_MAX_CR
+        cap = pd.to_numeric(universe["market_cap_cr"], errors="coerce")
+        known = cap.notna() & (cap >= lo) & (cap <= hi)
+        unknown = cap.isna()
+        universe = universe[known | unknown].copy()
+    return universe.reset_index(drop=True), cap_ex, missing
+
+
+def analyze_inst_entry_stock(
     ticker: str,
     market: str | None,
     *,
-    min_mcap_cr: float | None = None,
     known_mcap_cr: float | None = None,
+    fetch_nse: bool = INST_ENTRY_FETCH_NSE,
+    fetch_screener: bool = INST_ENTRY_FETCH_SCREENER,
 ) -> dict | None:
     symbol = to_yfinance_symbol(ticker, market)
-    floor = MIN_MARKET_CAP_CR if min_mcap_cr is None else min_mcap_cr
-    if known_mcap_cr is not None and known_mcap_cr < floor:
+    if known_mcap_cr is not None and not in_inst_entry_mcap_band(known_mcap_cr):
         return None
 
     def _fetch() -> dict | None:
@@ -107,7 +114,7 @@ def analyze_cash_quality_stock(
         market_cap_cr = known_mcap_cr
         if market_cap_cr is None:
             market_cap_cr = _cache_market_cap(ticker, market, symbol, info)
-        if market_cap_cr is not None and market_cap_cr < floor:
+        if not in_inst_entry_mcap_band(market_cap_cr):
             return None
 
         price_raw = info.get("regularMarketPrice") or info.get("currentPrice")
@@ -115,18 +122,20 @@ def analyze_cash_quality_stock(
             return None
         price = float(price_raw)
 
-        metrics = compute_cash_quality_metrics(
-            yt.financials, yt.balance_sheet, yt.cashflow
+        metrics = compute_inst_entry_metrics(
+            info, yt.financials, market_cap_cr=market_cap_cr
         )
-        if (
-            metrics.get("croic") is None
-            and metrics.get("cash_to_tax") is None
-            and metrics.get("ccc_years") is None
-            and metrics.get("ocf_ebitda_growth") is None
-        ):
-            return None
+        ensure_shareholding_for_ticker(
+            ticker,
+            market,
+            fetch_nse=fetch_nse,
+            fetch_screener=fetch_screener,
+        )
+        signal = institutional_entry_signal(
+            ticker, min_delta=INST_ENTRY_MIN_DII_FII_DELTA
+        )
 
-        return {
+        row = {
             "ticker": safe_str(ticker).upper(),
             "market": safe_str(market) or None,
             "name": safe_str(info.get("longName") or info.get("shortName")),
@@ -135,11 +144,24 @@ def analyze_cash_quality_stock(
             "website": safe_str(info.get("website")) or None,
             **metrics,
         }
+        if signal:
+            row.update(signal)
+        else:
+            row.update(
+                {
+                    "quarter_end": None,
+                    "institutional_pct_now": None,
+                    "institutional_pct_prior": None,
+                    "institutional_pct_delta": None,
+                    "first_time_entry": False,
+                }
+            )
+        return row
 
     def _log(exc: Exception) -> None:
         log_error(
             METRICS_ERROR,
-            "Cash Quality fetch failed",
+            "Inst Entry fetch failed",
             ticker=ticker,
             symbol=symbol,
             error=str(exc),
@@ -148,25 +170,28 @@ def analyze_cash_quality_stock(
     return call_throttled(_fetch, delay=YFINANCE_REQUEST_DELAY, on_error=_log)
 
 
-def run_cash_quality_scan(
+def run_inst_entry_scan(
     universe: pd.DataFrame,
     *,
     max_workers: int | None = None,
-    min_mcap_cr: float | None = None,
     progress_callback: Callable[[int, int], None] | None = None,
+    require_signal: bool | None = None,
+    fetch_nse: bool = INST_ENTRY_FETCH_NSE,
+    fetch_screener: bool = INST_ENTRY_FETCH_SCREENER,
 ) -> dict:
     if universe is None or universe.empty:
         return {
             "candidates": pd.DataFrame(),
+            "watchlist": pd.DataFrame(),
             "scanned": 0,
             "with_data": 0,
             "fetched": 0,
         }
 
+    require = INST_ENTRY_REQUIRE_SIGNAL if require_signal is None else require_signal
     scanned_total = len(universe)
-    mcap_floor = MIN_MARKET_CAP_CR if min_mcap_cr is None else min_mcap_cr
     workers = max_workers or yfinance_worker_count(
-        len(universe), CASH_QUALITY_MAX_WORKERS
+        len(universe), INST_ENTRY_MAX_WORKERS
     )
 
     jobs: list[tuple[pd.Series, str | None, float | None]] = []
@@ -180,6 +205,8 @@ def run_cash_quality_scan(
             if known_mcap is not None and not pd.isna(known_mcap)
             else None
         )
+        if known_mcap_f is not None and not in_inst_entry_mcap_band(known_mcap_f):
+            continue
         jobs.append((src, safe_str(src.get("market")) or None, known_mcap_f))
 
     rows: list[dict] = []
@@ -191,11 +218,12 @@ def run_cash_quality_scan(
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {
                 pool.submit(
-                    analyze_cash_quality_stock,
+                    analyze_inst_entry_stock,
                     safe_str(src.get("ticker")),
                     market,
-                    min_mcap_cr=mcap_floor,
                     known_mcap_cr=known_mcap,
+                    fetch_nse=fetch_nse,
+                    fetch_screener=fetch_screener,
                 ): src
                 for src, market, known_mcap in jobs
             }
@@ -214,12 +242,19 @@ def run_cash_quality_scan(
                     rows.append(result)
 
     raw = pd.DataFrame(rows) if rows else pd.DataFrame()
-    scored = score_cash_quality(raw) if not raw.empty else pd.DataFrame()
-    if not scored.empty:
-        scored = _attach_websites(attach_research_links(scored))
+    # Quant-only watchlist (no inst requirement).
+    watchlist = score_inst_entry(raw, require_signal=False) if not raw.empty else pd.DataFrame()
+    candidates = (
+        score_inst_entry(raw, require_signal=require) if not raw.empty else pd.DataFrame()
+    )
+    if not candidates.empty:
+        candidates = attach_research_links(candidates)
+    if not watchlist.empty:
+        watchlist = attach_research_links(watchlist)
 
     return {
-        "candidates": scored,
+        "candidates": candidates,
+        "watchlist": watchlist,
         "raw": raw,
         "scanned": scanned_total,
         "with_data": len(raw),
@@ -228,7 +263,7 @@ def run_cash_quality_scan(
 
 
 __all__ = [
-    "analyze_cash_quality_stock",
-    "prepare_pead_universe",
-    "run_cash_quality_scan",
+    "analyze_inst_entry_stock",
+    "prepare_inst_entry_universe",
+    "run_inst_entry_scan",
 ]

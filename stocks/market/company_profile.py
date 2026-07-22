@@ -15,6 +15,12 @@ PROFILE_KEYS = (
     "employees",
 )
 
+# Manual website fixes when Yahoo/screener miss the corporate site.
+_WEBSITE_OVERRIDES: dict[str, str] = {
+    "ZODIAC": "https://zodiacenergy.com/",
+    "ARTEMISMED": "https://www.artemishospitals.com/",
+}
+
 
 def _pick_profile(data: dict) -> dict:
     out: dict = {}
@@ -83,6 +89,9 @@ def merge_company_profile(
         return dict(data)
 
     out = dict(data)
+    override_web = _WEBSITE_OVERRIDES.get(ticker_key)
+    if override_web:
+        out["website"] = override_web
     stored_rows = load_company_profiles_from_db([ticker_key])
     stored = stored_rows.get(ticker_key) or {}
     out = _apply_stored_row(out, stored)

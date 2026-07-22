@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pandas as pd
 
+from stocks.core.config import HOLDINGS_PEAD_CACHE_HOURS
 from stocks.core.database import (
     holdings_count,
     load_holdings_from_db,
     replace_holdings_in_db,
     save_holdings_to_db,
 )
+from stocks.core.text_utils import resolve_company_name, safe_str
+from stocks.listings.stock_overrides import ticker_meta_override
+from stocks.listings.stocks_data import load_india_stocks
 from stocks.market.momentum import attach_holdings_momentum
 from stocks.market.price_service import attach_prices
 from stocks.shared.links import attach_research_links
-from stocks.listings.stocks_data import load_india_stocks
-from stocks.core.text_utils import safe_str
 
 # Default portfolio (seeded once when holdings table is empty).
 _DEFAULT_HOLDINGS: list[dict] = [
@@ -48,7 +52,7 @@ _DEFAULT_HOLDINGS: list[dict] = [
     {"ticker": "SEAMECLTD", "sector": "Industrials", "sub_sector": "Oil & Gas - Equipment & Services", "snapshot_price": 1366.80},
     {"ticker": "ROTO", "sector": "Industrials", "sub_sector": "Industrial Machinery", "snapshot_price": 64.39},
     {"ticker": "KOTHARIPET", "sector": "Basic Materials", "sub_sector": "Commodity Chemicals", "snapshot_price": 122.67},
-    {"ticker": "ZODIAC", "sector": "N/A", "sub_sector": "Renewable Energy Equipment & Services", "snapshot_price": 280.70},
+    {"ticker": "ZODIAC", "name": "Zodiac Energy Limited", "sector": "Energy", "sub_sector": "Renewable Energy Equipment & Services", "snapshot_price": 280.70},
     {"ticker": "INDRAMEDCO", "sector": "Healthcare", "sub_sector": "Hospitals & Diagnostic Centres", "snapshot_price": 382.95},
     {"ticker": "APTECHT", "sector": "Consumer Defensive", "sub_sector": "Education Services", "snapshot_price": 110.95},
     {"ticker": "LAGNAM", "sector": "Consumer Cyclical", "sub_sector": "Textiles", "snapshot_price": 82.48},
@@ -71,7 +75,7 @@ _DEFAULT_HOLDINGS: list[dict] = [
     {"ticker": "HNDFDS", "sector": "Industrials", "sub_sector": "FMCG - Foods", "snapshot_price": 545.40},
     {"ticker": "PRIVISCL", "sector": "Basic Materials", "sub_sector": "Specialty Chemicals", "snapshot_price": 3493.90},
     {"ticker": "AAVAS", "sector": "Financial Services", "sub_sector": "Home Financing", "snapshot_price": 1471.90},
-    {"ticker": "ARTEMISMED", "sector": "N/A", "sub_sector": "Hospitals & Diagnostic Centres", "snapshot_price": 258.65},
+    {"ticker": "ARTEMISMED", "name": "Artemis Medicare Services Limited", "sector": "Healthcare", "sub_sector": "Hospitals & Diagnostic Centres", "snapshot_price": 258.65},
     {"ticker": "COSMOFIRST", "sector": "Consumer Cyclical", "sub_sector": "Packaging", "snapshot_price": 780.75},
     {"ticker": "BLS", "sector": "Industrials", "sub_sector": "Outsourced services", "snapshot_price": 267.45},
     {"ticker": "CLEDUCATE", "sector": "Consumer Defensive", "sub_sector": "Education Services", "snapshot_price": 50.51},
@@ -85,7 +89,7 @@ _DEFAULT_HOLDINGS: list[dict] = [
     {"ticker": "TEAMGTY", "sector": "Financial Services", "sub_sector": "Asset Management", "snapshot_price": 230.70},
     {"ticker": "GPTHEALTH", "sector": "Healthcare", "sub_sector": "Hospitals & Diagnostic Centres", "snapshot_price": 147.82},
     {"ticker": "TRF", "sector": "Industrials", "sub_sector": "Industrial Machinery", "snapshot_price": 233.80},
-    {"ticker": "SURAJEST", "sector": "Real Estate", "sub_sector": "Real Estate", "snapshot_price": 196.10},
+    {"ticker": "SURAJEST", "name": "Suraj Estate Developers Limited", "sector": "Real Estate", "industry": "Real Estate", "sub_sector": "Real Estate", "snapshot_price": 196.10},
     {"ticker": "HALEOSLABS", "sector": "Healthcare", "sub_sector": "Pharmaceuticals", "snapshot_price": 1410.20},
     {"ticker": "EPACK", "sector": "Consumer Cyclical", "sub_sector": "Home Electronics & Appliances", "snapshot_price": 230.39},
     {"ticker": "EPACKPEB", "name": "Epack Prefab Technologies Limited", "sector": "Industrials", "industry": "Building Products - Prefab Structures", "sub_sector": "Building Products - Prefab Structures", "snapshot_price": 268.98},
@@ -140,14 +144,25 @@ def _build_seed_frame() -> pd.DataFrame:
     for item in _DEFAULT_HOLDINGS:
         ticker = safe_str(item["ticker"]).upper()
         meta = lookup.get(ticker, {})
+        override = ticker_meta_override(ticker)
         rows.append(
             {
                 "ticker": ticker,
                 "market": meta.get("market") or "NSE",
-                "name": meta.get("name") or item.get("name") or None,
-                "sector": item["sector"],
-                "industry": item.get("industry") or meta.get("industry"),
-                "sub_sector": item["sub_sector"],
+                "name": resolve_company_name(
+                    override.get("name"),
+                    item.get("name"),
+                    meta.get("name"),
+                    ticker=ticker,
+                )
+                or None,
+                "sector": item["sector"] or override.get("sector") or meta.get("sector"),
+                "industry": item.get("industry")
+                or override.get("industry")
+                or meta.get("industry"),
+                "sub_sector": item["sub_sector"]
+                or override.get("sub_sector")
+                or meta.get("sub_sector"),
                 "qty": None,
                 "avg_price": None,
                 "snapshot_price": item["snapshot_price"],
@@ -189,14 +204,23 @@ def add_holdings(entries: list[dict]) -> int:
         if not ticker:
             continue
         meta = lookup.get(ticker, {})
+        override = ticker_meta_override(ticker)
         rows.append(
             {
                 "ticker": ticker,
                 "market": meta.get("market") or safe_str(item.get("market")).upper() or "NSE",
-                "name": meta.get("name") or item.get("name"),
-                "sector": item.get("sector"),
-                "industry": item.get("industry") or meta.get("industry"),
-                "sub_sector": item.get("sub_sector"),
+                "name": resolve_company_name(
+                    override.get("name"),
+                    item.get("name"),
+                    meta.get("name"),
+                    ticker=ticker,
+                )
+                or None,
+                "sector": item.get("sector") or override.get("sector"),
+                "industry": item.get("industry")
+                or override.get("industry")
+                or meta.get("industry"),
+                "sub_sector": item.get("sub_sector") or override.get("sub_sector"),
                 "qty": item.get("qty"),
                 "avg_price": item.get("avg_price"),
                 "snapshot_price": item.get("snapshot_price"),
@@ -211,23 +235,75 @@ def _fill_holdings_classification(holdings: pd.DataFrame) -> pd.DataFrame:
         return holdings
     lookup = _stock_meta_lookup()
     out = holdings.copy()
-    for col in ("sector", "industry", "sub_sector"):
+    for col in ("name", "sector", "industry", "sub_sector"):
         if col not in out.columns:
             out[col] = ""
     for idx, row in out.iterrows():
         ticker = safe_str(row.get("ticker")).upper()
         meta = lookup.get(ticker, {})
+        override = ticker_meta_override(ticker)
+        name = resolve_company_name(
+            override.get("name"),
+            row.get("name"),
+            meta.get("name"),
+            ticker=ticker,
+        )
+        if name and name.upper() != ticker:
+            out.at[idx, "name"] = name
         for col in ("sector", "industry", "sub_sector"):
-            if not safe_str(out.at[idx, col]) and meta.get(col):
-                out.at[idx, col] = meta[col]
+            if not safe_str(out.at[idx, col]):
+                val = override.get(col) or meta.get(col)
+                if val:
+                    out.at[idx, col] = val
     return out
+
+
+def backfill_holdings_names(*, persist: bool = True) -> int:
+    """Fill blank / ticker-only names from stock_overrides (no listings download)."""
+    df = load_holdings_from_db()
+    if df.empty:
+        return 0
+    out = df.copy()
+    if "name" not in out.columns:
+        out["name"] = ""
+    changed = 0
+    for idx, row in out.iterrows():
+        ticker = safe_str(row.get("ticker")).upper()
+        if not ticker:
+            continue
+        override = ticker_meta_override(ticker)
+        if not override:
+            continue
+        new_name = safe_str(override.get("name"))
+        old_name = safe_str(row.get("name"))
+        if new_name and (not old_name or old_name.upper() == ticker):
+            out.at[idx, "name"] = new_name
+            changed += 1
+        for col in ("sector", "industry", "sub_sector"):
+            if col not in out.columns:
+                out[col] = ""
+            if not safe_str(out.at[idx, col]) and override.get(col):
+                out.at[idx, col] = override[col]
+                changed += 1
+    if changed and persist:
+        save_holdings_to_db(out)
+    return changed
+
+
+def load_holdings(*, seed_if_empty: bool = True) -> pd.DataFrame:
+    if seed_if_empty and holdings_count() == 0:
+        seed_default_holdings()
+    backfill_holdings_names(persist=True)
+    return load_holdings_from_db()
 
 
 def enrich_holdings(
     holdings: pd.DataFrame,
     *,
     use_cache: bool = True,  # noqa: ARG001 — kept for callers
-    with_momentum: bool = True,
+    with_momentum: bool = False,
+    with_pead_expand: bool = False,
+    pead_progress_callback: Callable[[int, int], None] | None = None,
 ) -> pd.DataFrame:
     if holdings.empty:
         return holdings
@@ -238,8 +314,15 @@ def enrich_holdings(
     else:
         out = attach_prices(out)
 
+    # PEAD-style rows use `price`; momentum path also sets current_price.
+    if "price" not in out.columns or out["price"].isna().all():
+        if "current_price" in out.columns:
+            out["price"] = out["current_price"]
+
     qty = pd.to_numeric(out.get("qty"), errors="coerce")
     price = pd.to_numeric(out.get("current_price"), errors="coerce")
+    if price.isna().all():
+        price = pd.to_numeric(out.get("price"), errors="coerce")
     avg = pd.to_numeric(out.get("avg_price"), errors="coerce")
     snap = pd.to_numeric(out.get("snapshot_price"), errors="coerce")
 
@@ -251,4 +334,75 @@ def enrich_holdings(
         snap.notna() & (snap > 0) & price.notna()
     ).round(2)
 
-    return attach_research_links(out)
+    out = attach_research_links(out)
+
+    if with_pead_expand:
+        out = refresh_holdings_pead_metrics(out, progress_callback=pead_progress_callback)
+
+    return out
+
+
+def refresh_holdings_pead_metrics(
+    priced: pd.DataFrame,
+    *,
+    progress_callback: Callable[[int, int], None] | None = None,
+) -> pd.DataFrame:
+    """Re-attach PEAD score, PE, and expand-panel fields after a PEAD backfill."""
+    if priced is None or priced.empty:
+        return priced if priced is not None else pd.DataFrame()
+
+    from stocks.strategies.pead2.cache_lookup import (
+        attach_pead_scores,
+        load_pead_pe_by_ticker,
+    )
+    from stocks.strategies.pead2.expand_data import attach_pead_expand
+
+    out = attach_pead_expand(
+        priced,
+        progress_callback=progress_callback,
+        cache_hours=HOLDINGS_PEAD_CACHE_HOURS,
+    )
+    out = attach_pead_scores(out, max_hours=HOLDINGS_PEAD_CACHE_HOURS)
+
+    for col in ("pe_ratio", "forward_pe"):
+        if col not in out.columns:
+            out[col] = pd.NA
+    pe_map = load_pead_pe_by_ticker(
+        out["ticker"].astype(str).str.upper().tolist(),
+        max_hours=HOLDINGS_PEAD_CACHE_HOURS,
+    )
+    for idx, row in out.iterrows():
+        ticker = safe_str(row.get("ticker")).upper()
+        entry = pe_map.get(ticker) or {}
+        if pd.isna(row.get("pe_ratio")) and entry.get("pe_ratio") is not None:
+            out.at[idx, "pe_ratio"] = entry["pe_ratio"]
+        if pd.isna(row.get("forward_pe")) and entry.get("forward_pe") is not None:
+            out.at[idx, "forward_pe"] = entry["forward_pe"]
+    return out
+
+
+def run_holdings_pead_backfill(
+    holdings: pd.DataFrame,
+    *,
+    progress_callback: Callable[[int, int], None] | None = None,
+) -> int:
+    """Fetch PEAD2 cache for holdings tickers missing scorable data. Returns fetch count."""
+    if holdings is None or holdings.empty:
+        return 0
+
+    from stocks.core.config import PEAD2_MAX_WORKERS
+    from stocks.strategies.pead2.cache_lookup import backfill_pead_cache_for_tickers
+
+    tickers = holdings["ticker"].astype(str).str.upper().tolist()
+    markets = (
+        holdings["market"].astype(str).tolist()
+        if "market" in holdings.columns
+        else None
+    )
+    return backfill_pead_cache_for_tickers(
+        tickers,
+        markets,
+        max_fetch=len(tickers),
+        max_workers=PEAD2_MAX_WORKERS,
+        progress_callback=progress_callback,
+    )

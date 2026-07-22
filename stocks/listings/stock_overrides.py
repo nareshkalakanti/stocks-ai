@@ -10,6 +10,10 @@ from stocks.core.text_utils import safe_str
 _NAME_OVERRIDES: dict[str, str] = {
     "KAMOPAINTS": "Kamdhenu Ventures (Komo Paints)",
     "KAMDHENU": "Kamdhenu Limited",
+    "SURAJEST": "Suraj Estate Developers Limited",
+    "EPACKPEB": "Epack Prefab Technologies Limited",
+    "ZODIAC": "Zodiac Energy Limited",
+    "ARTEMISMED": "Artemis Medicare Services Limited",
 }
 
 # Insert NSE rows when missing from the HuggingFace dataset.
@@ -37,11 +41,43 @@ _REQUIRED_NSE: dict[str, dict[str, str]] = {
         "sector": "Real Estate",
         "industry": "Real Estate",
     },
+    "ZODIAC": {
+        "name": "Zodiac Energy Limited",
+        "sector": "Energy",
+        "sub_sector": "Renewable Energy Equipment & Services",
+    },
+    "ARTEMISMED": {
+        "name": "Artemis Medicare Services Limited",
+        "sector": "Healthcare",
+        "sub_sector": "Hospitals & Diagnostic Centres",
+    },
 }
 
 
 def stock_display_name(ticker: str) -> str | None:
-    return _NAME_OVERRIDES.get(safe_str(ticker).upper())
+    key = safe_str(ticker).upper()
+    if key in _NAME_OVERRIDES:
+        return _NAME_OVERRIDES[key]
+    required = _REQUIRED_NSE.get(key)
+    if required:
+        name = safe_str(required.get("name"))
+        return name or None
+    return None
+
+
+def ticker_meta_override(ticker: str) -> dict[str, str]:
+    """Name / sector fields from manual overrides (for holdings backfill)."""
+    key = safe_str(ticker).upper()
+    out: dict[str, str] = {}
+    name = stock_display_name(key)
+    if name:
+        out["name"] = name
+    required = _REQUIRED_NSE.get(key) or {}
+    for col in ("sector", "industry", "sub_sector"):
+        val = safe_str(required.get(col))
+        if val:
+            out[col] = val
+    return out
 
 
 def apply_stock_overrides(stocks: pd.DataFrame) -> pd.DataFrame:

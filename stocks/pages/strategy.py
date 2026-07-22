@@ -38,7 +38,19 @@ STRATEGY_OPTIONS = ("Both", "TQ", "Bollinger Bands")
 
 
 def render_strategy() -> None:
-    tab_scan, tab_recovery, tab_rsi, tab_pead2, tab_growth, tab_cashq, tab_ht = st.tabs(
+    (
+        tab_scan,
+        tab_recovery,
+        tab_rsi,
+        tab_pead2,
+        tab_growth,
+        tab_cashq,
+        tab_dcf,
+        tab_microv,
+        tab_inst,
+        tab_alpha,
+        tab_ht,
+    ) = st.tabs(
         [
             "TQ / Bollinger Bands",
             "TQ W52 Recovery",
@@ -46,6 +58,10 @@ def render_strategy() -> None:
             "PEAD",
             "Growth",
             "Cash Quality",
+            "DCF",
+            "Micro Value",
+            "Inst Entry",
+            "Alpha Hide",
             "H&T",
         ]
     )
@@ -71,6 +87,22 @@ def render_strategy() -> None:
         from stocks.pages.cash_quality import render_cash_quality
 
         render_cash_quality(show_title=False)
+    with tab_dcf:
+        from stocks.pages.dcf import render_dcf
+
+        render_dcf(show_title=False)
+    with tab_microv:
+        from stocks.pages.micro_value import render_micro_value
+
+        render_micro_value(show_title=False)
+    with tab_inst:
+        from stocks.pages.inst_entry import render_inst_entry
+
+        render_inst_entry(show_title=False)
+    with tab_alpha:
+        from stocks.pages.alpha_hide import render_alpha_hide
+
+        render_alpha_hide(show_title=False)
     with tab_ht:
         from stocks.pages.headwind_tailwind import render_headwind_tailwind
 

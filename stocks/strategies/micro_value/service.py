@@ -1,4 +1,4 @@
-"""Cash Quality scan — fetch annual cash metrics via yfinance."""
+"""Micro Value scan — mcap 20–200 Cr · Mcap/Sales < 1 via yfinance."""
 
 from __future__ import annotations
 
@@ -9,26 +9,28 @@ import pandas as pd
 import yfinance as yf
 
 from stocks.core.config import (
-    CASH_QUALITY_MAX_WORKERS,
-    MIN_MARKET_CAP_CR,
+    MICRO_VALUE_MAX_WORKERS,
+    MICRO_VALUE_MCAP_MAX_CR,
+    MICRO_VALUE_MCAP_MIN_CR,
     YFINANCE_REQUEST_DELAY,
     yfinance_worker_count,
 )
-from stocks.core.database import save_market_cap_to_db, load_company_profiles_from_db
+from stocks.core.database import load_company_profiles_from_db, load_market_cap_from_db, save_market_cap_to_db
 from stocks.core.log_service import METRICS_ERROR, log_error
 from stocks.core.text_utils import resolve_company_name, safe_str
+from stocks.market.fundamentals_service import attach_market_cap_for_scan_filter
 from stocks.market.price_service import to_yfinance_symbol
 from stocks.market.yfinance_limits import call_throttled
 from stocks.shared.links import attach_research_links
-from stocks.strategies.cash_quality.strategy import (
-    compute_cash_quality_metrics,
-    score_cash_quality,
+from stocks.strategies.micro_value.strategy import (
+    compute_micro_value_metrics,
+    in_micro_value_mcap_band,
+    score_micro_value,
 )
 from stocks.strategies.pead.service import prepare_pead_universe
 
 
 def _attach_websites(df: pd.DataFrame) -> pd.DataFrame:
-    """Fill missing website from SQLite company_profile_cache."""
     if df is None or df.empty or "ticker" not in df.columns:
         return df if df is not None else pd.DataFrame()
     out = df.copy()
@@ -89,16 +91,47 @@ def _merge_listing_meta(result: dict, src: pd.Series) -> dict:
     return result
 
 
-def analyze_cash_quality_stock(
+def prepare_micro_value_universe(
+    stocks: pd.DataFrame,
+    *,
+    cap_tier_id: str = "micro_value",
+) -> tuple[pd.DataFrame, int, int]:
+    """
+    Prefer Micro Value (20–200 Cr) tier; always clamp to strategy band when possible.
+    """
+    tier = cap_tier_id if cap_tier_id not in ("", None, "all") else "micro_value"
+    universe, cap_ex, missing = prepare_pead_universe(stocks, cap_tier_id=tier)
+    if universe.empty:
+        return universe, cap_ex, missing
+
+    universe = attach_market_cap_for_scan_filter(universe)
+    if "market_cap_cr" in universe.columns:
+        lo = MICRO_VALUE_MCAP_MIN_CR
+        hi = MICRO_VALUE_MCAP_MAX_CR
+        caps = load_market_cap_from_db(
+            universe["ticker"].astype(str).str.upper().tolist()
+        )
+        if not caps.empty and "market_cap_cr" in caps.columns:
+            universe = universe.drop(columns=["market_cap_cr"], errors="ignore").merge(
+                caps[["ticker", "market_cap_cr"]].drop_duplicates("ticker"),
+                on="ticker",
+                how="left",
+            )
+        cap = pd.to_numeric(universe["market_cap_cr"], errors="coerce")
+        known_mask = cap.notna() & (cap >= lo) & (cap <= hi)
+        unknown_mask = cap.isna()
+        universe = universe[known_mask | unknown_mask].copy()
+    return universe.reset_index(drop=True), cap_ex, missing
+
+
+def analyze_micro_value_stock(
     ticker: str,
     market: str | None,
     *,
-    min_mcap_cr: float | None = None,
     known_mcap_cr: float | None = None,
 ) -> dict | None:
     symbol = to_yfinance_symbol(ticker, market)
-    floor = MIN_MARKET_CAP_CR if min_mcap_cr is None else min_mcap_cr
-    if known_mcap_cr is not None and known_mcap_cr < floor:
+    if known_mcap_cr is not None and not in_micro_value_mcap_band(known_mcap_cr):
         return None
 
     def _fetch() -> dict | None:
@@ -107,7 +140,7 @@ def analyze_cash_quality_stock(
         market_cap_cr = known_mcap_cr
         if market_cap_cr is None:
             market_cap_cr = _cache_market_cap(ticker, market, symbol, info)
-        if market_cap_cr is not None and market_cap_cr < floor:
+        if not in_micro_value_mcap_band(market_cap_cr):
             return None
 
         price_raw = info.get("regularMarketPrice") or info.get("currentPrice")
@@ -115,15 +148,10 @@ def analyze_cash_quality_stock(
             return None
         price = float(price_raw)
 
-        metrics = compute_cash_quality_metrics(
-            yt.financials, yt.balance_sheet, yt.cashflow
+        metrics = compute_micro_value_metrics(
+            info, yt.financials, market_cap_cr=market_cap_cr
         )
-        if (
-            metrics.get("croic") is None
-            and metrics.get("cash_to_tax") is None
-            and metrics.get("ccc_years") is None
-            and metrics.get("ocf_ebitda_growth") is None
-        ):
+        if metrics.get("price_to_sales") is None:
             return None
 
         return {
@@ -139,7 +167,7 @@ def analyze_cash_quality_stock(
     def _log(exc: Exception) -> None:
         log_error(
             METRICS_ERROR,
-            "Cash Quality fetch failed",
+            "Micro Value fetch failed",
             ticker=ticker,
             symbol=symbol,
             error=str(exc),
@@ -148,11 +176,10 @@ def analyze_cash_quality_stock(
     return call_throttled(_fetch, delay=YFINANCE_REQUEST_DELAY, on_error=_log)
 
 
-def run_cash_quality_scan(
+def run_micro_value_scan(
     universe: pd.DataFrame,
     *,
     max_workers: int | None = None,
-    min_mcap_cr: float | None = None,
     progress_callback: Callable[[int, int], None] | None = None,
 ) -> dict:
     if universe is None or universe.empty:
@@ -164,9 +191,8 @@ def run_cash_quality_scan(
         }
 
     scanned_total = len(universe)
-    mcap_floor = MIN_MARKET_CAP_CR if min_mcap_cr is None else min_mcap_cr
     workers = max_workers or yfinance_worker_count(
-        len(universe), CASH_QUALITY_MAX_WORKERS
+        len(universe), MICRO_VALUE_MAX_WORKERS
     )
 
     jobs: list[tuple[pd.Series, str | None, float | None]] = []
@@ -180,6 +206,8 @@ def run_cash_quality_scan(
             if known_mcap is not None and not pd.isna(known_mcap)
             else None
         )
+        if known_mcap_f is not None and not in_micro_value_mcap_band(known_mcap_f):
+            continue
         jobs.append((src, safe_str(src.get("market")) or None, known_mcap_f))
 
     rows: list[dict] = []
@@ -191,10 +219,9 @@ def run_cash_quality_scan(
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {
                 pool.submit(
-                    analyze_cash_quality_stock,
+                    analyze_micro_value_stock,
                     safe_str(src.get("ticker")),
                     market,
-                    min_mcap_cr=mcap_floor,
                     known_mcap_cr=known_mcap,
                 ): src
                 for src, market, known_mcap in jobs
@@ -214,7 +241,7 @@ def run_cash_quality_scan(
                     rows.append(result)
 
     raw = pd.DataFrame(rows) if rows else pd.DataFrame()
-    scored = score_cash_quality(raw) if not raw.empty else pd.DataFrame()
+    scored = score_micro_value(raw) if not raw.empty else pd.DataFrame()
     if not scored.empty:
         scored = _attach_websites(attach_research_links(scored))
 
@@ -228,7 +255,8 @@ def run_cash_quality_scan(
 
 
 __all__ = [
-    "analyze_cash_quality_stock",
+    "analyze_micro_value_stock",
+    "prepare_micro_value_universe",
     "prepare_pead_universe",
-    "run_cash_quality_scan",
+    "run_micro_value_scan",
 ]

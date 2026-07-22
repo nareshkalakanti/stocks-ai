@@ -36,6 +36,15 @@ def rows_for_json(df: pd.DataFrame, *, extra_cols: tuple[str, ...] = ()) -> list
         "roe", "roa", "debt_to_equity",
         "cq_score", "cq_checks", "cash_to_tax", "croic", "ccc_years", "ccc_days",
         "ocf_ebitda_growth", "ocf_to_ebitda", "ocf_cagr", "ebitda_cagr",
+        "rank", "website",
+        "mv_score", "price_to_sales", "sales_growth", "debt_to_equity",
+        "ie_gates", "institutional_pct_delta", "institutional_pct_now",
+        "first_time_entry", "quarter_end", "avg_volume", "years_listed", "sales_cagr",
+        "ah_ingredients", "ah_n_pass", "phase", "ev_ebitda", "drawdown_pct",
+        "promoter_pct_delta", "demerger_flag",
+        "fair_price", "upside_pct", "implied_growth", "verdict",
+        "base_fcf", "equity_value", "pv_forecast", "pv_terminal",
+        "discount_rate", "terminal_growth", "growth",
     ) + extra_cols
     for _, row in work.iterrows():
         ticker = safe_str(row.get("ticker"))
@@ -49,6 +58,9 @@ def rows_for_json(df: pd.DataFrame, *, extra_cols: tuple[str, ...] = ()) -> list
             "sc": row.get("screener_link") or screener_url(ticker, market),
             "tv": row.get("tv_link") or tradingview_url(ticker, market),
         }
+        web = safe_str(row.get("website"))
+        if web:
+            item["website"] = web
         for col in base_cols:
             if col in row.index and row.get(col) is not None:
                 val = row.get(col)
@@ -118,6 +130,11 @@ def build_interactive_section(
   function fmtCompany(r) {{
     const name = r.name || r.ticker;
     const tags = fmtCorpTags(r);
+    let web = r.website || "";
+    if (web && !/^https?:\\/\\//i.test(web)) web = "https://" + web;
+    const webLink = web
+      ? `<a href="${{esc(web)}}" target="_blank" rel="noopener noreferrer" title="Company website">Web</a>`
+      : "";
     return (
       `<div class="company-cell">` +
       `<div class="company-top">` +
@@ -127,6 +144,7 @@ def build_interactive_section(
       `<span class="links-inline">` +
       `<a href="${{r.sc}}" target="_blank" rel="noopener noreferrer">SC</a>` +
       `<a href="${{r.tv}}" target="_blank" rel="noopener noreferrer">TV</a>` +
+      webLink +
       `</span></span></div>` +
       `<div class="sub">${{esc(r.ticker)}}</div>` +
       (tags ? `<div class="company-tags-row">${{tags}}</div>` : "") +

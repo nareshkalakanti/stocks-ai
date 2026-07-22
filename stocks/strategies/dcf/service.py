@@ -1,4 +1,4 @@
-"""Cash Quality scan — fetch annual cash metrics via yfinance."""
+"""DCF scan — yfinance FCF + two-stage discount model."""
 
 from __future__ import annotations
 
@@ -9,48 +9,22 @@ import pandas as pd
 import yfinance as yf
 
 from stocks.core.config import (
-    CASH_QUALITY_MAX_WORKERS,
+    DCF_DISCOUNT_RATE,
+    DCF_FORECAST_YEARS,
+    DCF_MAX_WORKERS,
+    DCF_TERMINAL_GROWTH,
     MIN_MARKET_CAP_CR,
     YFINANCE_REQUEST_DELAY,
     yfinance_worker_count,
 )
-from stocks.core.database import save_market_cap_to_db, load_company_profiles_from_db
+from stocks.core.database import save_market_cap_to_db
 from stocks.core.log_service import METRICS_ERROR, log_error
 from stocks.core.text_utils import resolve_company_name, safe_str
 from stocks.market.price_service import to_yfinance_symbol
 from stocks.market.yfinance_limits import call_throttled
 from stocks.shared.links import attach_research_links
-from stocks.strategies.cash_quality.strategy import (
-    compute_cash_quality_metrics,
-    score_cash_quality,
-)
+from stocks.strategies.dcf.strategy import compute_dcf_metrics, score_dcf
 from stocks.strategies.pead.service import prepare_pead_universe
-
-
-def _attach_websites(df: pd.DataFrame) -> pd.DataFrame:
-    """Fill missing website from SQLite company_profile_cache."""
-    if df is None or df.empty or "ticker" not in df.columns:
-        return df if df is not None else pd.DataFrame()
-    out = df.copy()
-    if "website" not in out.columns:
-        out["website"] = None
-    missing = out["website"].isna() | (
-        out["website"].astype(str).str.strip().isin(["", "None", "nan"])
-    )
-    if not missing.any():
-        return out
-    tickers = (
-        out.loc[missing, "ticker"].astype(str).str.strip().str.upper().unique().tolist()
-    )
-    profiles = load_company_profiles_from_db(tickers)
-    if not profiles:
-        return out
-    for idx in out.index[missing]:
-        ticker = safe_str(out.at[idx, "ticker"]).upper()
-        web = safe_str((profiles.get(ticker) or {}).get("website"))
-        if web:
-            out.at[idx, "website"] = web
-    return out
 
 
 def _cache_market_cap(
@@ -89,12 +63,16 @@ def _merge_listing_meta(result: dict, src: pd.Series) -> dict:
     return result
 
 
-def analyze_cash_quality_stock(
+def analyze_dcf_stock(
     ticker: str,
     market: str | None,
     *,
     min_mcap_cr: float | None = None,
     known_mcap_cr: float | None = None,
+    discount_rate: float | None = None,
+    forecast_years: int | None = None,
+    growth_pct: float | None = None,
+    terminal_growth: float | None = None,
 ) -> dict | None:
     symbol = to_yfinance_symbol(ticker, market)
     floor = MIN_MARKET_CAP_CR if min_mcap_cr is None else min_mcap_cr
@@ -115,16 +93,19 @@ def analyze_cash_quality_stock(
             return None
         price = float(price_raw)
 
-        metrics = compute_cash_quality_metrics(
-            yt.financials, yt.balance_sheet, yt.cashflow
+        metrics = compute_dcf_metrics(
+            info,
+            yt.cashflow,
+            price=price,
+            discount_rate=discount_rate,
+            forecast_years=forecast_years,
+            growth_pct=growth_pct,
+            terminal_growth=terminal_growth,
         )
-        if (
-            metrics.get("croic") is None
-            and metrics.get("cash_to_tax") is None
-            and metrics.get("ccc_years") is None
-            and metrics.get("ocf_ebitda_growth") is None
-        ):
+        if not metrics or metrics.get("fair_price") is None:
             return None
+        # Drop schedule from scan payload (large).
+        metrics.pop("schedule", None)
 
         return {
             "ticker": safe_str(ticker).upper(),
@@ -139,7 +120,7 @@ def analyze_cash_quality_stock(
     def _log(exc: Exception) -> None:
         log_error(
             METRICS_ERROR,
-            "Cash Quality fetch failed",
+            "DCF fetch failed",
             ticker=ticker,
             symbol=symbol,
             error=str(exc),
@@ -148,12 +129,16 @@ def analyze_cash_quality_stock(
     return call_throttled(_fetch, delay=YFINANCE_REQUEST_DELAY, on_error=_log)
 
 
-def run_cash_quality_scan(
+def run_dcf_scan(
     universe: pd.DataFrame,
     *,
     max_workers: int | None = None,
     min_mcap_cr: float | None = None,
     progress_callback: Callable[[int, int], None] | None = None,
+    discount_rate: float | None = None,
+    forecast_years: int | None = None,
+    growth_pct: float | None = None,
+    terminal_growth: float | None = None,
 ) -> dict:
     if universe is None or universe.empty:
         return {
@@ -165,9 +150,10 @@ def run_cash_quality_scan(
 
     scanned_total = len(universe)
     mcap_floor = MIN_MARKET_CAP_CR if min_mcap_cr is None else min_mcap_cr
-    workers = max_workers or yfinance_worker_count(
-        len(universe), CASH_QUALITY_MAX_WORKERS
-    )
+    workers = max_workers or yfinance_worker_count(len(universe), DCF_MAX_WORKERS)
+    r = DCF_DISCOUNT_RATE if discount_rate is None else float(discount_rate)
+    n = DCF_FORECAST_YEARS if forecast_years is None else int(forecast_years)
+    g_term = DCF_TERMINAL_GROWTH if terminal_growth is None else float(terminal_growth)
 
     jobs: list[tuple[pd.Series, str | None, float | None]] = []
     for _, src in universe.iterrows():
@@ -191,11 +177,15 @@ def run_cash_quality_scan(
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {
                 pool.submit(
-                    analyze_cash_quality_stock,
+                    analyze_dcf_stock,
                     safe_str(src.get("ticker")),
                     market,
                     min_mcap_cr=mcap_floor,
                     known_mcap_cr=known_mcap,
+                    discount_rate=r,
+                    forecast_years=n,
+                    growth_pct=growth_pct,
+                    terminal_growth=g_term,
                 ): src
                 for src, market, known_mcap in jobs
             }
@@ -214,12 +204,12 @@ def run_cash_quality_scan(
                     rows.append(result)
 
     raw = pd.DataFrame(rows) if rows else pd.DataFrame()
-    scored = score_cash_quality(raw) if not raw.empty else pd.DataFrame()
-    if not scored.empty:
-        scored = _attach_websites(attach_research_links(scored))
+    candidates = score_dcf(raw) if not raw.empty else pd.DataFrame()
+    if not candidates.empty:
+        candidates = attach_research_links(candidates)
 
     return {
-        "candidates": scored,
+        "candidates": candidates,
         "raw": raw,
         "scanned": scanned_total,
         "with_data": len(raw),
@@ -228,7 +218,7 @@ def run_cash_quality_scan(
 
 
 __all__ = [
-    "analyze_cash_quality_stock",
+    "analyze_dcf_stock",
     "prepare_pead_universe",
-    "run_cash_quality_scan",
+    "run_dcf_scan",
 ]
