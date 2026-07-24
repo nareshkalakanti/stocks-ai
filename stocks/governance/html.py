@@ -390,6 +390,11 @@ GOVERNANCE_MAP_CSS = """
     background: #dbeafe;
     color: #1d4ed8;
   }
+  .gov-sme-filter button[data-sme=""].active { background: #f3f4f6; }
+  .gov-sme-filter button[data-sme="SME"].active {
+    background: #ffedd5;
+    color: #9a3412;
+  }
   }
   .gov-role-tag {
     display: inline-block;
@@ -487,7 +492,12 @@ def build_governance_map_html(
       <div class="gov-cap-filter gov-hold-filter" role="group" aria-label="Holdings filter" id="govmap-hold-filter">
         <span class="gov-cap-filter-label">Holdings</span>
         <button type="button" class="active" data-hold="" title="Show all companies">All</button>
-        <button type="button" data-hold="HOLD" title="Only companies in your Holdings">Holding</button>
+        <button type="button" data-hold="HOLD" title="Only directors with a Holdings company">Holding</button>
+      </div>
+      <div class="gov-cap-filter gov-sme-filter" role="group" aria-label="SME filter" id="govmap-sme-filter">
+        <span class="gov-cap-filter-label">SME</span>
+        <button type="button" class="active" data-sme="" title="Show all companies">All</button>
+        <button type="button" data-sme="SME" title="Only directors with an NSE Emerge / SME company">SME</button>
       </div>
       <span class="gov-search-meta" id="govmap-count"></span>
     </div>
@@ -511,6 +521,7 @@ def build_governance_map_html(
   let viewMode = "director"; // director | company | role
   let capFilter = ""; // "" | NC | MIC | SC | MC | LC
   let holdFilter = ""; // "" | HOLD
+  let smeFilter = ""; // "" | SME
   let sortCol = "dir_score";
   let sortDir = -1; // -1 = high→low (top), +1 = low→high
   const ROLE_FAMILIES = [
@@ -651,13 +662,17 @@ def build_governance_map_html(
     if (!holdFilter) return true;
     return !!c.is_holding;
   }}
+  function companyMatchesSme(c) {{
+    if (!smeFilter) return true;
+    return !!c.is_sme || String(c.market || "").toUpperCase() === "NSE SME";
+  }}
   function companyMatchesFilters(c) {{
-    return companyMatchesCap(c) && companyMatchesHold(c);
+    return companyMatchesCap(c) && companyMatchesHold(c) && companyMatchesSme(c);
   }}
   function matchingCompanies(r) {{
     return (r.companies || []).filter(companyMatchesFilters);
   }}
-  /** Cap/Hold filter which directors appear; always show full board in the row. */
+  /** Cap/Hold/SME filter which directors appear; always show full board in the row. */
   function displayCompanies(r) {{
     const all = r.companies || [];
     if (!activeFilters()) return all;
@@ -670,16 +685,17 @@ def build_governance_map_html(
     return hits.concat(rest);
   }}
   function rowHasMatchingCompany(r) {{
-    if (!capFilter && !holdFilter) return true;
+    if (!capFilter && !holdFilter && !smeFilter) return true;
     return matchingCompanies(r).length > 0;
   }}
   function activeFilters() {{
-    return !!(capFilter || holdFilter);
+    return !!(capFilter || holdFilter || smeFilter);
   }}
   function filterBits() {{
     const bits = [];
     if (capFilter) bits.push(`Cap ${{capFilter}}`);
     if (holdFilter) bits.push("Holding");
+    if (smeFilter) bits.push("SME");
     return bits;
   }}
   function designationMatchesRole(desig, needle, family) {{
@@ -754,7 +770,7 @@ def build_governance_map_html(
       rows = DATA.filter(r => rowMatches(r, searchQuery));
       rows.sort(compareRows);
     }}
-    if (capFilter || holdFilter) rows = rows.filter(rowHasMatchingCompany);
+    if (capFilter || holdFilter || smeFilter) rows = rows.filter(rowHasMatchingCompany);
     return rows;
   }}
   function renderRoleChips() {{
@@ -1181,6 +1197,22 @@ def build_governance_map_html(
           b.classList.toggle(
             "active",
             String(b.getAttribute("data-hold") || "").toUpperCase() === holdFilter
+          );
+        }});
+        render();
+      }};
+    }});
+  }}
+  const smeFilterEl = document.getElementById("govmap-sme-filter");
+  if (smeFilterEl) {{
+    smeFilterEl.querySelectorAll("button[data-sme]").forEach(btn => {{
+      btn.onclick = (e) => {{
+        e.stopPropagation();
+        smeFilter = String(btn.getAttribute("data-sme") || "").toUpperCase();
+        smeFilterEl.querySelectorAll("button[data-sme]").forEach(b => {{
+          b.classList.toggle(
+            "active",
+            String(b.getAttribute("data-sme") || "").toUpperCase() === smeFilter
           );
         }});
         render();

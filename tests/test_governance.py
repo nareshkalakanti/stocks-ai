@@ -481,8 +481,11 @@ def test_governance_map_rows(tmp_path, monkeypatch):
     assert 'data-cap="SC"' in html_out
     assert "govmap-hold-filter" in html_out
     assert 'data-hold="HOLD"' in html_out
+    assert "govmap-sme-filter" in html_out
+    assert 'data-sme="SME"' in html_out
     assert "capFilter" in html_out
     assert "holdFilter" in html_out
+    assert "smeFilter" in html_out
     assert "displayCompanies" in html_out
     assert "matchingCompanies" in html_out
     assert "filter-hit" in html_out
