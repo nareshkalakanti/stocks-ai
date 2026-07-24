@@ -73,6 +73,21 @@ def holdings_ticker_set() -> frozenset[str]:
     return frozenset(safe_str(t).upper() for t in df["ticker"] if safe_str(t))
 
 
+@lru_cache(maxsize=1)
+def nse_sme_ticker_set() -> frozenset[str]:
+    """Tickers listed on NSE Emerge / SME (``stocks.market = NSE SME``)."""
+    from stocks.core.database import load_stocks_from_db
+    from stocks.market.nse_sme_listings import NSE_SME_MARKET
+
+    df = load_stocks_from_db()
+    if df.empty or "market" not in df.columns:
+        return frozenset()
+    sme = df[df["market"].astype(str) == NSE_SME_MARKET]
+    if sme.empty:
+        return frozenset()
+    return frozenset(safe_str(t).upper() for t in sme["ticker"] if safe_str(t))
+
+
 def clear_corp_tags_cache() -> None:
     business_group_map.cache_clear()
     demerger_map.cache_clear()
@@ -80,6 +95,7 @@ def clear_corp_tags_cache() -> None:
     spinoffs_ticker_set.cache_clear()
     ds_ticker_set.cache_clear()
     holdings_ticker_set.cache_clear()
+    nse_sme_ticker_set.cache_clear()
 
 
 def business_group_for_ticker(ticker: str) -> str:
@@ -101,8 +117,13 @@ def is_holding_for_ticker(ticker: str) -> bool:
     return bool(t) and t in holdings_ticker_set()
 
 
+def is_sme_for_ticker(ticker: str) -> bool:
+    t = safe_str(ticker).upper()
+    return bool(t) and t in nse_sme_ticker_set()
+
+
 def corp_tags_dict_for_ticker(ticker: str) -> dict[str, str | bool]:
-    """Row fields for JSON reports: business_group, is_holding, demerger, spin_off."""
+    """Row fields for JSON reports: business_group, is_holding, is_sme, demerger, spin_off."""
     t = safe_str(ticker).upper()
     if not t:
         return {}
@@ -112,6 +133,8 @@ def corp_tags_dict_for_ticker(ticker: str) -> dict[str, str | bool]:
         out["business_group"] = bg
     if is_holding_for_ticker(t):
         out["is_holding"] = True
+    if is_sme_for_ticker(t):
+        out["is_sme"] = True
     if demerger_for_ticker(t):
         out["demerger"] = True
     if spin_off_for_ticker(t):
@@ -124,6 +147,7 @@ def corp_tags_html(
     *,
     business_group: str | None = None,
     is_holding: bool | None = None,
+    is_sme: bool | None = None,
     demerger: bool | None = None,
     spin_off: bool | None = None,
 ) -> str:
@@ -134,6 +158,7 @@ def corp_tags_html(
         if is_holding is not None
         else (is_holding_for_ticker(t) if t else False)
     )
+    sme = is_sme if is_sme is not None else (is_sme_for_ticker(t) if t else False)
     is_dem = demerger if demerger is not None else (demerger_for_ticker(t) if t else False)
     is_spin = spin_off if spin_off is not None else (spin_off_for_ticker(t) if t else False)
     parts: list[str] = []
@@ -145,6 +170,10 @@ def corp_tags_html(
     if in_holdings:
         parts.append(
             '<div class="corp-tag corp-tag-hold" title="In your Holdings portfolio">Holding</div>'
+        )
+    if sme:
+        parts.append(
+            '<div class="corp-tag corp-tag-sme" title="NSE Emerge / SME listing">SME</div>'
         )
     if is_dem:
         parts.append('<div class="corp-tag corp-tag-dem">Demerger</div>')
@@ -177,8 +206,10 @@ def attach_corp_tags(df: pd.DataFrame) -> pd.DataFrame:
     parents = parents_ticker_set()
     spinoffs = spinoffs_ticker_set()
     holdings = holdings_ticker_set()
+    sme = nse_sme_ticker_set()
     out["business_group"] = tickers.map(lambda t: bg_map.get(safe_str(t).upper(), ""))
     out["is_holding"] = tickers.map(lambda t: safe_str(t).upper() in holdings)
+    out["is_sme"] = tickers.map(lambda t: safe_str(t).upper() in sme)
     out["demerger"] = tickers.map(lambda t: safe_str(t).upper() in parents)
     out["spin_off"] = tickers.map(lambda t: safe_str(t).upper() in spinoffs)
     return out

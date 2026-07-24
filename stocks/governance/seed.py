@@ -1,6 +1,7 @@
 """Curated NSE boards — verified DINs from AGM / corporate governance filings.
 
 Add companies sparingly. Prefer DIN + designation + disclosure date over volume.
+One accurate board beats a hundred name-only Yahoo scans for bridge analysis.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ CURATED_BOARDS: list[dict] = [
         "name": "20 Microns Limited",
         "cin": "L99999GJ1987PLC009768",
         "isin": "INE144J01027",
+        "sector": "Basic Materials",
         "notes": "Board composition from AGM filings (Aug 2025).",
         "seats": [
             {

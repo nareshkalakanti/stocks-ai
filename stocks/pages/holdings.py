@@ -9,16 +9,26 @@ from stocks.core.config import HOLDINGS_PEAD_CACHE_HOURS
 from stocks.core.json_utils import json_safe_obj
 from stocks.dashboards.iframe_helpers import embed_html_iframe
 from stocks.shared.portfolio import (
+    add_holdings,
     enrich_holdings,
     load_holdings,
     refresh_holdings_pead_metrics,
+    remove_holdings,
     run_holdings_pead_backfill,
     seed_default_holdings,
 )
+from stocks.core.text_utils import safe_str
+from stocks.listings.stocks_data import load_india_stocks
 from stocks.strategies.pead2.cache_lookup import count_pead_backfill_pending
 from stocks.strategies.pead2.html import build_pead2_dashboard_html, pead2_iframe_height
 
 _CACHE_KEY = "holdings_priced_v9"
+
+
+def _clear_holdings_view_cache() -> None:
+    st.session_state.pop(_CACHE_KEY, None)
+    st.session_state.pop("holdings_priced_v8", None)
+    st.session_state.pop("holdings_priced_v7", None)
 
 
 def _session_safe_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -99,10 +109,89 @@ def render_holdings() -> None:
 
     holdings = load_holdings(seed_if_empty=True)
 
+    with st.expander("Add / remove holding", expanded=False):
+        try:
+            universe = load_india_stocks()
+        except Exception:
+            universe = pd.DataFrame()
+        add_c1, add_c2, add_c3 = st.columns([2, 1, 1])
+        with add_c1:
+            ticker_in = st.text_input(
+                "Ticker",
+                key="holdings_add_ticker",
+                placeholder="e.g. INA or AARTECH",
+                help="NSE/BSE symbol. Holding tag appears on PEAD / Governance Map.",
+            )
+        with add_c2:
+            market_in = st.selectbox(
+                "Market",
+                options=["NSE", "BSE"],
+                index=0,
+                key="holdings_add_market",
+            )
+        with add_c3:
+            st.write("")
+            st.write("")
+            add_clicked = st.button("Add holding", type="primary", use_container_width=True)
+
+        if add_clicked:
+            ticker = safe_str(ticker_in).upper()
+            if not ticker:
+                st.warning("Enter a ticker.")
+            else:
+                market = safe_str(market_in).upper() or "NSE"
+                name = None
+                if not universe.empty and "ticker" in universe.columns:
+                    match = universe[
+                        universe["ticker"].astype(str).str.upper() == ticker
+                    ]
+                    if not match.empty:
+                        if "market" in match.columns:
+                            mkt_match = match[
+                                match["market"].astype(str).str.upper() == market
+                            ]
+                            row = (mkt_match if not mkt_match.empty else match).iloc[0]
+                        else:
+                            row = match.iloc[0]
+                        name = safe_str(row.get("name")) or None
+                        if "market" in row.index and safe_str(row.get("market")):
+                            market = safe_str(row.get("market")).upper() or market
+                n = add_holdings(
+                    [{"ticker": ticker, "market": market, "name": name}]
+                )
+                _clear_holdings_view_cache()
+                if n:
+                    st.success(f"Added **{ticker}** ({market}) — Holding tag enabled.")
+                else:
+                    st.warning("Nothing added.")
+                st.rerun()
+
+        if not holdings.empty:
+            options = sorted(
+                {
+                    f"{safe_str(r.ticker).upper()}"
+                    + (f" — {safe_str(r.name)}" if safe_str(getattr(r, "name", None)) else "")
+                    for r in holdings.itertuples()
+                    if safe_str(getattr(r, "ticker", None))
+                }
+            )
+            pick = st.multiselect(
+                "Remove holdings",
+                options=options,
+                key="holdings_remove_pick",
+            )
+            if st.button("Remove selected", use_container_width=True, disabled=not pick):
+                tickers = [safe_str(p.split(" — ")[0]).upper() for p in pick]
+                n = remove_holdings(tickers)
+                _clear_holdings_view_cache()
+                st.success(f"Removed {n} holding(s).") if n else st.info("Nothing removed.")
+                st.rerun()
+
     if holdings.empty:
         st.warning("No holdings in database.")
         if st.button("Load default portfolio"):
             seed_default_holdings(force=True)
+            _clear_holdings_view_cache()
             st.rerun()
         return
 
@@ -112,9 +201,7 @@ def render_holdings() -> None:
     btn_refresh, btn_pead = st.columns(2)
     with btn_refresh:
         if st.button("Refresh prices", type="primary", use_container_width=True):
-            st.session_state.pop(_CACHE_KEY, None)
-            st.session_state.pop("holdings_priced_v8", None)
-            st.session_state.pop("holdings_priced_v7", None)
+            _clear_holdings_view_cache()
             st.rerun()
     with btn_pead:
         pead_label = (
@@ -173,7 +260,8 @@ def render_holdings() -> None:
 
     st.caption(
         "PEAD-style table — click a row for **quarterly Sales/OP/NP/EPS**, "
-        "**20/50/100/200 MAs**, news & profile."
+        "**20/50/100/200 MAs**, news & profile. "
+        "Stocks here get the **Holding** tag on Strategy reports and Governance Map."
     )
 
     priced = _load_priced_holdings(holdings)

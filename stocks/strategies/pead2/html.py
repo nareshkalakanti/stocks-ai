@@ -510,12 +510,14 @@ _PEAD2_DASHBOARD_CSS = """
   }
   .corp-tag-bg { color: #5b21b6; background: #ede9fe; }
   .corp-tag-hold { color: #1d4ed8; background: #dbeafe; }
+  .corp-tag-sme { color: #9a3412; background: #ffedd5; }
   .corp-tag-dem { color: #92400e; background: #fef3c7; }
   .corp-tag-spin { color: #0e7490; background: #cffafe; }
   .corp-tag-tq { color: #1d4ed8; background: #dbeafe; }
   .corp-tag-bb { color: #b45309; background: #fef3c7; }
   [data-theme="dark"] .corp-tag-bg { color: #ddd6fe; background: #4c1d95; }
   [data-theme="dark"] .corp-tag-hold { color: #bfdbfe; background: #1e3a8a; }
+  [data-theme="dark"] .corp-tag-sme { color: #fdba74; background: #7c2d12; }
   [data-theme="dark"] .corp-tag-dem { color: #fde68a; background: #78350f; }
   [data-theme="dark"] .corp-tag-spin { color: #a5f3fc; background: #155e75; }
   [data-theme="dark"] .corp-tag-tq { color: #bfdbfe; background: #1e3a8a; }

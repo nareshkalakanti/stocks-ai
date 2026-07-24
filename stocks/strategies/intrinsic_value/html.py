@@ -606,6 +606,7 @@ _IV_CSS = """
   }
   .corp-tag-bg { color: #6d28d9; background: #f5f3ff; }
   .corp-tag-hold { color: #1d4ed8; background: #eff6ff; }
+  .corp-tag-sme { color: #9a3412; background: #ffedd5; }
   .corp-tag-dem { color: #b45309; background: #fffbeb; }
   .corp-tag-spin { color: #0e7490; background: #ecfeff; }
   .corp-tag-spec { color: #be185d; background: #fdf2f8; }

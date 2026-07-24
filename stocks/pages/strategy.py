@@ -88,8 +88,8 @@ def _export_scan_csv(df: pd.DataFrame) -> bytes:
 
 
 def render_strategy() -> None:
-    tab_quant, tab_pead2, tab_ht, tab_gov = st.tabs(
-        ["Quant Tab", "PEAD", "H&T", "Governance"]
+    tab_quant, tab_pead2, tab_ht, tab_gov, tab_gov_map = st.tabs(
+        ["Quant Tab", "PEAD", "H&T", "Governance", "Governance Map"]
     )
 
     with tab_quant:
@@ -107,6 +107,10 @@ def render_strategy() -> None:
         from stocks.pages.governance import render_governance
 
         render_governance(show_title=False)
+    with tab_gov_map:
+        from stocks.pages.governance_map import render_governance_map
+
+        render_governance_map(show_title=False)
 
 def _show_ema_daily_results(result: pd.DataFrame) -> None:
     st.caption(

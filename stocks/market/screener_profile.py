@@ -32,8 +32,8 @@ def _normalize_website(url: str | None) -> str | None:
     return f"https://{site}"
 
 
-def fetch_screener_profile(ticker: str, market: str | None = None) -> dict[str, str]:
-    """Best-effort website + about text from a screener.in company page."""
+def fetch_screener_profile(ticker: str, market: str | None = None) -> dict:
+    """Best-effort website, about, and market cap (₹ Cr) from screener.in."""
     url = screener_url(ticker, market)
     if not url or url.rstrip("/").endswith("screener.in"):
         return {}
@@ -48,7 +48,7 @@ def fetch_screener_profile(ticker: str, market: str | None = None) -> dict[str, 
     except Exception:
         return {}
 
-    out: dict[str, str] = {}
+    out: dict = {}
 
     web_match = re.search(
         r'class="company-links[^"]*"[\s\S]*?<a\s+href="(https?://[^"]+)"',
@@ -71,4 +71,34 @@ def fetch_screener_profile(ticker: str, market: str | None = None) -> dict[str, 
         if about:
             out["long_description"] = about
 
+    # e.g. Market Cap … ₹ <span class="number">392</span> Cr.
+    mcap_match = re.search(
+        r"Market\s*Cap[\s\S]{0,240}?₹\s*<span class=\"number\">\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*</span>\s*Cr",
+        html,
+        flags=re.I,
+    )
+    if not mcap_match:
+        mcap_match = re.search(
+            r"Market\s*Cap[\s\S]{0,120}?₹\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*Cr",
+            html,
+            flags=re.I,
+        )
+    if mcap_match:
+        try:
+            out["market_cap_cr"] = round(float(mcap_match.group(1).replace(",", "")), 1)
+        except ValueError:
+            pass
+
     return out
+
+
+def fetch_screener_market_cap_cr(ticker: str, market: str | None = None) -> float | None:
+    """Market cap in ₹ Cr from screener.in, or None."""
+    raw = fetch_screener_profile(ticker, market).get("market_cap_cr")
+    try:
+        if raw is None:
+            return None
+        val = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return val if val > 0 else None

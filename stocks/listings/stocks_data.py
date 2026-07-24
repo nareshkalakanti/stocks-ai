@@ -18,6 +18,10 @@ from stocks.core.log_service import DATASET_ERROR, log_error
 from stocks.core.text_utils import safe_str
 from stocks.listings.sector_display import apply_display_sector_mapping
 from stocks.listings.stock_overrides import apply_stock_overrides
+from stocks.market.nse_sme_listings import (
+    merge_nse_sme_into_stocks,
+    stocks_need_nse_sme,
+)
 
 
 def _overlay_holdings_metadata(stocks: pd.DataFrame, holdings: pd.DataFrame) -> pd.DataFrame:
@@ -187,10 +191,21 @@ def _finalize_stocks(stocks: pd.DataFrame) -> pd.DataFrame:
     return apply_display_sector_mapping(apply_stock_overrides(enrich_stocks_classification(stocks)))
 
 
-def _enrich_and_persist(stocks: pd.DataFrame) -> pd.DataFrame:
-    stocks = _finalize_stocks(stocks)
+def _with_nse_sme(stocks: pd.DataFrame, *, force_fetch: bool = False) -> pd.DataFrame:
+    """Merge NSE Emerge / SME listings (market=NSE SME) before classification."""
+    return merge_nse_sme_into_stocks(stocks, force_fetch=force_fetch)
+
+
+def _enrich_and_persist(stocks: pd.DataFrame, *, force_sme_fetch: bool = False) -> pd.DataFrame:
+    stocks = _finalize_stocks(_with_nse_sme(stocks, force_fetch=force_sme_fetch))
     save_stocks_to_db(stocks)
     sync_holdings_classification()
+    try:
+        from stocks.shared.corp_tags import clear_corp_tags_cache
+
+        clear_corp_tags_cache()
+    except Exception:
+        pass
     return stocks
 
 
@@ -200,14 +215,22 @@ def load_india_stocks(*, force_refresh: bool = False) -> pd.DataFrame:
     if not force_refresh and stocks_cache_fresh():
         cached = load_stocks_from_db()
         if not cached.empty:
-            if _needs_classification_reenrich(cached):
+            if stocks_need_nse_sme(cached) or _needs_classification_reenrich(cached):
                 fresh = _download_india_stocks_csv()
-                base = fresh if _needs_bse_label_fix(cached) else _merge_hf_source_sectors(cached, fresh)
-                return _sync_holdings_listings(_enrich_and_persist(base))
+                base = (
+                    fresh
+                    if _needs_bse_label_fix(cached)
+                    else _merge_hf_source_sectors(cached, fresh)
+                )
+                return _sync_holdings_listings(
+                    _enrich_and_persist(base, force_sme_fetch=stocks_need_nse_sme(cached))
+                )
             return _sync_holdings_listings(apply_display_sector_mapping(apply_stock_overrides(cached)))
 
     try:
-        stocks = _sync_holdings_listings(_enrich_and_persist(_download_india_stocks_csv()))
+        stocks = _sync_holdings_listings(
+            _enrich_and_persist(_download_india_stocks_csv(), force_sme_fetch=True)
+        )
         return stocks
     except Exception as exc:
         log_error(
@@ -218,7 +241,9 @@ def load_india_stocks(*, force_refresh: bool = False) -> pd.DataFrame:
         )
         cached = load_stocks_from_db()
         if not cached.empty:
-            enriched = _sync_holdings_listings(_finalize_stocks(cached))
+            enriched = _sync_holdings_listings(
+                _finalize_stocks(_with_nse_sme(cached, force_fetch=True))
+            )
             return enriched
         raise
 
@@ -231,7 +256,7 @@ def rebuild_india_stocks_classification(*, refresh_csv: bool = False) -> pd.Data
         base = _download_india_stocks_csv()
     else:
         base = _merge_hf_source_sectors(cached, _download_india_stocks_csv())
-    return _sync_holdings_listings(_enrich_and_persist(base))
+    return _sync_holdings_listings(_enrich_and_persist(base, force_sme_fetch=True))
 
 
 def normalize_sectors(sector: str | list[str]) -> list[str] | None:

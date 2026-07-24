@@ -271,6 +271,7 @@ _REPORT_CSS = """
   }
   .corp-tag-bg { color: #5b21b6; background: #ede9fe; }
   .corp-tag-hold { color: #1d4ed8; background: #dbeafe; }
+  .corp-tag-sme { color: #9a3412; background: #ffedd5; }
   .corp-tag-dem { color: #92400e; background: #fef3c7; }
   .corp-tag-spin { color: #0e7490; background: #cffafe; }
   .badge-score {

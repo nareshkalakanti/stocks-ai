@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from stocks.core.database import load_company_profiles_from_db, save_company_profiles
+from stocks.core.database import load_company_profiles_from_db, save_company_profiles, save_market_cap_to_db
 from stocks.core.text_utils import safe_str
 from stocks.market.screener_profile import fetch_screener_profile
 
@@ -19,6 +19,8 @@ PROFILE_KEYS = (
 _WEBSITE_OVERRIDES: dict[str, str] = {
     "ZODIAC": "https://zodiacenergy.com/",
     "ARTEMISMED": "https://www.artemishospitals.com/",
+    "AARTECH": "https://www.aartechsolonics.com/",
+    "INA": "https://www.insolationenergy.in/",
 }
 
 
@@ -108,6 +110,7 @@ def merge_company_profile(
 
     scraped = fetch_screener_profile(ticker_key, market)
     if scraped:
+        mcap = scraped.pop("market_cap_cr", None)
         out = _apply_stored_row(out, scraped)
         _save_profile_if_needed(
             out,
@@ -116,6 +119,15 @@ def merge_company_profile(
             source="screener",
             stored=stored,
         )
+        if mcap is not None:
+            try:
+                save_market_cap_to_db(
+                    ticker_key,
+                    float(mcap),
+                    market=market,
+                )
+            except Exception:
+                pass
         return out
 
     _save_profile_if_needed(

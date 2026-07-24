@@ -53,6 +53,8 @@ SCAN_UNIVERSE_MAX_WITHOUT_SECTOR = int(os.getenv("SCAN_UNIVERSE_MAX_WITHOUT_SECT
 # Market-cap tiers (INR Crores). Upper bound is exclusive except Large-cap (open-ended).
 CAP_TIERS: list[dict[str, str | float | None]] = [
     {"id": "all", "label": "All caps", "min": None, "max": None},
+    # Inclusive upper at 5,000 Cr (max is exclusive in apply_cap_tier_filter).
+    {"id": "under_5k", "label": "≤ 5,000 Cr (0–5k)", "min": 0, "max": 5000.01},
     {"id": "nano", "label": "Nano-cap (< 100 Cr)", "min": 0, "max": 100},
     {"id": "inst_entry", "label": "Inst Entry (20–100 Cr)", "min": 20, "max": 100},
     {"id": "alpha_hide", "label": "Alpha Hide (50–1,000 Cr)", "min": 50, "max": 1000},

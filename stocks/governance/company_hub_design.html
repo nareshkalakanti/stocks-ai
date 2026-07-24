@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gov Hub — design</title>
+  <style>
+    /* —— shared report shell (same as stocks/dashboards/report_html.py) —— */
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #111827;
+      margin: 0;
+      padding: 0;
+      font-size: 13px;
+      line-height: 1.45;
+      background: #fff;
+    }
+    .report-wrap { padding: 0 2px 8px; }
+    .fund-page { padding: 12px 16px 20px; margin: 0 auto; max-width: 1100px; }
+    .fund-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin: 0 0 4px;
+      color: #111827;
+    }
+    .report-meta {
+      color: #6b7280;
+      font-size: 12px;
+      margin-bottom: 10px;
+    }
+    .fund-sections {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    details.fund-section {
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+    }
+    details.fund-section[open] {
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+    }
+    details.fund-section summary {
+      list-style: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #1f2937;
+      background: #f8fafc;
+      border-bottom: 1px solid transparent;
+      user-select: none;
+    }
+    details.fund-section summary::-webkit-details-marker { display: none; }
+    details.fund-section summary::after {
+      content: "▸";
+      color: #9ca3af;
+      font-size: 14px;
+      transition: transform 0.15s ease;
+      flex-shrink: 0;
+    }
+    details.fund-section[open] summary {
+      border-bottom-color: #e5e7eb;
+      background: #f1f5f9;
+    }
+    details.fund-section[open] summary::after {
+      transform: rotate(90deg);
+      color: #6366f1;
+    }
+    details.fund-section summary:hover { background: #f1f5f9; }
+    .fund-section-meta {
+      font-size: 11px;
+      font-weight: 500;
+      color: #6b7280;
+      margin-left: auto;
+      margin-right: 8px;
+    }
+    .fund-section-body { overflow-x: auto; padding: 0; }
+    .table-wrap { padding: 0 0 4px; }
+    table.report {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      table-layout: auto;
+      font-size: 12px;
+      font-weight: 600;
+      min-width: 100%;
+    }
+    table.report th {
+      text-align: left;
+      font-weight: 700;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #374151;
+      background: #f9fafb;
+      padding: 9px 12px;
+      border-bottom: 2px solid #e5e7eb;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      box-shadow: 0 1px 0 #e5e7eb;
+    }
+    table.report td {
+      padding: 9px 12px;
+      border-bottom: 1px solid #f0f1f3;
+      vertical-align: middle;
+    }
+    table.report tbody tr:nth-child(even) td { background: #fafafa; }
+    table.report tbody tr:hover td { background: #f3f4f6; }
+    table.report td.num { text-align: right; white-space: nowrap; }
+    .rank { color: #9ca3af; font-weight: 600; font-size: 12px; width: 28px; }
+    .muted { color: #6b7280; font-size: 12px; }
+
+    /* —— gov map CSS (same as stocks/governance/html.py) —— */
+    .gov-score {
+      font-weight: 700;
+      color: #059669;
+      font-variant-numeric: tabular-nums;
+    }
+    .gov-badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: #ecfdf5;
+      color: #047857;
+      margin-left: 6px;
+    }
+    .gov-badge.name {
+      background: #fff7ed;
+      color: #c2410c;
+    }
+    .gov-dir-cell .sub { color: #6b7280; font-size: 11px; margin-top: 2px; }
+    .gov-cos {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 4px 0 8px;
+    }
+    .gov-co {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 12px 14px;
+      background: #fff;
+    }
+    .gov-co.focus {
+      border-color: #93c5fd;
+      background: #f8fbff;
+    }
+    .gov-co-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .gov-co-name {
+      font-weight: 700;
+      font-size: 14px;
+      color: #111827;
+    }
+    .gov-co-tags {
+      display: inline-flex;
+      gap: 4px;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+    .gov-tag {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    .gov-tag-hold {
+      color: #1d4ed8;
+      background: #dbeafe;
+    }
+    .gov-tickers {
+      line-height: 1.45;
+      word-break: break-word;
+      font-weight: 500;
+    }
+    .gov-ticker-focus {
+      color: #1d4ed8;
+      font-weight: 700;
+      background: #dbeafe;
+      padding: 0 4px;
+      border-radius: 3px;
+    }
+    .gov-ticker-hold {
+      color: #1d4ed8;
+      font-weight: 700;
+      background: #dbeafe;
+      padding: 0 4px;
+      border-radius: 3px;
+    }
+    .gov-co-sub {
+      color: #6b7280;
+      font-size: 12px;
+      margin-top: 2px;
+    }
+    .gov-co-mcap {
+      font-size: 13px;
+      font-weight: 800;
+      color: #111827;
+      white-space: nowrap;
+    }
+    .gov-co-mcap .gov-mcap-label {
+      font-weight: 600;
+      color: #6b7280;
+      font-size: 11px;
+      margin-right: 4px;
+    }
+    .gov-co-links {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .gov-co-links a {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: #eff6ff;
+      color: #1d4ed8;
+      text-decoration: none;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .gov-co-links a:hover { background: #dbeafe; }
+    .gov-breakdown {
+      margin: 0 0 10px;
+      font-size: 11px;
+      color: #6b7280;
+      font-weight: 500;
+    }
+    tr.strat-row { cursor: pointer; }
+    tr.strat-row.expanded td { background: #f0f9ff !important; }
+    tr.strat-expand td {
+      background: #f8fafc !important;
+      border-bottom: 2px solid #e5e7eb;
+    }
+    .gov-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin: 12px 12px 12px;
+    }
+    .gov-search {
+      flex: 1 1 240px;
+      min-width: 180px;
+      max-width: 420px;
+      padding: 8px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 13px;
+      color: #111827;
+      background: #fff;
+      font-weight: 500;
+    }
+    .gov-search:focus {
+      outline: none;
+      border-color: #93c5fd;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    }
+    .gov-search-meta {
+      font-size: 12px;
+      color: #6b7280;
+      font-weight: 500;
+    }
+    .gov-mode {
+      display: inline-flex;
+      padding: 2px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .gov-mode button {
+      border: 0;
+      background: transparent;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 10px;
+      border-radius: 6px;
+      color: #6b7280;
+      cursor: pointer;
+    }
+    .gov-mode button.active {
+      background: #eff6ff;
+      color: #1d4ed8;
+    }
+
+    /* —— Gov Hub company strip —— */
+    .govhub-hero {
+      margin: 0 12px 4px;
+      padding: 12px 14px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #f8fbff;
+    }
+    .govhub-hero-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .govhub-name {
+      font-weight: 700;
+      font-size: 15px;
+      color: #111827;
+      margin: 0 0 2px;
+    }
+    .govhub-sub {
+      color: #6b7280;
+      font-size: 12px;
+      font-weight: 500;
+      margin: 0;
+    }
+    .govhub-stats {
+      display: flex;
+      gap: 16px;
+      font-weight: 600;
+    }
+    .govhub-stats div { text-align: right; }
+    .govhub-stats b {
+      display: block;
+      font-size: 15px;
+      color: #111827;
+      font-variant-numeric: tabular-nums;
+    }
+    .govhub-stats span {
+      font-size: 11px;
+      color: #6b7280;
+      font-weight: 500;
+    }
+    .govhub-note {
+      padding: 10px 16px 14px;
+      color: #6b7280;
+      font-size: 12px;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+  <div class="fund-page">
+    <h1 class="fund-title">Governance Map</h1>
+    <p class="report-meta">
+      Design mock · <strong>Gov Hub</strong> uses the same report / gov map chrome as the live tab.
+    </p>
+
+    <div class="fund-sections">
+      <details class="fund-section" open id="govhub-wrap">
+        <summary>
+          <span>Gov Hub</span>
+          <span class="fund-section-meta" id="govhub-meta">company view · click row for seats</span>
+        </summary>
+        <div class="fund-section-body">
+          <div class="gov-toolbar">
+            <input class="gov-search" id="govhub-search" type="search"
+              value="KAMDHENU" placeholder="Search ticker, company, or director…" autocomplete="off" />
+            <div class="gov-mode" role="group" aria-label="View mode">
+              <button type="button" class="active" id="btn-hub">By company</button>
+              <button type="button" id="btn-map">By director</button>
+            </div>
+            <span class="gov-search-meta" id="govhub-count"></span>
+          </div>
+
+          <div id="hub-panel">
+            <div class="govhub-hero" id="hub-hero"></div>
+            <div class="table-wrap">
+              <table class="report strat-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Director</th>
+                    <th>Dir Score</th>
+                    <th>Boards</th>
+                    <th>Big</th>
+                    <th>Small</th>
+                    <th>Companies</th>
+                  </tr>
+                </thead>
+                <tbody id="hub-body"></tbody>
+              </table>
+            </div>
+            <p class="govhub-note">
+              Rows = multi-board directors who sit on the hub ticker. Expand a row for the same
+              company cards as Governance Map (SC / TV / mcap).
+            </p>
+          </div>
+
+          <div id="map-panel" hidden>
+            <div class="table-wrap">
+              <table class="report strat-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Director</th>
+                    <th>Dir Score</th>
+                    <th>Boards</th>
+                    <th>Big</th>
+                    <th>Small</th>
+                    <th>Companies</th>
+                  </tr>
+                </thead>
+                <tbody id="map-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <script>
+(function () {
+  const FOCUS = "KAMDHENU";
+  const HUB = {
+    ticker: "KAMDHENU",
+    name: "Kamdhenu Limited",
+    market: "NSE",
+    mcap: 1240.5,
+    is_holding: true,
+    board_n: 8,
+  };
+  const DATA = [
+    {
+      rank: 42,
+      name: "Mr. Sachin Agarwal",
+      din_backed: false,
+      din: null,
+      bridge: true,
+      dir_score: 43.6,
+      board_count: 3,
+      big_n: 1,
+      small_n: 2,
+      tickers: "ECOSMOBLTY, KAMDHENU, PTCIL",
+      companies: [
+        { ticker: "ECOSMOBLTY", name: "Eco Speciality Chemicals", market: "NSE", designation: "Director", market_cap_cr: 420, is_holding: false },
+        { ticker: "KAMDHENU", name: "Kamdhenu Limited", market: "NSE", designation: "Independent Director", market_cap_cr: 1240.5, is_holding: true, focus: true },
+        { ticker: "PTCIL", name: "PTC Industries", market: "NSE", designation: "Director", market_cap_cr: 18500, is_holding: false },
+      ],
+    },
+    {
+      rank: 88,
+      name: "Ms. Sonal Jain",
+      din_backed: false,
+      din: null,
+      bridge: true,
+      dir_score: 37.9,
+      board_count: 4,
+      big_n: 1,
+      small_n: 2,
+      tickers: "AEPL, EPL, KAMDHENU, REFEXRENEW",
+      companies: [
+        { ticker: "AEPL", name: "Artemis Electricals", market: "NSE", designation: "Director", market_cap_cr: 310, is_holding: false },
+        { ticker: "EPL", name: "EPL Limited", market: "NSE", designation: "Independent Director", market_cap_cr: 9200, is_holding: false },
+        { ticker: "KAMDHENU", name: "Kamdhenu Limited", market: "NSE", designation: "Independent Director", market_cap_cr: 1240.5, is_holding: true, focus: true },
+        { ticker: "REFEXRENEW", name: "Refex Renewables", market: "NSE", designation: "Director", market_cap_cr: 280, is_holding: false },
+      ],
+    },
+    {
+      rank: 121,
+      name: "Mr. Ramesh Chand Surana",
+      din_backed: true,
+      din: "00012345",
+      bridge: true,
+      dir_score: 31.2,
+      board_count: 2,
+      big_n: 0,
+      small_n: 2,
+      tickers: "KAMDHENU, TIRUPATIFL",
+      companies: [
+        { ticker: "KAMDHENU", name: "Kamdhenu Limited", market: "NSE", designation: "Non-Executive Director", market_cap_cr: 1240.5, is_holding: true, focus: true },
+        { ticker: "TIRUPATIFL", name: "Tirupati Forge", market: "NSE", designation: "Independent Director", market_cap_cr: 190, is_holding: false },
+      ],
+    },
+  ];
+
+  let expanded = null;
+  let mode = "hub";
+
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+  }
+  function fmtScore(v) {
+    return `<span class="gov-score">${Number(v).toFixed(1)}</span>`;
+  }
+  function fmtDirector(r) {
+    const badge = r.din_backed
+      ? `<span class="gov-badge">DIN</span>`
+      : `<span class="gov-badge name">name</span>`;
+    const din = r.din ? `DIN ${esc(r.din)}` : "name match";
+    const bridge = r.bridge ? " · bridge" : "";
+    return (
+      `<div class="gov-dir-cell">` +
+      `<div><strong>${esc(r.name)}</strong>${badge}</div>` +
+      `<div class="sub">${din}${bridge}</div>` +
+      `</div>`
+    );
+  }
+  function fmtMcap(v) {
+    if (v == null || isNaN(v)) return `<span class="gov-mcap-label">Mcap</span>—`;
+    return `<span class="gov-mcap-label">Mcap</span><strong>${Number(v).toFixed(1)} Cr</strong>`;
+  }
+  function fmtTickers(r) {
+    return (r.tickers || "")
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .map((t) => {
+        const cls = t === FOCUS ? "gov-ticker-focus" : "";
+        return cls ? `<span class="${cls}">${esc(t)}</span>` : esc(t);
+      })
+      .join(", ");
+  }
+  function renderCompanies(r) {
+    const cos = (r.companies || [])
+      .map((c) => {
+        const holdTag = c.is_holding
+          ? `<span class="gov-co-tags"><span class="gov-tag gov-tag-hold">Holding</span></span>`
+          : "";
+        const focus = c.focus || c.ticker === FOCUS;
+        return (
+          `<div class="gov-co${focus ? " focus" : ""}">` +
+          `<div class="gov-co-top"><div>` +
+          `<div class="gov-co-name">${esc(c.name || c.ticker)}${holdTag}</div>` +
+          `<div class="gov-co-sub">${esc(c.ticker)} · ${esc(c.market || "")} · ${esc(c.designation || "Director")}</div>` +
+          `</div><div class="gov-co-mcap">${fmtMcap(c.market_cap_cr)}</div></div>` +
+          `<div class="gov-co-links"><a href="#">SC</a><a href="#">TV</a></div>` +
+          `</div>`
+        );
+      })
+      .join("");
+    return (
+      `<div class="gov-breakdown">Seats for this director · hub ticker highlighted</div>` +
+      `<div class="gov-cos">${cos}</div>`
+    );
+  }
+
+  function renderHero() {
+    const hold = HUB.is_holding
+      ? `<span class="gov-co-tags"><span class="gov-tag gov-tag-hold">Holding</span></span>`
+      : "";
+    document.getElementById("hub-hero").innerHTML =
+      `<div class="govhub-hero-top"><div>` +
+      `<div class="govhub-name">${esc(HUB.name)}${hold}</div>` +
+      `<p class="govhub-sub">${esc(HUB.ticker)} · ${esc(HUB.market)} · board hub</p>` +
+      `<div class="gov-co-links" style="margin-top:8px"><a href="#">SC</a><a href="#">TV</a><a href="#">Web</a></div>` +
+      `</div><div class="govhub-stats">` +
+      `<div><b>${DATA.length}</b><span>on map</span></div>` +
+      `<div><b>${HUB.board_n}</b><span>full board</span></div>` +
+      `<div><b>${HUB.mcap.toFixed(0)} Cr</b><span>mcap</span></div>` +
+      `</div></div>`;
+  }
+
+  function paintBody(tbodyId, withExpand) {
+    const tb = document.getElementById(tbodyId);
+    const rows = [];
+    DATA.forEach((r, idx) => {
+      const open = withExpand && expanded === idx;
+      rows.push(
+        `<tr class="strat-row${open ? " expanded" : ""}" data-i="${idx}">` +
+        `<td class="rank">${r.rank}</td>` +
+        `<td>${fmtDirector(r)}</td>` +
+        `<td class="num">${fmtScore(r.dir_score)}</td>` +
+        `<td class="num">${r.board_count}</td>` +
+        `<td class="num">${r.big_n}</td>` +
+        `<td class="num">${r.small_n}</td>` +
+        `<td><div class="gov-tickers">${fmtTickers(r)}</div></td>` +
+        `</tr>`
+      );
+      if (open) {
+        rows.push(
+          `<tr class="strat-expand"><td colspan="7">${renderCompanies(r)}</td></tr>`
+        );
+      }
+    });
+    tb.innerHTML = rows.join("");
+    tb.querySelectorAll("tr.strat-row").forEach((tr) => {
+      tr.addEventListener("click", () => {
+        if (!withExpand) return;
+        const i = Number(tr.getAttribute("data-i"));
+        expanded = expanded === i ? null : i;
+        paintBody("hub-body", true);
+      });
+    });
+  }
+
+  function setMode(next) {
+    mode = next;
+    document.getElementById("btn-hub").classList.toggle("active", mode === "hub");
+    document.getElementById("btn-map").classList.toggle("active", mode === "map");
+    document.getElementById("hub-panel").hidden = mode !== "hub";
+    document.getElementById("map-panel").hidden = mode !== "map";
+    document.getElementById("govhub-meta").textContent =
+      mode === "hub"
+        ? `${DATA.length} directors on ${FOCUS} · click row for seats`
+        : `${DATA.length} directors · same chrome as Governance Map`;
+    document.getElementById("govhub-count").textContent =
+      mode === "hub" ? `Hub · ${FOCUS}` : `Filtered · ${FOCUS}`;
+    if (mode === "hub") paintBody("hub-body", true);
+    else {
+      expanded = null;
+      paintBody("map-body", false);
+    }
+  }
+
+  document.getElementById("btn-hub").addEventListener("click", () => setMode("hub"));
+  document.getElementById("btn-map").addEventListener("click", () => setMode("map"));
+
+  renderHero();
+  setMode("hub");
+})();
+  </script>
+</body>
+</html>

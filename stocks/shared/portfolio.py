@@ -8,6 +8,7 @@ import pandas as pd
 
 from stocks.core.config import HOLDINGS_PEAD_CACHE_HOURS
 from stocks.core.database import (
+    delete_holdings_from_db,
     holdings_count,
     load_holdings_from_db,
     replace_holdings_in_db,
@@ -227,7 +228,26 @@ def add_holdings(entries: list[dict]) -> int:
             }
         )
     save_holdings_to_db(pd.DataFrame(rows))
+    try:
+        from stocks.shared.corp_tags import clear_corp_tags_cache
+
+        clear_corp_tags_cache()
+    except Exception:
+        pass
     return len(rows)
+
+
+def remove_holdings(tickers: list[str]) -> int:
+    """Delete holdings by ticker and clear Holding-tag cache."""
+    n = delete_holdings_from_db(tickers)
+    if n:
+        try:
+            from stocks.shared.corp_tags import clear_corp_tags_cache
+
+            clear_corp_tags_cache()
+        except Exception:
+            pass
+    return n
 
 
 def _fill_holdings_classification(holdings: pd.DataFrame) -> pd.DataFrame:

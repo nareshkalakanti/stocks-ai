@@ -22,9 +22,16 @@ from stocks.scans.holdings_playlist import (
     holdings_playlist_listings,
     is_holdings_playlist,
 )
+from stocks.scans.nifty_index_playlist import (
+    NIFTY_PLAYLIST_LABELS,
+    is_nifty_index_playlist,
+    nifty_playlist_count,
+    nifty_playlist_listings,
+)
 
 SCAN_PLAYLIST_LABELS = (
     HOLDINGS_PLAYLIST_LABEL,
+    *NIFTY_PLAYLIST_LABELS,
     DS_PLAYLIST_LABEL,
     BUSINESS_GROUPS_PLAYLIST_LABEL,
 )
@@ -37,11 +44,12 @@ def is_scan_playlist(market: str) -> bool:
         is_holdings_playlist(market)
         or is_ds_playlist(market)
         or is_business_groups_playlist(market)
+        or is_nifty_index_playlist(market)
     )
 
 
 def cap_tier_select_disabled(market: str) -> bool:
-    """D&S fixes the universe; Holdings and Business Groups allow cap-tier filtering."""
+    """D&S fixes the universe; index playlists keep optional cap-tier narrowing."""
     return is_ds_playlist(market)
 
 
@@ -78,6 +86,15 @@ def scan_playlist_listings(
             industry=industry,
             sub_sector=sub_sector,
         )
+    if is_nifty_index_playlist(market):
+        return nifty_playlist_listings(
+            stocks,
+            market,
+            sector=sector,
+            search=search,
+            industry=industry,
+            sub_sector=sub_sector,
+        )
     if is_ds_playlist(market):
         return ds_playlist_listings(
             stocks,
@@ -100,6 +117,9 @@ def scan_playlist_listings(
 def scan_playlist_count(market: str) -> int:
     if is_holdings_playlist(market):
         return holdings_playlist_count()
+    if is_nifty_index_playlist(market):
+        # Cache-only — avoid live NSE fetches while building Market dropdowns.
+        return nifty_playlist_count(market, seed_if_empty=False)
     if is_ds_playlist(market):
         return ds_playlist_count()
     if is_business_groups_playlist(market):
@@ -127,6 +147,8 @@ def scan_playlist_note(market: str) -> str:
         return ""
     if is_holdings_playlist(market):
         label = HOLDINGS_PLAYLIST_LABEL
+    elif is_nifty_index_playlist(market):
+        label = market
     elif is_ds_playlist(market):
         label = DS_PLAYLIST_LABEL
     else:

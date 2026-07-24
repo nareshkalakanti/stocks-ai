@@ -20,7 +20,7 @@ def to_yfinance_symbol(ticker: str, market: str | None = None) -> str:
         return ticker
 
     market_key = safe_str(market).upper()
-    if market_key in {"NSE", "NATIONAL STOCK EXCHANGE"}:
+    if market_key in {"NSE", "NSE SME", "NATIONAL STOCK EXCHANGE"}:
         return f"{ticker}.NS"
     if market_key in {"BSE", "BOMBAY STOCK EXCHANGE"}:
         return f"{ticker}.BO"

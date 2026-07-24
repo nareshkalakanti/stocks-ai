@@ -434,6 +434,22 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_shareholding_qtr_quarter
                 ON shareholding_qtr(quarter_end);
 
+            CREATE TABLE IF NOT EXISTS index_constituents (
+                index_id TEXT NOT NULL,
+                ticker TEXT NOT NULL,
+                name TEXT,
+                industry TEXT,
+                isin TEXT,
+                series TEXT,
+                fetched_at TEXT NOT NULL,
+                PRIMARY KEY (index_id, ticker)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_index_constituents_ticker
+                ON index_constituents(ticker);
+            CREATE INDEX IF NOT EXISTS idx_index_constituents_fetched
+                ON index_constituents(fetched_at);
+
             CREATE INDEX IF NOT EXISTS idx_google_news_cache_fetched
                 ON google_news_cache(fetched_at);
             """
@@ -1225,6 +1241,26 @@ def replace_holdings_in_db(df: pd.DataFrame) -> None:
     with get_connection() as conn:
         conn.execute("DELETE FROM holdings")
     save_holdings_to_db(df)
+
+
+def delete_holdings_from_db(tickers: list[str]) -> int:
+    """Remove holdings by ticker. Returns number of rows deleted."""
+    keys = sorted(
+        {
+            str(t).strip().upper()
+            for t in tickers
+            if str(t).strip()
+        }
+    )
+    if not keys:
+        return 0
+    init_db()
+    with get_connection() as conn:
+        deleted = 0
+        for ticker in keys:
+            cur = conn.execute("DELETE FROM holdings WHERE UPPER(ticker) = ?", (ticker,))
+            deleted += int(cur.rowcount or 0)
+        return deleted
 
 
 def holdings_count() -> int:
