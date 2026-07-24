@@ -217,12 +217,12 @@ def _load_multi_board_seats(*, min_boards: int = 2) -> pd.DataFrame:
             FROM directors d
             JOIN board_seats s ON s.person_id = d.person_id
             JOIN companies c ON c.ticker = s.ticker
-            WHERE UPPER(c.market) = 'NSE'
+            WHERE UPPER(c.market) IN ('NSE', 'NSE SME')
               AND d.person_id IN (
                 SELECT s2.person_id
                 FROM board_seats s2
                 JOIN companies c2 ON c2.ticker = s2.ticker
-                WHERE UPPER(c2.market) = 'NSE'
+                WHERE UPPER(c2.market) IN ('NSE', 'NSE SME')
                 GROUP BY s2.person_id
                 HAVING COUNT(DISTINCT s2.ticker) >= ?
             )

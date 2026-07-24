@@ -39,9 +39,9 @@ def person_id_for(*, din: str | None = None, name: str | None = None) -> str:
 
 def _require_market(market: str | None) -> str:
     m = safe_str(market).upper() or "NSE"
-    if m != "NSE":
+    if m not in {"NSE", "NSE SME"}:
         raise ValueError("Governance is NSE-only (BSE removed)")
-    return "NSE"
+    return m
 
 
 def purge_bse_governance_data() -> dict[str, int]:

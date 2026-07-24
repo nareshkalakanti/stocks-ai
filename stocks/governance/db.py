@@ -145,7 +145,7 @@ def _migrate_market_check(conn: sqlite3.Connection) -> None:
         "SELECT sql FROM sqlite_master WHERE type='table' AND name='companies'"
     ).fetchone()
     sql = str(row[0] or "") if row else ""
-    if not sql or "IN ('NSE', 'BSE')" in sql:
+    if not sql or "IN ('NSE', 'BSE')" in sql or "NSE SME" in sql:
         return
     if "CHECK (market = 'NSE')" not in sql and 'CHECK (market = "NSE")' not in sql:
         return
@@ -156,7 +156,7 @@ def _migrate_market_check(conn: sqlite3.Connection) -> None:
         CREATE TABLE companies (
             ticker TEXT PRIMARY KEY,
             market TEXT NOT NULL DEFAULT 'NSE'
-                CHECK (market IN ('NSE', 'BSE')),
+                CHECK (market IN ('NSE', 'NSE SME', 'BSE')),
             name TEXT NOT NULL,
             cin TEXT,
             isin TEXT,
@@ -177,6 +177,55 @@ def _migrate_market_check(conn: sqlite3.Connection) -> None:
                name, cin, isin, notes, updated_at
         FROM companies_market_mig;
         DROP TABLE companies_market_mig;
+        PRAGMA foreign_keys = ON;
+        """
+    )
+    if _table_columns(conn, "board_seats"):
+        _rebuild_board_seats(conn)
+
+
+def _migrate_sme_market_check(conn: sqlite3.Connection) -> None:
+    """Allow ``NSE SME`` alongside NSE (and legacy BSE) in companies.market CHECK."""
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='companies'"
+    ).fetchone()
+    sql = str(row[0] or "") if row else ""
+    if not sql or "NSE SME" in sql:
+        return
+    if "IN ('NSE', 'BSE')" not in sql and 'IN ("NSE", "BSE")' not in sql:
+        return
+
+    cols = _table_columns(conn, "companies")
+    extra = [c for c in ("sector", "industry", "sub_sector") if c in cols]
+    extra_cols = (", " + ", ".join(extra)) if extra else ""
+    extra_select = (", " + ", ".join(extra)) if extra else ""
+
+    conn.executescript(
+        f"""
+        PRAGMA foreign_keys = OFF;
+        ALTER TABLE companies RENAME TO companies_sme_mig;
+        CREATE TABLE companies (
+            ticker TEXT PRIMARY KEY,
+            market TEXT NOT NULL DEFAULT 'NSE'
+                CHECK (market IN ('NSE', 'NSE SME', 'BSE')),
+            name TEXT NOT NULL,
+            cin TEXT,
+            isin TEXT,
+            notes TEXT,
+            sector TEXT,
+            industry TEXT,
+            sub_sector TEXT,
+            updated_at TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_gov_companies_cin
+            ON companies(cin)
+            WHERE cin IS NOT NULL AND TRIM(cin) != '';
+        INSERT INTO companies (
+            ticker, market, name, cin, isin, notes{extra_cols}, updated_at
+        )
+        SELECT ticker, market, name, cin, isin, notes{extra_select}, updated_at
+        FROM companies_sme_mig;
+        DROP TABLE companies_sme_mig;
         PRAGMA foreign_keys = ON;
         """
     )
@@ -240,7 +289,7 @@ def init_governance_db() -> None:
             CREATE TABLE IF NOT EXISTS companies (
                 ticker TEXT PRIMARY KEY,
                 market TEXT NOT NULL DEFAULT 'NSE'
-                    CHECK (market IN ('NSE', 'BSE')),
+                    CHECK (market IN ('NSE', 'NSE SME', 'BSE')),
                 name TEXT NOT NULL,
                 cin TEXT,
                 isin TEXT,
@@ -258,6 +307,7 @@ def init_governance_db() -> None:
         )
         _migrate_to_person_id(conn)
         _migrate_market_check(conn)
+        _migrate_sme_market_check(conn)
         _ensure_company_classification_columns(conn)
         _repair_board_seats_fk(conn)
         conn.executescript(

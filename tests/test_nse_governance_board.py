@@ -55,3 +55,15 @@ def test_fetch_board_from_nse_governance_live_tcs():
     assert all(len(s["din"]) == 8 for s in seats)
     assert all(s["din"] != "99999999" for s in seats)
     assert any(s["name"] for s in seats)
+
+
+def test_fetch_board_from_nse_governance_live_sme_aaron():
+    """SME DIN filings use ``index=sme`` (equities returns empty)."""
+    board = fetch_board_from_nse_governance("AARON", market="NSE SME")
+    assert board is not None
+    assert board["ticker"] == "AARON"
+    assert board["market"] == "NSE SME"
+    seats = board["seats"]
+    assert len(seats) >= 3
+    assert all(len(s["din"]) == 8 for s in seats)
+    assert all(s["din"] != "99999999" for s in seats)

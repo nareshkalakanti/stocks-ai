@@ -97,8 +97,11 @@ def fetch_board_for_ticker(ticker: str, market: str | None = "NSE") -> dict | No
     if not _is_nse_gov_market(market_key):
         return None
 
-    board = fetch_board_from_nse_governance(ticker_key)
+    board = fetch_board_from_nse_governance(ticker_key, market=market_key)
     if board and board.get("seats"):
+        # Universe market wins for SME so Map/Companies filters stay correct.
+        if market_key == "NSE SME":
+            board = {**board, "market": "NSE SME"}
         return board
     return fetch_board_from_yfinance(ticker_key, market_key)
 

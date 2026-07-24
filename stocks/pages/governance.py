@@ -518,12 +518,19 @@ def _render_company_tab(
     if scope_tickers is not None:
         companies = _scope_companies_to_universe(companies, scope_tickers)
     if companies.empty:
-        st.info(
-            f"Nothing in **{scope_label or 'DB'}** yet — click **Scan** above, "
-            "then pick a company here to see DIN."
-            if scope_label
-            else "Nothing in DB yet — click **Scan** above, then pick a company here to see DIN."
-        )
+        if scope_label == "NSE SME":
+            st.info(
+                "Nothing in **NSE SME** yet — Scan with Market=NSE SME "
+                "(uses NSE `index=sme` DIN filings). If a prior scan logged "
+                "empties, click **Retry empties**, then Scan again."
+            )
+        else:
+            st.info(
+                f"Nothing in **{scope_label or 'DB'}** yet — click **Scan** above, "
+                "then pick a company here to see DIN."
+                if scope_label
+                else "Nothing in DB yet — click **Scan** above, then pick a company here to see DIN."
+            )
         return
 
     st.caption(

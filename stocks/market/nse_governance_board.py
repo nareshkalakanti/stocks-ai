@@ -4,6 +4,7 @@ Primary quality source for governance.db (not Yahoo).
 
 Discovery:
   1. ``/api/integrated-filing-results?integratedType=Governance`` → iXBRL HTML
+     (``index=equities`` mainboard, ``index=sme`` for NSE SME / Emerge)
   2. Fallback ``/api/corporate-governance-master`` + ``/api/corporate-governance?recId=``
 """
 
@@ -250,146 +251,184 @@ def _parse_composition_bod(
     return seats
 
 
+def _market_for_index(index: str) -> str:
+    return "NSE SME" if safe_str(index).lower() == "sme" else "NSE"
+
+
+def _indexes_for_market(market: str | None) -> tuple[str, ...]:
+    """SME listings live under ``index=sme``; mainboard under ``equities``."""
+    if "SME" in safe_str(market).upper():
+        return ("sme", "equities")
+    return ("equities", "sme")
+
+
 def _fetch_integrated_governance(
     ticker: str,
     *,
     session: requests.Session,
+    indexes: tuple[str, ...] = ("equities", "sme"),
 ) -> dict[str, Any] | None:
-    resp = session.get(
-        _INTEGRATED_URL,
-        params={
-            "index": "equities",
-            "symbol": ticker,
-            "integratedType": "Governance",
-        },
-        timeout=_TIMEOUT_SEC,
-        headers={"Referer": _NSE_GOV_REF},
-    )
-    resp.raise_for_status()
-    payload = resp.json()
-    rows = payload.get("data") if isinstance(payload, dict) else None
-    if not isinstance(rows, list) or not rows:
-        return None
-    gov = [
-        r
-        for r in rows
-        if isinstance(r, dict)
-        and "Governance" in safe_str(r.get("type"))
-        and safe_str(r.get("ixbrl")).startswith("http")
-    ]
-    if not gov:
-        return None
+    """
+    Pull Integrated Filing – Governance iXBRL for ``ticker``.
 
-    def _sort_key(item: dict) -> str:
-        return _quarter_end_iso(item.get("qe_Date")) or ""
+    Tries each NSE ``index`` (equities / sme). Within an index, walks filings
+    newest-first until a filing yields DIN seats (some SME shells are empty /
+    "non-applicability" HTML with headers only).
+    """
+    for index in indexes:
+        resp = session.get(
+            _INTEGRATED_URL,
+            params={
+                "index": index,
+                "symbol": ticker,
+                "integratedType": "Governance",
+            },
+            timeout=_TIMEOUT_SEC,
+            headers={"Referer": _NSE_GOV_REF},
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        rows = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(rows, list) or not rows:
+            continue
+        gov = [
+            r
+            for r in rows
+            if isinstance(r, dict)
+            and "Governance" in safe_str(r.get("type"))
+            and safe_str(r.get("ixbrl")).startswith("http")
+        ]
+        if not gov:
+            continue
 
-    gov.sort(key=_sort_key, reverse=True)
-    latest = gov[0]
-    ixbrl_url = safe_str(latest.get("ixbrl"))
-    as_of = _quarter_end_iso(latest.get("qe_Date"))
-    page = session.get(
-        ixbrl_url,
-        timeout=_TIMEOUT_SEC,
-        headers={"Referer": _NSE_HOME},
-    )
-    page.raise_for_status()
-    seats = parse_governance_ixbrl_html(page.text, as_of=as_of)
-    if not seats:
-        return None
-    return {
-        "ticker": ticker,
-        "name": safe_str(latest.get("cmName") or latest.get("smName")) or ticker,
-        "seats": seats,
-        "market": "NSE",
-        "as_of": as_of,
-        "source": "nse_integrated_governance",
-        "filing_url": ixbrl_url,
-    }
+        def _sort_key(item: dict) -> str:
+            return _quarter_end_iso(item.get("qe_Date")) or ""
+
+        gov.sort(key=_sort_key, reverse=True)
+        market = _market_for_index(index)
+        for filing in gov:
+            ixbrl_url = safe_str(filing.get("ixbrl"))
+            as_of = _quarter_end_iso(filing.get("qe_Date"))
+            page = session.get(
+                ixbrl_url,
+                timeout=_TIMEOUT_SEC,
+                headers={"Referer": _NSE_HOME},
+            )
+            page.raise_for_status()
+            seats = parse_governance_ixbrl_html(page.text, as_of=as_of)
+            if not seats:
+                continue
+            return {
+                "ticker": ticker,
+                "name": safe_str(filing.get("cmName") or filing.get("smName"))
+                or ticker,
+                "seats": seats,
+                "market": market,
+                "as_of": as_of,
+                "source": "nse_integrated_governance",
+                "filing_url": ixbrl_url,
+                "nse_index": index,
+            }
+    return None
 
 
 def _fetch_cg_master_board(
     ticker: str,
     *,
     session: requests.Session,
+    indexes: tuple[str, ...] = ("equities", "sme"),
 ) -> dict[str, Any] | None:
-    resp = session.get(
-        _CG_MASTER_URL,
-        params={"index": "equities", "symbol": ticker},
-        timeout=_TIMEOUT_SEC,
-        headers={"Referer": _NSE_GOV_REF},
-    )
-    resp.raise_for_status()
-    payload = resp.json()
-    rows = payload.get("data") if isinstance(payload, dict) else None
-    if not isinstance(rows, list) or not rows:
-        return None
+    for index in indexes:
+        resp = session.get(
+            _CG_MASTER_URL,
+            params={"index": index, "symbol": ticker},
+            timeout=_TIMEOUT_SEC,
+            headers={"Referer": _NSE_GOV_REF},
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        rows = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(rows, list) or not rows:
+            continue
 
-    def _sort_key(item: dict) -> str:
-        return _quarter_end_iso(item.get("date")) or ""
+        def _sort_key(item: dict) -> str:
+            return _quarter_end_iso(item.get("date")) or ""
 
-    dated = [r for r in rows if isinstance(r, dict) and safe_str(r.get("recordId"))]
-    if not dated:
-        return None
-    dated.sort(key=_sort_key, reverse=True)
-    latest = dated[0]
-    rec_id = safe_str(latest.get("recordId"))
-    as_of = _quarter_end_iso(latest.get("date"))
-    detail = session.get(
-        _CG_DETAIL_URL,
-        params={"recId": rec_id},
-        timeout=_TIMEOUT_SEC,
-        headers={"Referer": _NSE_GOV_REF},
-    )
-    detail.raise_for_status()
-    body = detail.json()
-    cobod = body.get("cobod") if isinstance(body, dict) else None
-    composition: list[dict] = []
-    if isinstance(cobod, list) and cobod:
-        data = cobod[0].get("data") if isinstance(cobod[0], dict) else None
-        if isinstance(data, dict):
-            raw = data.get("CompositionBOD") or []
-            if isinstance(raw, list):
-                composition = [r for r in raw if isinstance(r, dict)]
-    seats = _parse_composition_bod(composition, as_of=as_of)
-    if not seats:
-        return None
-    return {
-        "ticker": ticker,
-        "name": safe_str(latest.get("name")) or ticker,
-        "seats": seats,
-        "market": "NSE",
-        "as_of": as_of,
-        "source": "nse_corporate_governance",
-        "record_id": rec_id,
-        "xbrl": safe_str(latest.get("xbrl")) or None,
-    }
+        dated = [
+            r for r in rows if isinstance(r, dict) and safe_str(r.get("recordId"))
+        ]
+        if not dated:
+            continue
+        dated.sort(key=_sort_key, reverse=True)
+        market = _market_for_index(index)
+        for latest in dated:
+            rec_id = safe_str(latest.get("recordId"))
+            as_of = _quarter_end_iso(latest.get("date"))
+            detail = session.get(
+                _CG_DETAIL_URL,
+                params={"recId": rec_id},
+                timeout=_TIMEOUT_SEC,
+                headers={"Referer": _NSE_GOV_REF},
+            )
+            detail.raise_for_status()
+            body = detail.json()
+            cobod = body.get("cobod") if isinstance(body, dict) else None
+            composition: list[dict] = []
+            if isinstance(cobod, list) and cobod:
+                data = cobod[0].get("data") if isinstance(cobod[0], dict) else None
+                if isinstance(data, dict):
+                    raw = data.get("CompositionBOD") or []
+                    if isinstance(raw, list):
+                        composition = [r for r in raw if isinstance(r, dict)]
+            seats = _parse_composition_bod(composition, as_of=as_of)
+            if not seats:
+                continue
+            return {
+                "ticker": ticker,
+                "name": safe_str(latest.get("name")) or ticker,
+                "seats": seats,
+                "market": market,
+                "as_of": as_of,
+                "source": "nse_corporate_governance",
+                "record_id": rec_id,
+                "xbrl": safe_str(latest.get("xbrl")) or None,
+                "nse_index": index,
+            }
+    return None
 
 
 def fetch_board_from_nse_governance(
     ticker: str,
     *,
     session: requests.Session | None = None,
+    market: str | None = None,
 ) -> dict[str, Any] | None:
     """
     Return ``{ticker, name, seats, market, as_of, source}`` with DIN-backed seats.
 
     Tries Integrated Filing – Governance first, then CG master/detail JSON.
+    For ``NSE SME`` tickers, prefers ``index=sme`` (mainboard uses ``equities``).
     """
     ticker_key = safe_str(ticker).upper()
     if not ticker_key:
         return None
 
+    indexes = _indexes_for_market(market)
     own = session is None
     sess = session or _nse_session()
     try:
         try:
-            board = _fetch_integrated_governance(ticker_key, session=sess)
+            board = _fetch_integrated_governance(
+                ticker_key, session=sess, indexes=indexes
+            )
             if board and board.get("seats"):
                 return board
         except Exception:
             board = None
         try:
-            board = _fetch_cg_master_board(ticker_key, session=sess)
+            board = _fetch_cg_master_board(
+                ticker_key, session=sess, indexes=indexes
+            )
             if board and board.get("seats"):
                 return board
         except Exception:
