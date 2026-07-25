@@ -709,6 +709,7 @@ def overlaps_for_ticker(ticker: str) -> pd.DataFrame:
                     "here_as": row["designation"],
                     "also_ticker": seat["ticker"],
                     "also_company": seat["company_name"],
+                    "also_market": seat.get("market"),
                     "also_as": seat["designation"],
                 }
             )

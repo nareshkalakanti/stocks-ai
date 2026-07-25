@@ -1,4 +1,5 @@
 import pandas as pd
+from html import unescape
 
 
 def safe_str(value, default: str = "") -> str:
@@ -125,3 +126,19 @@ def format_market_cap_cr(value: object) -> str:
     if cr >= 100:
         return f"{format_indian_number(cr, decimals=1)} Cr"
     return f"{format_indian_number(cr, decimals=1)} Cr"
+
+
+def sanitize_website(url: str | None) -> str | None:
+    """Drop placeholder/search URLs; normalize scheme and HTML entities."""
+    raw = unescape(safe_str(url).strip())
+    if not raw:
+        return None
+    site = raw if raw.startswith(("http://", "https://")) else f"https://{raw}"
+    low = site.lower()
+    if "screener.in" in low:
+        return None
+    if "google." in low and "/search" in low:
+        return None
+    if any(x in low for x in ("facebook.com/sharer", "twitter.com/intent", "linkedin.com/share")):
+        return None
+    return site

@@ -36,7 +36,7 @@ def render_governance_map(*, show_title: bool = True) -> None:
     with c4:
         st.metric("Seats", stats["seats"])
 
-    f1, f2, f3 = st.columns([1, 1, 1])
+    f1, f2, f3, f4 = st.columns([1, 1, 1, 1])
     with f1:
         min_boards = st.selectbox(
             "Min boards",
@@ -59,6 +59,13 @@ def render_governance_map(*, show_title: bool = True) -> None:
             help="Hide name-only directors on 5+ boards (common-name false merges).",
             disabled=din_only,
         )
+    with f4:
+        sme_cross_only = st.checkbox(
+            "SME↔Main only",
+            value=False,
+            key="gov_map_sme_cross",
+            help="Directors on both NSE mainboard and NSE SME companies.",
+        )
 
     search_q = st.text_input(
         "Search stock / director",
@@ -73,7 +80,7 @@ def render_governance_map(*, show_title: bool = True) -> None:
     with fill_cols[0]:
         if st.button(
             f"Fill missing about/web ({len(missing)})",
-            use_container_width=True,
+            width="stretch",
             disabled=not missing,
             help="Pull website + about from screener.in for companies still blank (batched).",
         ):
@@ -123,15 +130,27 @@ def render_governance_map(*, show_title: bool = True) -> None:
         rows = rows.reset_index(drop=True)
         rows["rank"] = range(1, len(rows) + 1)
 
+    if sme_cross_only and "sme_cross" in rows.columns:
+        rows = rows[rows["sme_cross"].fillna(False).astype(bool)].copy()
+        if rows.empty:
+            st.warning("No directors on both NSE mainboard and NSE SME yet.")
+            return
+        rows = rows.reset_index(drop=True)
+        rows["rank"] = range(1, len(rows) + 1)
+
     bridge_n = int(rows["bridge"].fillna(False).astype(bool).sum()) if "bridge" in rows.columns else 0
+    cross_n = int(rows["sme_cross"].fillna(False).astype(bool).sum()) if "sme_cross" in rows.columns else 0
     filter_note = ""
     if din_only:
         filter_note = " · DIN only"
     elif hide_collisions and collision_n:
         filter_note = f" · hid {collision_n:,} name collisions"
+    if sme_cross_only:
+        filter_note += " · SME↔Main only"
     st.caption(
-        f"**{len(rows):,}** directors · **{bridge_n:,}** with big↔small bridge"
-        f"{filter_note} · click headers to sort"
+        f"**{len(rows):,}** directors · **{bridge_n:,}** big↔small bridge · "
+        f"**{cross_n:,}** SME↔Main crossover"
+        f"{filter_note} · toolbar tags: Cap · Holdings · SME · Cross"
     )
 
     embed_html = build_governance_map_html(

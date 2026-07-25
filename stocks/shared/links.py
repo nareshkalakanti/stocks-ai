@@ -13,6 +13,7 @@ from stocks.core.text_utils import safe_str
 
 TV_CHART_BASE = "https://www.tradingview.com/chart/"
 BSE_CODES_PATH = DATA_DIR / "bse_codes.csv"
+_NSE_MARKETS = frozenset({"NSE", "NSE SME", "NATIONAL STOCK EXCHANGE"})
 
 
 def _clean_bse_code(bse_code: str | None) -> str:
@@ -29,7 +30,8 @@ def nse_listed_symbols() -> frozenset[str]:
     stocks = load_india_stocks()
     if stocks.empty or "market" not in stocks.columns:
         return frozenset()
-    nse = stocks.loc[stocks["market"].astype(str).str.upper() == "NSE", "ticker"]
+    mk = stocks["market"].astype(str).str.upper()
+    nse = stocks.loc[mk.isin(_NSE_MARKETS), "ticker"]
     return frozenset(safe_str(t).upper() for t in nse if safe_str(t))
 
 
@@ -64,11 +66,56 @@ def _prefer_bse(ticker: str, market: str | None) -> bool:
     market_key = safe_str(market).upper()
     if market_key in {"BSE", "BOMBAY STOCK EXCHANGE"}:
         return True
+    if market_key in _NSE_MARKETS:
+        return False
     if sym.isdigit():
         return True
     if sym and sym not in nse_listed_symbols():
         return True
     return False
+
+
+@lru_cache(maxsize=1)
+def ticker_market_lookup() -> dict[str, str]:
+    from stocks.listings.stocks_data import load_india_stocks
+
+    stocks = load_india_stocks()
+    if stocks.empty or "market" not in stocks.columns:
+        return {}
+    out: dict[str, str] = {}
+    for ticker, market in zip(stocks["ticker"], stocks["market"], strict=False):
+        sym = safe_str(ticker).upper()
+        mk = safe_str(market).upper()
+        if sym and mk and sym not in out:
+            out[sym] = mk
+    return out
+
+
+def resolve_listing_market(ticker: str, market: str | None) -> str | None:
+    """Prefer explicit market; fall back to India listings when missing."""
+    mk = safe_str(market).upper()
+    if mk in _NSE_MARKETS or mk in {"BSE", "BOMBAY STOCK EXCHANGE"}:
+        return mk
+    sym = safe_str(ticker).upper()
+    if sym:
+        found = ticker_market_lookup().get(sym)
+        if found:
+            return found
+    return mk or None
+
+
+def research_links(
+    ticker: str,
+    market: str | None = None,
+    *,
+    bse_code: str | None = None,
+) -> tuple[str, str]:
+    """Fresh screener + TradingView URLs from ticker and resolved listing market."""
+    resolved = resolve_listing_market(ticker, market)
+    return (
+        screener_url(ticker, resolved, bse_code=bse_code),
+        tradingview_url(ticker, resolved, bse_code=bse_code),
+    )
 
 
 def tradingview_chart_symbol(
@@ -164,11 +211,11 @@ def attach_research_links(df: pd.DataFrame) -> pd.DataFrame:
     bse_codes = _listing_bse_codes(result)
 
     result["tv_link"] = [
-        tradingview_url(ticker, market, bse_code=bse_code)
-        for ticker, market, bse_code in zip(result["ticker"], markets, bse_codes)
+        tradingview_url(ticker, resolve_listing_market(ticker, market), bse_code=bse_code)
+        for ticker, market, bse_code in zip(result["ticker"], markets, bse_codes, strict=False)
     ]
     result["screener_link"] = [
-        screener_url(ticker, market, bse_code=bse_code)
-        for ticker, market, bse_code in zip(result["ticker"], markets, bse_codes)
+        screener_url(ticker, resolve_listing_market(ticker, market), bse_code=bse_code)
+        for ticker, market, bse_code in zip(result["ticker"], markets, bse_codes, strict=False)
     ]
     return result

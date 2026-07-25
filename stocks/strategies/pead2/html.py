@@ -16,7 +16,8 @@ from stocks.shared.stock_notes import attach_stock_notes, sync_stock_notes_from_
 from stocks.dashboards.expand_panel_html import EXPAND_PANEL_JS
 from stocks.strategies.pead2.strategy import enrich_pead_candidates, attach_strategy_breakout_signals
 from stocks.strategies.pead2.quarters import sanitize_quarter_panel
-from stocks.shared.links import screener_url, tradingview_url
+from stocks.shared.links import research_links, resolve_listing_market
+from stocks.core.text_utils import sanitize_website
 from stocks.core.database import load_market_cap_from_db
 from stocks.core.text_utils import safe_str
 
@@ -1788,13 +1789,15 @@ def _rows_for_json(df: pd.DataFrame) -> list[dict]:
     rows: list[dict] = []
     for _, row in attach_strategy_breakout_signals(enrich_pead_candidates(work)).iterrows():
         ticker = safe_str(row.get("ticker"))
-        market = safe_str(row.get("market")) or None
+        market = resolve_listing_market(ticker, safe_str(row.get("market")) or None)
+        sc_url, tv_url = research_links(ticker, market)
         row_mcap = row.get("market_cap_cr")
         if (row_mcap is None or pd.isna(row_mcap)) and ticker:
             row_mcap = mcap_map.get(ticker.upper())
         row_data = {
                 "ticker": ticker,
                 "name": safe_str(row.get("name")),
+                "market": market,
                 "market_cap_cr": json_safe_scalar(row_mcap),
                 "price": json_safe_scalar(
                     row.get("price")
@@ -1840,8 +1843,8 @@ def _rows_for_json(df: pd.DataFrame) -> list[dict]:
                 "fisher_checks": safe_str(row.get("fisher_checks")) or None,
                 "fisher_manual": safe_str(row.get("fisher_manual")) or None,
                 "calculation_date": safe_str(row.get("calculation_date")) or None,
-                "sc": row.get("screener_link") or screener_url(ticker, market),
-                "tv": row.get("tv_link") or tradingview_url(ticker, market),
+                "sc": sc_url,
+                "tv": tv_url,
                 "result_date": json_safe_scalar(row.get("result_date")),
                 "forward_pe": json_safe_scalar(row.get("forward_pe")),
                 "returns_pct": json_safe_scalar(row.get("returns_pct")),
@@ -1896,7 +1899,7 @@ def _rows_for_json(df: pd.DataFrame) -> list[dict]:
             if snap.get("long_description"):
                 row_data["long_description"] = snap["long_description"]
             if snap.get("website"):
-                row_data["website"] = snap["website"]
+                row_data["website"] = sanitize_website(snap["website"])
             for key in (
                 "company_sector",
                 "company_industry",

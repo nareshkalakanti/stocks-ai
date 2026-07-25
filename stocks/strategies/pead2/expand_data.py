@@ -249,6 +249,9 @@ def attach_pead_expand(
         return df if df is not None else pd.DataFrame()
 
     out = df.copy()
+    for col in ("quarters", "snapshot", "pe_ratio", "forward_pe"):
+        if col not in out.columns:
+            out[col] = None
     tickers = out["ticker"].astype(str).str.upper().tolist()
     cache_map = load_pead2_cache(tickers, max_hours=PEAD2_CACHE_HOURS if cache_hours is None else cache_hours)
 

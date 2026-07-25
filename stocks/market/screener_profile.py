@@ -7,7 +7,7 @@ from html import unescape
 
 import requests
 
-from stocks.core.text_utils import safe_str
+from stocks.core.text_utils import safe_str, sanitize_website
 from stocks.shared.links import screener_url
 
 _USER_AGENT = (
@@ -24,12 +24,7 @@ def _strip_html(text: str) -> str:
 
 
 def _normalize_website(url: str | None) -> str | None:
-    site = safe_str(url).strip()
-    if not site:
-        return None
-    if site.startswith(("http://", "https://")):
-        return site
-    return f"https://{site}"
+    return sanitize_website(url)
 
 
 def fetch_screener_profile(ticker: str, market: str | None = None) -> dict:

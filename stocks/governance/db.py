@@ -3,27 +3,142 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
 from stocks.core.config import DATA_DIR, GOVERNANCE_DB_PATH
+from pathlib import Path
+
+_SQLITE_TIMEOUT = 30.0
+_governance_init_lock = threading.Lock()
+_governance_initialized_path: Path | None = None
 
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _configure_sqlite(conn: sqlite3.Connection) -> None:
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA busy_timeout=30000")
+    conn.execute("PRAGMA foreign_keys=ON")
+
+
+def _commit_with_retry(conn: sqlite3.Connection, *, attempts: int = 6) -> None:
+    for attempt in range(attempts):
+        try:
+            conn.commit()
+            return
+        except sqlite3.OperationalError as exc:
+            msg = str(exc).lower()
+            if "locked" not in msg and "busy" not in msg:
+                raise
+            if attempt >= attempts - 1:
+                raise
+            time.sleep(min(0.25, 0.02 * (2**attempt)))
+
+
 @contextmanager
 def get_governance_connection():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(GOVERNANCE_DB_PATH)
+    conn = sqlite3.connect(GOVERNANCE_DB_PATH, timeout=_SQLITE_TIMEOUT)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
+    _configure_sqlite(conn)
     try:
         yield conn
-        conn.commit()
+        _commit_with_retry(conn)
     finally:
         conn.close()
+
+
+def init_governance_db() -> None:
+    global _governance_initialized_path
+    if _governance_initialized_path == GOVERNANCE_DB_PATH:
+        return
+    with _governance_init_lock:
+        if _governance_initialized_path == GOVERNANCE_DB_PATH:
+            return
+        _init_governance_schema()
+        _governance_initialized_path = GOVERNANCE_DB_PATH
+
+
+def _init_governance_schema() -> None:
+    """
+    Schema:
+
+    - companies — NSE tickers with stored boards (BSE purged)
+    - directors — people keyed by ``person_id`` (DIN when known, else ``n:<name_key>``)
+    - board_seats — one row per (ticker, person_id)
+    """
+    with get_governance_connection() as conn:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS companies (
+                ticker TEXT PRIMARY KEY,
+                market TEXT NOT NULL DEFAULT 'NSE'
+                    CHECK (market IN ('NSE', 'NSE SME', 'BSE')),
+                name TEXT NOT NULL,
+                cin TEXT,
+                isin TEXT,
+                notes TEXT,
+                sector TEXT,
+                industry TEXT,
+                sub_sector TEXT,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_gov_companies_cin
+                ON companies(cin)
+                WHERE cin IS NOT NULL AND TRIM(cin) != '';
+            """
+        )
+        _migrate_to_person_id(conn)
+        _migrate_market_check(conn)
+        _migrate_sme_market_check(conn)
+        _ensure_company_classification_columns(conn)
+        _repair_board_seats_fk(conn)
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS directors (
+                person_id TEXT PRIMARY KEY,
+                din TEXT UNIQUE,
+                name TEXT NOT NULL,
+                name_key TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_gov_directors_name_key
+                ON directors(name_key);
+            CREATE INDEX IF NOT EXISTS idx_gov_directors_din
+                ON directors(din);
+
+            CREATE TABLE IF NOT EXISTS board_seats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticker TEXT NOT NULL REFERENCES companies(ticker) ON DELETE CASCADE,
+                person_id TEXT NOT NULL REFERENCES directors(person_id) ON DELETE CASCADE,
+                designation TEXT NOT NULL,
+                category TEXT,
+                source TEXT NOT NULL,
+                as_of TEXT,
+                fetched_at TEXT NOT NULL,
+                UNIQUE (ticker, person_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_gov_seats_person ON board_seats(person_id);
+            CREATE INDEX IF NOT EXISTS idx_gov_seats_ticker ON board_seats(ticker);
+
+            CREATE TABLE IF NOT EXISTS scan_log (
+                ticker TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                detail TEXT,
+                fetched_at TEXT NOT NULL
+            );
+            """
+        )
+        _purge_bse_data(conn)
 
 
 def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
@@ -273,79 +388,3 @@ def _purge_bse_data(conn: sqlite3.Connection) -> dict[str, int]:
         "seats_deleted": max(0, int(seats_before) - int(seats_after)),
         "directors_deleted": int(orphan.rowcount or 0),
     }
-
-
-def init_governance_db() -> None:
-    """
-    Schema:
-
-    - companies — NSE tickers with stored boards (BSE purged)
-    - directors — people keyed by ``person_id`` (DIN when known, else ``n:<name_key>``)
-    - board_seats — one row per (ticker, person_id)
-    """
-    with get_governance_connection() as conn:
-        conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS companies (
-                ticker TEXT PRIMARY KEY,
-                market TEXT NOT NULL DEFAULT 'NSE'
-                    CHECK (market IN ('NSE', 'NSE SME', 'BSE')),
-                name TEXT NOT NULL,
-                cin TEXT,
-                isin TEXT,
-                notes TEXT,
-                sector TEXT,
-                industry TEXT,
-                sub_sector TEXT,
-                updated_at TEXT NOT NULL
-            );
-
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_gov_companies_cin
-                ON companies(cin)
-                WHERE cin IS NOT NULL AND TRIM(cin) != '';
-            """
-        )
-        _migrate_to_person_id(conn)
-        _migrate_market_check(conn)
-        _migrate_sme_market_check(conn)
-        _ensure_company_classification_columns(conn)
-        _repair_board_seats_fk(conn)
-        conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS directors (
-                person_id TEXT PRIMARY KEY,
-                din TEXT UNIQUE,
-                name TEXT NOT NULL,
-                name_key TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_gov_directors_name_key
-                ON directors(name_key);
-            CREATE INDEX IF NOT EXISTS idx_gov_directors_din
-                ON directors(din);
-
-            CREATE TABLE IF NOT EXISTS board_seats (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                ticker TEXT NOT NULL REFERENCES companies(ticker) ON DELETE CASCADE,
-                person_id TEXT NOT NULL REFERENCES directors(person_id) ON DELETE CASCADE,
-                designation TEXT NOT NULL,
-                category TEXT,
-                source TEXT NOT NULL,
-                as_of TEXT,
-                fetched_at TEXT NOT NULL,
-                UNIQUE (ticker, person_id)
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_gov_seats_person ON board_seats(person_id);
-            CREATE INDEX IF NOT EXISTS idx_gov_seats_ticker ON board_seats(ticker);
-
-            CREATE TABLE IF NOT EXISTS scan_log (
-                ticker TEXT PRIMARY KEY,
-                status TEXT NOT NULL,
-                detail TEXT,
-                fetched_at TEXT NOT NULL
-            );
-            """
-        )
-        _purge_bse_data(conn)

@@ -82,6 +82,14 @@ GOVERNANCE_MAP_CSS = """
     color: #9a3412;
     background: #ffedd5;
   }
+  .gov-tag-main {
+    color: #1e40af;
+    background: #dbeafe;
+  }
+  .gov-tag-cross {
+    color: #6d28d9;
+    background: #ede9fe;
+  }
   .gov-tickers {
     display: flex;
     flex-wrap: wrap;
@@ -395,6 +403,10 @@ GOVERNANCE_MAP_CSS = """
     background: #ffedd5;
     color: #9a3412;
   }
+  .gov-cross-filter button[data-cross=""].active { background: #f3f4f6; }
+  .gov-cross-filter button[data-cross="CROSS"].active {
+    background: #ede9fe;
+    color: #6d28d9;
   }
   .gov-role-tag {
     display: inline-block;
@@ -434,6 +446,9 @@ def _rows_for_json(df: pd.DataFrame) -> list[dict]:
                 "big_n": json_safe_scalar(row.get("big_n")),
                 "small_n": json_safe_scalar(row.get("small_n")),
                 "bridge": bool(row.get("bridge")),
+                "sme_n": json_safe_scalar(row.get("sme_n")),
+                "main_n": json_safe_scalar(row.get("main_n")),
+                "sme_cross": bool(row.get("sme_cross")),
                 "tickers": safe_str(row.get("tickers")),
                 "companies": json_safe_obj(companies),
                 "score_breakdown": json_safe_obj(row.get("score_breakdown") or {}),
@@ -499,6 +514,11 @@ def build_governance_map_html(
         <button type="button" class="active" data-sme="" title="Show all companies">All</button>
         <button type="button" data-sme="SME" title="Only directors with an NSE Emerge / SME company">SME</button>
       </div>
+      <div class="gov-cap-filter gov-cross-filter" role="group" aria-label="SME crossover filter" id="govmap-cross-filter">
+        <span class="gov-cap-filter-label">Cross</span>
+        <button type="button" class="active" data-cross="" title="Show all directors">All</button>
+        <button type="button" data-cross="CROSS" title="Directors on both NSE mainboard and NSE SME">SME↔Main</button>
+      </div>
       <span class="gov-search-meta" id="govmap-count"></span>
     </div>
     <div id="gov-role-chips" class="gov-role-chips" hidden></div>
@@ -522,6 +542,7 @@ def build_governance_map_html(
   let capFilter = ""; // "" | NC | MIC | SC | MC | LC
   let holdFilter = ""; // "" | HOLD
   let smeFilter = ""; // "" | SME
+  let smeCrossFilter = ""; // "" | CROSS
   let sortCol = "dir_score";
   let sortDir = -1; // -1 = high→low (top), +1 = low→high
   const ROLE_FAMILIES = [
@@ -581,11 +602,14 @@ def build_governance_map_html(
       : "";
     const din = r.din ? `DIN ${{esc(r.din)}}` : "name match";
     const bridge = r.bridge ? ` · bridge` : "";
+    const smeCross = r.sme_cross ? ` · SME↔Main` : "";
     const collision = r.name_collision ? ` · likely name collision` : "";
     return (
       `<div class="gov-dir-cell">` +
-      `<div><strong>${{esc(r.name)}}</strong>${{badge}}${{suspect}}</div>` +
-      `<div class="sub">${{din}}${{bridge}}${{collision}}</div>` +
+      `<div><strong>${{esc(r.name)}}</strong>${{badge}}${{suspect}}${{
+        r.sme_cross ? `<span class="gov-tag gov-tag-cross" title="On NSE mainboard and NSE SME">Cross</span>` : ""
+      }}</div>` +
+      `<div class="sub">${{din}}${{bridge}}${{smeCross}}${{collision}}</div>` +
       `</div>`
     );
   }}
@@ -685,17 +709,19 @@ def build_governance_map_html(
     return hits.concat(rest);
   }}
   function rowHasMatchingCompany(r) {{
+    if (smeCrossFilter === "CROSS" && !r.sme_cross) return false;
     if (!capFilter && !holdFilter && !smeFilter) return true;
     return matchingCompanies(r).length > 0;
   }}
   function activeFilters() {{
-    return !!(capFilter || holdFilter || smeFilter);
+    return !!(capFilter || holdFilter || smeFilter || smeCrossFilter);
   }}
   function filterBits() {{
     const bits = [];
     if (capFilter) bits.push(`Cap ${{capFilter}}`);
     if (holdFilter) bits.push("Holding");
     if (smeFilter) bits.push("SME");
+    if (smeCrossFilter) bits.push("SME↔Main");
     return bits;
   }}
   function designationMatchesRole(desig, needle, family) {{
@@ -920,6 +946,9 @@ def build_governance_map_html(
       const smeTag = c.is_sme
         ? `<span class="gov-co-tags"><span class="gov-tag gov-tag-sme" title="NSE Emerge / SME listing">SME</span></span>`
         : "";
+      const mainTag = c.is_main
+        ? `<span class="gov-co-tags"><span class="gov-tag gov-tag-main" title="NSE mainboard listing">NSE</span></span>`
+        : "";
       const capCode = String(c.cap_code || "").toUpperCase();
       const capTag = capCode
         ? `<span class="gov-co-tags"><span class="gov-cap-tag gov-cap-${{capCode.toLowerCase()}}" title="${{esc(c.cap_label || capCode)}}">${{esc(capCode)}}</span></span>`
@@ -937,7 +966,7 @@ def build_governance_map_html(
         `<div class="${{coCls}}"${{coStyle}}>` +
         `<div class="gov-co-top">` +
         `<div>` +
-        `<div class="gov-co-name">${{esc(c.name || c.ticker)}}${{capTag}}${{smeTag}}${{holdTag}}</div>` +
+        `<div class="gov-co-name">${{esc(c.name || c.ticker)}}${{capTag}}${{mainTag}}${{smeTag}}${{holdTag}}</div>` +
         `<div class="gov-co-sub">${{esc(c.ticker)}} · ${{esc(c.market || "")}} · ${{esc(c.designation || "Director")}}</div>` +
         `</div>` +
         `<div class="gov-co-mcap">${{fmtMcap(c.market_cap_cr)}}</div>` +
@@ -977,6 +1006,8 @@ def build_governance_map_html(
         }}
         if (c.is_sme) {{
           tags.push(`<span class="gov-tag gov-tag-sme" title="NSE Emerge / SME listing">SME</span>`);
+        }} else if (c.is_main) {{
+          tags.push(`<span class="gov-tag gov-tag-main" title="NSE mainboard listing">NSE</span>`);
         }}
         if (c.is_holding) {{
           tags.push(`<span class="gov-tag gov-tag-hold" title="In your Holdings">Holding</span>`);
@@ -1213,6 +1244,22 @@ def build_governance_map_html(
           b.classList.toggle(
             "active",
             String(b.getAttribute("data-sme") || "").toUpperCase() === smeFilter
+          );
+        }});
+        render();
+      }};
+    }});
+  }}
+  const crossFilterEl = document.getElementById("govmap-cross-filter");
+  if (crossFilterEl) {{
+    crossFilterEl.querySelectorAll("button[data-cross]").forEach(btn => {{
+      btn.onclick = (e) => {{
+        e.stopPropagation();
+        smeCrossFilter = String(btn.getAttribute("data-cross") || "").toUpperCase();
+        crossFilterEl.querySelectorAll("button[data-cross]").forEach(b => {{
+          b.classList.toggle(
+            "active",
+            String(b.getAttribute("data-cross") || "").toUpperCase() === smeCrossFilter
           );
         }});
         render();

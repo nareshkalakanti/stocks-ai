@@ -115,3 +115,18 @@ def test_prepare_interactive_report_df_attaches_quarters(monkeypatch):
     assert match
     data = json.loads(match.group(1))
     assert data[0]["quarters"]["labels"]
+
+
+def test_prepare_interactive_report_df_without_snapshot_column(monkeypatch):
+    df = pd.DataFrame([{"ticker": "TEST", "name": "Test Co", "market": "NSE"}])
+
+    def _empty_expand(frame, *, max_workers=None):
+        del max_workers
+        return frame.copy()
+
+    monkeypatch.setattr(
+        "stocks.strategies.pead2.expand_data.attach_pead_expand",
+        _empty_expand,
+    )
+    out = prepare_interactive_report_df(df, max_workers=1)
+    assert "snapshot" not in out.columns or out.iloc[0].get("snapshot") is None

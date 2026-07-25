@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from stocks.core.database import load_company_profiles_from_db, save_company_profiles, save_market_cap_to_db
-from stocks.core.text_utils import safe_str
+from stocks.core.text_utils import safe_str, sanitize_website
 from stocks.market.screener_profile import fetch_screener_profile
 
 PROFILE_KEYS = (
@@ -37,16 +37,19 @@ def _pick_profile(data: dict) -> dict:
 
 
 def _profile_incomplete(data: dict) -> bool:
-    return not safe_str(data.get("long_description")).strip() or not safe_str(
+    return not safe_str(data.get("long_description")).strip() or not sanitize_website(
         data.get("website")
-    ).strip()
+    )
 
 
 def _apply_stored_row(target: dict, stored: dict) -> dict:
     out = dict(target)
     for key in PROFILE_KEYS:
         if out.get(key) is None and stored.get(key) is not None:
-            out[key] = stored[key]
+            value = stored[key]
+            if key == "website":
+                value = sanitize_website(value)
+            out[key] = value
     return out
 
 
@@ -94,6 +97,8 @@ def merge_company_profile(
     override_web = _WEBSITE_OVERRIDES.get(ticker_key)
     if override_web:
         out["website"] = override_web
+    if out.get("website") is not None:
+        out["website"] = sanitize_website(out.get("website"))
     stored_rows = load_company_profiles_from_db([ticker_key])
     stored = stored_rows.get(ticker_key) or {}
     out = _apply_stored_row(out, stored)

@@ -46,11 +46,24 @@ from stocks.scans.scan_playlists import format_market_option
 from stocks.scans.stock_filters import StockFilters, apply_stock_filters
 from stocks.market.nse_sme_listings import NSE_SME_MARKET
 
-_UNDER5K_HOLDINGS_LABEL = "≤5k + Holdings"
 _DEFAULT_GOV_MARKET = "All"
 _DEFAULT_GOV_CAP_LABEL = "≤ 5,000 Cr (0–5k)"
 _BATCH_SIZE = 20
 _NSE_GOV_MARKETS = frozenset({"NSE", "NSE SME"})
+
+
+def _gov_nse_stock_count(stocks: pd.DataFrame) -> int:
+    """NSE mainboard + NSE SME — governance DIN universe for Market=All."""
+    if stocks.empty or "market" not in stocks.columns:
+        return 0
+    mk = stocks["market"].astype(str).str.upper()
+    return int(mk.isin(_NSE_GOV_MARKETS).sum())
+
+
+def _format_gov_market_option(stocks: pd.DataFrame, market: str) -> str:
+    if market == "All":
+        return f"NSE ({_gov_nse_stock_count(stocks):,})"
+    return format_market_option(stocks, market)
 
 
 def _gov_cap_tier_id() -> str:
@@ -59,29 +72,8 @@ def _gov_cap_tier_id() -> str:
 
 
 def _gov_market_options(stocks: pd.DataFrame) -> list[str]:
-    """Same Market list as other scan pages, plus ≤5k + Holdings near the top."""
-    # All · Holdings · Nifty… · D&S · … · NSE · BSE · …
-    base = market_options(stocks, include_scan_playlists=True)
-    opts: list[str] = []
-    if "All" in base:
-        opts.append("All")
-    if _UNDER5K_HOLDINGS_LABEL not in opts:
-        opts.append(_UNDER5K_HOLDINGS_LABEL)
-    for m in base:
-        if m not in opts:
-            opts.append(m)
-    return opts
-
-
-def _union_universes(*frames: pd.DataFrame) -> pd.DataFrame:
-    parts = [f for f in frames if f is not None and not f.empty]
-    if not parts:
-        return pd.DataFrame()
-    out = pd.concat(parts, ignore_index=True)
-    if "ticker" not in out.columns:
-        return out
-    out["ticker"] = out["ticker"].astype(str).str.upper()
-    return out.drop_duplicates(subset=["ticker"]).reset_index(drop=True)
+    """Same Market list as other scan pages."""
+    return market_options(stocks, include_scan_playlists=True)
 
 
 def _default_market_session(options: list[str]) -> None:
@@ -95,6 +87,10 @@ def _default_market_session(options: list[str]) -> None:
         st.session_state["gov_market_all_v1"] = True
         st.session_state["gov_cap_tier"] = _DEFAULT_GOV_CAP_LABEL
     if key not in st.session_state or st.session_state[key] not in options:
+        st.session_state[key] = (
+            _DEFAULT_GOV_MARKET if _DEFAULT_GOV_MARKET in options else options[0]
+        )
+    elif st.session_state[key] == "≤5k + Holdings":
         st.session_state[key] = (
             _DEFAULT_GOV_MARKET if _DEFAULT_GOV_MARKET in options else options[0]
         )
@@ -147,13 +143,6 @@ def _build_universe(
 ) -> pd.DataFrame:
     market_key = safe_str(market)
 
-    # ≤5k Cr NSE (+ SME) names ∪ full holdings — Cap ignored (band + book baked in).
-    if market_key == _UNDER5K_HOLDINGS_LABEL:
-        under_nse = _build_universe(stocks, "NSE", cap_tier_id="under_5k")
-        under_sme = _build_universe(stocks, NSE_SME_MARKET, cap_tier_id="under_5k")
-        holds = _build_universe(stocks, HOLDINGS_PLAYLIST_LABEL, cap_tier_id="all")
-        return _union_universes(under_nse, under_sme, holds)
-
     filters = StockFilters(market=market, sectors=[], industries=[], search="")
     filtered = apply_stock_filters(stocks, filters)
     if "market" in filtered.columns:
@@ -162,7 +151,8 @@ def _build_universe(
         if market_u == "NSE SME":
             filtered = filtered[mk == "NSE SME"]
         elif market_u == "NSE":
-            filtered = filtered[mk == "NSE"]
+            # Mainboard + Emerge/SME — one NSE DIN universe after Scan.
+            filtered = filtered[mk.isin(_NSE_GOV_MARKETS)]
         else:
             # All / indexes / playlists: keep mainboard + SME for DIN scans.
             filtered = filtered[mk.isin(_NSE_GOV_MARKETS)]
@@ -189,9 +179,9 @@ def render_governance(*, show_title: bool = True) -> None:
         st.markdown("### Governance")
     st.markdown(
         "**Scan & see DIN**  \n"
-        "1. **Market** = **All** (same list as other scans) + **Cap** = **≤ 5,000 Cr** "
-        "(default) → **Scan**. DIN filings are NSE-only, so BSE names are skipped.  \n"
-        "2. Or pick **≤5k + Holdings** to force-include your full book.  \n"
+        "1. **Market** **NSE** (mainboard **+ NSE SME**) + **Cap** → **Scan**. "
+        "DIN filings are NSE-only, so BSE names are skipped.  \n"
+        "2. **Governance Map** tab → filter **SME** / **Cross** tags for directors on both boards.  \n"
         "3. **Companies** tab → **DIN** column."
     )
 
@@ -245,11 +235,7 @@ def render_governance(*, show_title: bool = True) -> None:
             "Market",
             market_opts,
             key="gov_sf_market",
-            format_func=lambda m: (
-                f"{m} (≤5k ∪ book)"
-                if m == _UNDER5K_HOLDINGS_LABEL
-                else format_market_option(stocks, m)
-            ),
+            format_func=lambda m: _format_gov_market_option(stocks, m),
         )
     with row[1]:
         st.selectbox(
@@ -264,10 +250,10 @@ def render_governance(*, show_title: bool = True) -> None:
         else market
     )
     cap_tier_id = _gov_cap_tier_id()
-    # Cap ignored for Holdings and ≤5k+Holdings (band/book baked into Market).
+    # Cap ignored for Holdings portfolio scan.
     effective_cap = (
         "all"
-        if market_label in {HOLDINGS_PLAYLIST_LABEL, _UNDER5K_HOLDINGS_LABEL}
+        if market_label == HOLDINGS_PLAYLIST_LABEL
         else cap_tier_id
     )
     universe = _build_universe(stocks, market_label, cap_tier_id=effective_cap)
@@ -275,19 +261,14 @@ def render_governance(*, show_title: bool = True) -> None:
     with row[2]:
         st.metric("Pending", pending_n)
     with row[3]:
-        run_clicked = st.button("Scan", type="primary", use_container_width=True)
+        run_clicked = st.button("Scan", type="primary", width="stretch")
     with row[4]:
-        stop_clicked = st.button("Stop", use_container_width=True)
+        stop_clicked = st.button("Stop", width="stretch")
 
     if safe_str(market_label).upper() == "BSE":
         st.warning(
             "DIN boards come from **NSE** filings — BSE-only Market will not save boards. "
             "Use **All** or **NSE** (plus Cap)."
-        )
-    elif market_label == _UNDER5K_HOLDINGS_LABEL:
-        st.caption(
-            f"Universe **{len(universe):,}** = NSE ≤ ₹5,000 Cr ∪ Holdings "
-            "(Cap ignored — already included)"
         )
     elif effective_cap != "all":
         tier = next((t for t in CAP_TIERS if t["id"] == effective_cap), None)
@@ -309,10 +290,18 @@ def render_governance(*, show_title: bool = True) -> None:
         st.caption(
             f"Universe **{len(universe):,}** holdings (Cap ignored for portfolio scan)"
         )
+    elif market_label == "NSE":
+        st.caption(
+            f"Universe **{len(universe):,}** = NSE mainboard **+ NSE SME** (one DIN scan)"
+        )
     elif market_label == "All":
         st.caption(
-            f"Universe **{len(universe):,}** NSE names from All "
-            f"(BSE/NYSE skipped — no NSE DIN filings)"
+            f"Universe **{len(universe):,}** NSE (mainboard + SME)"
+            + (
+                f" · Cap **{st.session_state.gov_cap_tier}**"
+                if effective_cap != "all"
+                else ""
+            )
         )
 
     workers = int(
@@ -335,7 +324,7 @@ def render_governance(*, show_title: bool = True) -> None:
                     key="gov_workers",
                 )
             )
-            if st.button("Refresh indexes", use_container_width=True):
+            if st.button("Refresh indexes", width="stretch"):
                 with st.spinner("Fetching Nifty lists…"):
                     results = ensure_all_nifty_indexes(force=True)
                 bits = [
@@ -345,7 +334,7 @@ def render_governance(*, show_title: bool = True) -> None:
                 st.success(" · ".join(bits))
                 st.rerun()
         with m2:
-            if st.button("Scan holdings", use_container_width=True):
+            if st.button("Scan holdings", width="stretch"):
                 cov = holdings_governance_coverage()
                 missing = list(cov.get("missing") or [])
                 if missing:
@@ -367,23 +356,23 @@ def render_governance(*, show_title: bool = True) -> None:
                     }
                     st.session_state.gov_holdings_scan = True
                     st.rerun()
-            if st.button("Load DIN seed", use_container_width=True):
+            if st.button("Load DIN seed", width="stretch"):
                 n = seed_curated_boards(force=False)
                 st.success(f"Added {n}.") if n else st.info("Already loaded.")
                 st.rerun()
         with m3:
-            if st.button("Enrich sectors", use_container_width=True):
+            if st.button("Enrich sectors", width="stretch"):
                 n = enrich_governance_company_classification(only_missing=True)
                 st.success(f"Updated {n:,}.")
                 st.rerun()
-            if st.button("Clear DB", use_container_width=True):
+            if st.button("Clear DB", width="stretch"):
                 cleared = clear_all_governance_data()
                 st.success(
                     f"Cleared {cleared['companies']:,} companies. "
                     "Pick an index and Scan."
                 )
                 st.rerun()
-            if st.button("Retry empties", use_container_width=True):
+            if st.button("Retry empties", width="stretch"):
                 n = clear_scan_log(only_empty_failed=True)
                 st.info(f"Cleared {n:,} empty/failed attempts.")
                 st.rerun()
@@ -537,10 +526,11 @@ def _render_company_tab(
         f"{len(companies):,} companies · {scope_label} · "
         "pick one to see board **DIN** numbers"
     )
-    labels = {
-        str(r.ticker): f"{r.ticker} — {r.name} ({int(r.director_count)})"
-        for r in companies.itertuples()
-    }
+    labels = {}
+    for r in companies.itertuples():
+        market_tag = safe_str(getattr(r, "market", "")).upper() or "NSE"
+        tag = "SME" if market_tag == "NSE SME" else ("NSE" if market_tag == "NSE" else market_tag)
+        labels[str(r.ticker)] = f"{r.ticker} — {r.name} ({int(r.director_count)}) · {tag}"
     tickers = list(labels.keys())
     pick_key = "gov_company_pick"
     if st.session_state.get(pick_key) not in tickers:
@@ -574,7 +564,7 @@ def _render_company_tab(
                 "board_count": "Boards",
             }
         )[["DIN", "Director", "Role", "Category", "As of", "Boards", "Source"]],
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
@@ -583,6 +573,26 @@ def _render_company_tab(
         overlaps = overlaps[
             overlaps["also_ticker"].astype(str).str.upper().isin(scope_tickers)
         ].reset_index(drop=True)
+    if not overlaps.empty:
+        here_rows = companies[
+            companies["ticker"].astype(str).str.upper() == choice.upper()
+        ]
+        here_sme = (
+            not here_rows.empty
+            and safe_str(here_rows.iloc[0].get("market")).upper() == "NSE SME"
+        )
+        def _cross_tag(row) -> str:
+            also_m = safe_str(row.get("also_market")).upper()
+            also_sme = also_m == "NSE SME"
+            if here_sme != also_sme and also_m in {"NSE", "NSE SME"}:
+                return "SME↔Main"
+            if also_sme:
+                return "SME"
+            if also_m == "NSE":
+                return "NSE"
+            return also_m or "—"
+        overlaps = overlaps.copy()
+        overlaps["Tag"] = overlaps.apply(_cross_tag, axis=1)
     st.markdown("**Also on**")
     if overlaps.empty:
         st.caption("No shared seats in this universe yet.")
@@ -597,8 +607,8 @@ def _render_company_tab(
                     "also_company": "Company",
                     "also_as": "There",
                 }
-            )[["DIN", "Director", "Here", "Ticker", "Company", "There"]],
-            use_container_width=True,
+            )[["DIN", "Director", "Here", "Ticker", "Company", "There", "Tag"]],
+            width="stretch",
             hide_index=True,
         )
 
@@ -620,16 +630,38 @@ def _render_shared_tab(
         return
 
     st.caption(f"{len(multi):,} directors · {scope_label}")
+    from stocks.shared.corp_tags import nse_sme_ticker_set
+
+    sme_set = nse_sme_ticker_set()
+
+    def _director_tags(person_id: str) -> str:
+        seats = seats_for_person(person_id)
+        if seats.empty:
+            return ""
+        markets = seats["market"].astype(str).str.upper()
+        sme_n = int((markets == "NSE SME").sum())
+        main_n = int((markets == "NSE").sum())
+        bits: list[str] = []
+        if sme_n:
+            bits.append("SME")
+        if main_n:
+            bits.append("NSE")
+        if sme_n and main_n:
+            bits.append("Cross")
+        return " · ".join(bits)
+
+    show = multi.copy()
+    show["Tags"] = show["person_id"].astype(str).map(_director_tags)
     st.dataframe(
-        multi.rename(
+        show.rename(
             columns={
                 "din": "DIN",
                 "name": "Director",
                 "board_count": "Boards",
                 "tickers": "Tickers",
             }
-        )[["DIN", "Director", "Boards", "Tickers"]],
-        use_container_width=True,
+        )[["DIN", "Director", "Boards", "Tickers", "Tags"]],
+        width="stretch",
         hide_index=True,
     )
 
@@ -643,6 +675,17 @@ def _render_shared_tab(
         seats = seats[
             seats["ticker"].astype(str).str.upper().isin(scope_tickers)
         ].reset_index(drop=True)
+    if not seats.empty:
+        def _seat_tag(row) -> str:
+            m = safe_str(row.get("market")).upper()
+            t = safe_str(row.get("ticker")).upper()
+            if t in sme_set or m == "NSE SME":
+                return "SME"
+            if m == "NSE":
+                return "NSE"
+            return m or "—"
+        seats = seats.copy()
+        seats["Tag"] = seats.apply(_seat_tag, axis=1)
     st.dataframe(
         seats.rename(
             columns={
@@ -653,8 +696,8 @@ def _render_shared_tab(
                 "source": "Source",
                 "as_of": "As of",
             }
-        )[["Ticker", "Company", "Role", "Category", "As of", "Source"]],
-        use_container_width=True,
+        )[["Ticker", "Company", "Tag", "Role", "Category", "As of", "Source"]],
+        width="stretch",
         hide_index=True,
     )
 

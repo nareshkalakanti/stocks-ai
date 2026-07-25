@@ -10,7 +10,8 @@ import pandas as pd
 from stocks.dashboards.expand_panel_html import EXPAND_PANEL_CSS, EXPAND_PANEL_JS
 from stocks.dashboards.report_html import _REPORT_CSS
 from stocks.shared.corp_tags import corp_tags_dict_for_ticker
-from stocks.shared.links import attach_research_links, screener_url, tradingview_url
+from stocks.shared.links import attach_research_links, research_links, resolve_listing_market
+from stocks.core.text_utils import sanitize_website
 from stocks.shared.stock_notes import attach_stock_notes, sync_stock_notes_from_file
 from stocks.market.google_news import attach_google_news_to_rows
 from stocks.core.json_utils import json_dumps, json_safe_obj, json_safe_scalar
@@ -252,10 +253,7 @@ def rows_for_json(df: pd.DataFrame, *, extra_cols: tuple[str, ...] = ()) -> list
     if df.empty:
         return []
     sync_stock_notes_from_file()
-    work = attach_stock_notes(
-        attach_research_links(df) if "tv_link" not in df.columns else df.copy(),
-        sync_file=False,
-    )
+    work = attach_stock_notes(attach_research_links(df), sync_file=False)
     mcap_map, metrics_map, pead_map = _load_expand_metric_maps(work)
     rows: list[dict] = []
     base_cols = (
@@ -281,20 +279,21 @@ def rows_for_json(df: pd.DataFrame, *, extra_cols: tuple[str, ...] = ()) -> list
     ) + extra_cols
     for _, row in work.iterrows():
         ticker = safe_str(row.get("ticker"))
-        market = safe_str(row.get("market")) or None
+        market = resolve_listing_market(ticker, safe_str(row.get("market")) or None)
+        sc_url, tv_url = research_links(ticker, market)
         item = {
             "ticker": ticker,
             "name": safe_str(row.get("name")),
             "market": market,
             "sector": safe_str(row.get("sector")),
             **corp_tags_dict_for_ticker(ticker),
-            "sc": row.get("screener_link") or screener_url(ticker, market),
-            "tv": row.get("tv_link") or tradingview_url(ticker, market),
+            "sc": sc_url,
+            "tv": tv_url,
         }
         snapshot = row.get("snapshot")
-        web = safe_str(row.get("website"))
+        web = sanitize_website(row.get("website"))
         if not web and isinstance(snapshot, dict):
-            web = safe_str(snapshot.get("website"))
+            web = sanitize_website(snapshot.get("website"))
         if web:
             item["website"] = web
         row_mcap = _resolve_row_mcap(
@@ -360,12 +359,14 @@ def prepare_interactive_report_df(
     out = attach_research_links(out)
     if "website" not in out.columns:
         out["website"] = None
+    if "snapshot" not in out.columns:
+        return out
     for idx in out.index:
         if safe_str(out.at[idx, "website"]):
             continue
         snap = out.at[idx, "snapshot"]
         if isinstance(snap, dict):
-            web = safe_str(snap.get("website"))
+            web = sanitize_website(snap.get("website"))
             if web:
                 out.at[idx, "website"] = web
     return out

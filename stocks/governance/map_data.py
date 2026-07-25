@@ -12,7 +12,7 @@ from stocks.core.database import (
     load_market_cap_from_db,
     save_market_cap_to_db,
 )
-from stocks.core.text_utils import safe_str
+from stocks.core.text_utils import safe_str, sanitize_website
 from stocks.governance.db import get_governance_connection, init_governance_db
 from stocks.governance.score import mcap_cap_code, mcap_cap_label, score_director_seats
 from stocks.market.company_profile import _WEBSITE_OVERRIDES, merge_company_profile
@@ -22,7 +22,7 @@ from stocks.shared.corp_tags import (
     holdings_ticker_set,
     nse_sme_ticker_set,
 )
-from stocks.shared.links import screener_url, tradingview_url
+from stocks.shared.links import research_links
 
 # Screener backfill per map build (cached after first success).
 DEFAULT_PROFILE_HYDRATE = 60
@@ -233,6 +233,24 @@ def _load_multi_board_seats(*, min_boards: int = 2) -> pd.DataFrame:
     return pd.DataFrame([dict(r) for r in rows])
 
 
+def _sme_main_counts(
+    companies: list[dict[str, Any]],
+    *,
+    sme_tickers: set[str],
+) -> tuple[int, int, bool]:
+    sme_n = 0
+    main_n = 0
+    for company in companies:
+        ticker = safe_str(company.get("ticker")).upper()
+        if not ticker:
+            continue
+        if company.get("is_sme") or ticker in sme_tickers:
+            sme_n += 1
+        elif safe_str(company.get("market")).upper() == "NSE":
+            main_n += 1
+    return sme_n, main_n, sme_n >= 1 and main_n >= 1
+
+
 def build_governance_map_rows(
     *,
     min_boards: int = 2,
@@ -279,8 +297,9 @@ def build_governance_map_rows(
             profile = profiles.get(ticker) or {}
             override = _WEBSITE_OVERRIDES.get(ticker)
             mcap = mcaps.get(ticker)
-            website = safe_str(override) or safe_str(profile.get("website")) or None
+            website = sanitize_website(safe_str(override) or safe_str(profile.get("website")) or None)
             about = safe_str(profile.get("long_description")) or None
+            sc_url, tv_url = research_links(ticker, market)
             companies.append(
                 {
                     "ticker": ticker,
@@ -297,8 +316,10 @@ def build_governance_map_rows(
                     "about": about,
                     "is_holding": ticker in holding_tickers,
                     "is_sme": ticker in sme_tickers,
-                    "sc": screener_url(ticker, market),
-                    "tv": tradingview_url(ticker, market),
+                    "is_main": ticker not in sme_tickers
+                    and safe_str(seat.get("market")).upper() == "NSE",
+                    "sc": sc_url,
+                    "tv": tv_url,
                 }
             )
 
@@ -312,6 +333,7 @@ def build_governance_map_rows(
             person_id=str(person_id),
             din=din,
         )
+        sme_n, main_n, sme_cross = _sme_main_counts(companies, sme_tickers=sme_tickers)
         tickers_label = ", ".join(c["ticker"] for c in companies)
         rows.append(
             {
@@ -326,6 +348,9 @@ def build_governance_map_rows(
                 "big_n": scored["big_n"],
                 "small_n": scored["small_n"],
                 "bridge": scored["bridge"],
+                "sme_n": sme_n,
+                "main_n": main_n,
+                "sme_cross": sme_cross,
                 "tickers": tickers_label,
                 "companies": companies,
                 "score_breakdown": scored,
@@ -418,6 +443,10 @@ def filter_governance_map_by_mcap(
         updated["big_n"] = scored["big_n"]
         updated["small_n"] = scored["small_n"]
         updated["bridge"] = scored["bridge"]
+        sme_n, main_n, sme_cross = _sme_main_counts(kept, sme_tickers=nse_sme_ticker_set())
+        updated["sme_n"] = sme_n
+        updated["main_n"] = main_n
+        updated["sme_cross"] = sme_cross
         updated["score_breakdown"] = scored
         rows.append(updated)
 

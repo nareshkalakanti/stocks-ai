@@ -1,8 +1,11 @@
 import hashlib
 import json
 import sqlite3
+import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -17,6 +20,32 @@ from stocks.core.config import (
     STOCKS_CACHE_HOURS,
 )
 from stocks.core.text_utils import safe_str
+
+_SQLITE_TIMEOUT = 30.0
+_init_lock = threading.Lock()
+_db_initialized_path: Path | None = None
+_write_lock = threading.Lock()
+
+
+def _configure_sqlite(conn: sqlite3.Connection) -> None:
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA busy_timeout=30000")
+    conn.execute("PRAGMA foreign_keys=ON")
+
+
+def _commit_with_retry(conn: sqlite3.Connection, *, attempts: int = 6) -> None:
+    for attempt in range(attempts):
+        try:
+            conn.commit()
+            return
+        except sqlite3.OperationalError as exc:
+            msg = str(exc).lower()
+            if "locked" not in msg and "busy" not in msg:
+                raise
+            if attempt >= attempts - 1:
+                raise
+            time.sleep(min(0.25, 0.02 * (2**attempt)))
 
 
 def _utc_now() -> str:
@@ -44,16 +73,33 @@ def _is_fresh(fetched_at: str | None, max_hours: int) -> bool:
 @contextmanager
 def get_connection():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=_SQLITE_TIMEOUT)
     conn.row_factory = sqlite3.Row
+    _configure_sqlite(conn)
     try:
         yield conn
-        conn.commit()
+        _commit_with_retry(conn)
     finally:
         conn.close()
 
 
+def ensure_db() -> None:
+    """Initialize schema once per process (safe under Streamlit reruns)."""
+    init_db()
+
+
 def init_db() -> None:
+    global _db_initialized_path
+    if _db_initialized_path == DB_PATH:
+        return
+    with _init_lock:
+        if _db_initialized_path == DB_PATH:
+            return
+        _init_db_schema()
+        _db_initialized_path = DB_PATH
+
+
+def _init_db_schema() -> None:
     with get_connection() as conn:
         conn.executescript(
             """
@@ -1875,42 +1921,43 @@ def save_company_profile_cache(rows: list[dict]) -> None:
         return
     init_db()
     now = _utc_now()
-    with get_connection() as conn:
-        for row in rows:
-            ticker = str(row.get("ticker", "")).strip().upper()
-            if not ticker:
-                continue
-            conn.execute(
-                """
-                INSERT INTO company_profile_cache (
-                    ticker, market, website, long_description, company_sector,
-                    company_industry, headquarters, employees, source, fetched_at
+    with _write_lock:
+        with get_connection() as conn:
+            for row in rows:
+                ticker = str(row.get("ticker", "")).strip().upper()
+                if not ticker:
+                    continue
+                conn.execute(
+                    """
+                    INSERT INTO company_profile_cache (
+                        ticker, market, website, long_description, company_sector,
+                        company_industry, headquarters, employees, source, fetched_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(ticker) DO UPDATE SET
+                        market=excluded.market,
+                        website=excluded.website,
+                        long_description=excluded.long_description,
+                        company_sector=excluded.company_sector,
+                        company_industry=excluded.company_industry,
+                        headquarters=excluded.headquarters,
+                        employees=excluded.employees,
+                        source=excluded.source,
+                        fetched_at=excluded.fetched_at
+                    """,
+                    (
+                        ticker,
+                        row.get("market"),
+                        row.get("website"),
+                        row.get("long_description"),
+                        row.get("company_sector"),
+                        row.get("company_industry"),
+                        row.get("headquarters"),
+                        row.get("employees"),
+                        row.get("source"),
+                        now,
+                    ),
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(ticker) DO UPDATE SET
-                    market=excluded.market,
-                    website=excluded.website,
-                    long_description=excluded.long_description,
-                    company_sector=excluded.company_sector,
-                    company_industry=excluded.company_industry,
-                    headquarters=excluded.headquarters,
-                    employees=excluded.employees,
-                    source=excluded.source,
-                    fetched_at=excluded.fetched_at
-                """,
-                (
-                    ticker,
-                    row.get("market"),
-                    row.get("website"),
-                    row.get("long_description"),
-                    row.get("company_sector"),
-                    row.get("company_industry"),
-                    row.get("headquarters"),
-                    row.get("employees"),
-                    row.get("source"),
-                    now,
-                ),
-            )
 
 
 def load_google_news_cache(

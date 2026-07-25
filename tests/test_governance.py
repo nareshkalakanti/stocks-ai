@@ -483,9 +483,72 @@ def test_governance_map_rows(tmp_path, monkeypatch):
     assert 'data-hold="HOLD"' in html_out
     assert "govmap-sme-filter" in html_out
     assert 'data-sme="SME"' in html_out
+    assert "govmap-cross-filter" in html_out
+    assert 'data-cross="CROSS"' in html_out
     assert "capFilter" in html_out
     assert "holdFilter" in html_out
     assert "smeFilter" in html_out
+    assert "smeCrossFilter" in html_out
     assert "displayCompanies" in html_out
     assert "matchingCompanies" in html_out
     assert "filter-hit" in html_out
+
+
+def test_governance_map_sme_cross(tmp_path, monkeypatch):
+    from stocks.governance.map_data import build_governance_map_rows
+
+    db_path = tmp_path / "governance_sme_cross.db"
+    monkeypatch.setattr("stocks.governance.db.GOVERNANCE_DB_PATH", db_path)
+    monkeypatch.setattr(
+        "stocks.governance.map_data.load_market_cap_from_db",
+        lambda tickers: pd.DataFrame(),
+    )
+    monkeypatch.setattr(
+        "stocks.governance.map_data.load_company_profiles_from_db",
+        lambda tickers: {},
+    )
+    monkeypatch.setattr(
+        "stocks.governance.map_data.nse_sme_ticker_set",
+        lambda: {"SME001"},
+    )
+
+    save_company_board(
+        ticker="MAIN001",
+        name="Main Co",
+        market="NSE",
+        seats=[
+            {
+                "din": "00008800",
+                "name": "Cross Director",
+                "designation": "Director",
+                "source": "test",
+            }
+        ],
+        protect_din_board=False,
+    )
+    save_company_board(
+        ticker="SME001",
+        name="SME Co",
+        market="NSE SME",
+        seats=[
+            {
+                "din": "00008800",
+                "name": "Cross Director",
+                "designation": "Director",
+                "source": "test",
+            }
+        ],
+        protect_din_board=False,
+    )
+
+    rows = build_governance_map_rows(
+        min_boards=2, hydrate_profiles=False, hydrate_mcaps=False
+    )
+    assert len(rows) == 1
+    row = rows.iloc[0]
+    assert bool(row["sme_cross"]) is True
+    assert int(row["sme_n"]) == 1
+    assert int(row["main_n"]) == 1
+    by_ticker = {c["ticker"]: c for c in row["companies"]}
+    assert by_ticker["SME001"]["is_sme"] is True
+    assert by_ticker["MAIN001"]["is_main"] is True
