@@ -552,7 +552,7 @@ def _render_company_tab(
     din_n = int(show["DIN"].astype(str).str.strip().ne("").sum())
     st.caption(
         f"**{choice}** board · {din_n}/{len(show)} seats with DIN "
-        f"(blank DIN = name-only / incomplete filing)"
+        "(blank DIN = name-only / incomplete filing)"
     )
     st.dataframe(
         show.rename(

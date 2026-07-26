@@ -23,10 +23,15 @@ from stocks.shared.corp_tags import (
     nse_sme_ticker_set,
 )
 from stocks.shared.links import research_links
+from stocks.market.shareholding import (
+    hydrate_public_holders_for_tickers,
+    public_holders_for_tickers,
+)
 
 # Screener backfill per map build (cached after first success).
 DEFAULT_PROFILE_HYDRATE = 60
 DEFAULT_MCAP_HYDRATE = 40
+DEFAULT_PUBLIC_HOLDER_HYDRATE = 25
 PROFILE_HYDRATE_WORKERS = 4
 
 
@@ -183,6 +188,17 @@ def missing_profile_tickers(ticker_markets: list[tuple[str, str]]) -> list[str]:
     return [t for t in tickers if _profile_incomplete(profiles.get(t))]
 
 
+def missing_public_holder_tickers(tickers: list[str]) -> list[str]:
+    """Map tickers not yet scanned for named public >1% holders."""
+    from stocks.core.database import load_shareholding_holder_scan_tickers
+
+    keys = sorted({safe_str(t).upper() for t in tickers if safe_str(t)})
+    if not keys:
+        return []
+    have = load_shareholding_holder_scan_tickers(keys)
+    return [t for t in keys if t not in have]
+
+
 def map_company_ticker_markets(*, min_boards: int = 2) -> list[tuple[str, str]]:
     """All (ticker, market) pairs from multi-board seats (duplicates kept for frequency)."""
     seats = _load_multi_board_seats(min_boards=min_boards)
@@ -292,6 +308,8 @@ def build_governance_map_rows(
     hydrate_max: int = DEFAULT_PROFILE_HYDRATE,
     hydrate_mcaps: bool = True,
     hydrate_mcap_max: int = DEFAULT_MCAP_HYDRATE,
+    hydrate_public_holders: bool = True,
+    hydrate_public_holder_max: int = DEFAULT_PUBLIC_HOLDER_HYDRATE,
 ) -> pd.DataFrame:
     """
     One row per director on ``min_boards``+ companies.
@@ -312,11 +330,16 @@ def build_governance_map_rows(
     tickers = sorted(
         {safe_str(t).upper() for t in seats_df["ticker"].tolist() if safe_str(t)}
     )
+    if hydrate_public_holders and hydrate_public_holder_max > 0:
+        hydrate_public_holders_for_tickers(
+            tickers, max_fetch=hydrate_public_holder_max
+        )
     mcaps = _mcap_map(tickers)
     profiles = _apply_profile_overrides(load_company_profiles_from_db(tickers))
     clear_corp_tags_cache()
     holding_tickers = holdings_ticker_set()
     sme_tickers = nse_sme_ticker_set()
+    public_holders_by = public_holders_for_tickers(tickers)
 
     rows: list[dict[str, Any]] = []
     for person_id, grp in seats_df.groupby("person_id", sort=False):
@@ -352,6 +375,7 @@ def build_governance_map_rows(
                     "is_sme": ticker in sme_tickers,
                     "is_main": ticker not in sme_tickers
                     and safe_str(seat.get("market")).upper() == "NSE",
+                    "public_holders": public_holders_by.get(ticker) or [],
                     "sc": sc_url,
                     "tv": tv_url,
                 }

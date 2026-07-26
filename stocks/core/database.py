@@ -480,6 +480,25 @@ def _init_db_schema() -> None:
             CREATE INDEX IF NOT EXISTS idx_shareholding_qtr_quarter
                 ON shareholding_qtr(quarter_end);
 
+            CREATE TABLE IF NOT EXISTS shareholding_holders (
+                ticker TEXT NOT NULL,
+                quarter_end TEXT NOT NULL,
+                holder_name TEXT NOT NULL,
+                holder_pct REAL NOT NULL,
+                category TEXT,
+                fetched_at TEXT NOT NULL,
+                PRIMARY KEY (ticker, quarter_end, holder_name)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_shareholding_holders_ticker
+                ON shareholding_holders(ticker);
+
+            CREATE TABLE IF NOT EXISTS shareholding_holder_scan (
+                ticker TEXT PRIMARY KEY,
+                quarter_end TEXT,
+                fetched_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS index_constituents (
                 index_id TEXT NOT NULL,
                 ticker TEXT NOT NULL,
@@ -1914,6 +1933,127 @@ def latest_shareholding_quarter() -> str | None:
     if not row or row["q"] is None:
         return None
     return str(row["q"])
+
+
+def save_shareholding_holders(
+    ticker: str,
+    quarter_end: str,
+    holders: list[dict],
+) -> None:
+    """Replace named public holders for a ticker's quarter and mark scan done."""
+    ticker_key = safe_str(ticker).upper()
+    quarter = safe_str(quarter_end)
+    if not ticker_key or not quarter:
+        return
+    init_db()
+    now = _utc_now()
+    with get_connection() as conn:
+        conn.execute(
+            "DELETE FROM shareholding_holders WHERE ticker = ?",
+            (ticker_key,),
+        )
+        for row in holders or []:
+            name = safe_str(row.get("name") or row.get("holder_name"))
+            if not name:
+                continue
+            try:
+                pct = float(row.get("pct") if row.get("pct") is not None else row.get("holder_pct"))
+            except (TypeError, ValueError):
+                continue
+            if pct != pct or pct < 0:
+                continue
+            conn.execute(
+                """
+                INSERT INTO shareholding_holders (
+                    ticker, quarter_end, holder_name, holder_pct, category, fetched_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(ticker, quarter_end, holder_name) DO UPDATE SET
+                    holder_pct=excluded.holder_pct,
+                    category=excluded.category,
+                    fetched_at=excluded.fetched_at
+                """,
+                (
+                    ticker_key,
+                    quarter,
+                    name,
+                    round(pct, 4),
+                    safe_str(row.get("category")) or None,
+                    now,
+                ),
+            )
+        conn.execute(
+            """
+            INSERT INTO shareholding_holder_scan (ticker, quarter_end, fetched_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(ticker) DO UPDATE SET
+                quarter_end=excluded.quarter_end,
+                fetched_at=excluded.fetched_at
+            """,
+            (ticker_key, quarter, now),
+        )
+
+
+def load_shareholding_holder_scan_tickers(tickers: list[str]) -> set[str]:
+    """Tickers already scanned for named public holders."""
+    keys = sorted({safe_str(t).upper() for t in tickers if safe_str(t)})
+    if not keys:
+        return set()
+    init_db()
+    placeholders = ",".join("?" for _ in keys)
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT ticker FROM shareholding_holder_scan
+            WHERE ticker IN ({placeholders})
+            """,
+            keys,
+        ).fetchall()
+    return {safe_str(r["ticker"]).upper() for r in rows if safe_str(r["ticker"])}
+
+
+def load_shareholding_holders(
+    tickers: list[str],
+    *,
+    min_pct: float = 1.0,
+) -> dict[str, list[dict]]:
+    """Latest named holders per ticker (sorted by pct desc)."""
+    keys = sorted({safe_str(t).upper() for t in tickers if safe_str(t)})
+    if not keys:
+        return {}
+    init_db()
+    placeholders = ",".join("?" for _ in keys)
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT h.ticker, h.quarter_end, h.holder_name, h.holder_pct, h.category
+            FROM shareholding_holders h
+            INNER JOIN (
+                SELECT ticker, MAX(quarter_end) AS quarter_end
+                FROM shareholding_holders
+                WHERE ticker IN ({placeholders})
+                GROUP BY ticker
+            ) latest
+              ON latest.ticker = h.ticker
+             AND latest.quarter_end = h.quarter_end
+            WHERE h.holder_pct >= ?
+            ORDER BY h.ticker, h.holder_pct DESC, h.holder_name COLLATE NOCASE
+            """,
+            [*keys, float(min_pct)],
+        ).fetchall()
+    out: dict[str, list[dict]] = {}
+    for row in rows:
+        ticker = safe_str(row["ticker"]).upper()
+        if not ticker:
+            continue
+        out.setdefault(ticker, []).append(
+            {
+                "name": safe_str(row["holder_name"]),
+                "pct": float(row["holder_pct"]),
+                "category": safe_str(row["category"]) or None,
+                "quarter_end": safe_str(row["quarter_end"]) or None,
+            }
+        )
+    return out
 
 
 def save_company_profile_cache(rows: list[dict]) -> None:

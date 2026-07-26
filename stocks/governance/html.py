@@ -10,6 +10,7 @@ import pandas as pd
 from stocks.core.json_utils import json_dumps, json_safe_obj, json_safe_scalar
 from stocks.core.text_utils import safe_str
 from stocks.dashboards.report_html import _REPORT_CSS
+from stocks.market.shareholding import individual_holders_index
 
 
 GOVERNANCE_MAP_CSS = """
@@ -184,6 +185,43 @@ GOVERNANCE_MAP_CSS = """
     font-weight: 600;
   }
   .gov-co-links a:hover { background: #dbeafe; }
+  .gov-holder-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+    margin-top: 8px;
+  }
+  .gov-holder-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: #6b7280;
+    text-transform: uppercase;
+    margin-right: 2px;
+  }
+  .gov-tag-holder {
+    color: #374151;
+    background: #f3f4f6;
+    border: 1px solid #e5e7eb;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .gov-tag-holder:hover {
+    background: #e5e7eb;
+    border-color: #d1d5db;
+  }
+  button.gov-tag-holder {
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.4;
+    padding: 1px 7px;
+    border-radius: 4px;
+  }
   .gov-about {
     margin-top: 8px;
     color: #4b5563;
@@ -394,16 +432,6 @@ GOVERNANCE_MAP_CSS = """
     background: #dbeafe;
     color: #1d4ed8;
   }
-  .gov-sme-filter button[data-sme=""].active { background: #f3f4f6; }
-  .gov-sme-filter button[data-sme="SME"].active {
-    background: #ffedd5;
-    color: #9a3412;
-  }
-  .gov-cross-filter button[data-cross=""].active { background: #f3f4f6; }
-  .gov-cross-filter button[data-cross="CROSS"].active {
-    background: #ede9fe;
-    color: #6d28d9;
-  }
   .gov-role-tag {
     display: inline-block;
     font-size: 9px;
@@ -474,6 +502,10 @@ def build_governance_map_html(
 ) -> str:
     work = df.copy() if df is not None else pd.DataFrame()
     data_json = json_dumps(_rows_for_json(work), separators=(",", ":"))
+    holders_json = json_dumps(
+        individual_holders_index(min_pct=1.0, min_companies=1, limit=500),
+        separators=(",", ":"),
+    )
     cols_str = json.dumps(GOVERNANCE_MAP_COLS, separators=(",", ":"))
     initial = json.dumps(safe_str(initial_query))
     min_boards_js = max(2, int(min_boards))
@@ -486,12 +518,13 @@ def build_governance_map_html(
   <div class="fund-section-body">
     <div class="gov-toolbar">
       <input class="gov-search" id="govmap-search" type="search"
-        placeholder="Search ticker, company, director, or role…"
+        placeholder="Search ticker, director, or individual holder (e.g. Devabhaktuni)…"
         autocomplete="off" value={initial} />
       <div class="gov-mode" role="group" aria-label="View mode">
         <button type="button" id="govmap-mode-hub">By company</button>
         <button type="button" class="active" id="govmap-mode-dir">By director</button>
         <button type="button" id="govmap-mode-role">By role</button>
+        <button type="button" id="govmap-mode-holder">By holder</button>
       </div>
       <div class="gov-cap-filter" role="group" aria-label="Cap tag filter" id="govmap-cap-filter">
         <span class="gov-cap-filter-label">Cap</span>
@@ -506,16 +539,6 @@ def build_governance_map_html(
         <span class="gov-cap-filter-label">Holdings</span>
         <button type="button" class="active" data-hold="" title="Show all companies">All</button>
         <button type="button" data-hold="HOLD" title="Only directors with a Holdings company">Holding</button>
-      </div>
-      <div class="gov-cap-filter gov-sme-filter" role="group" aria-label="SME filter" id="govmap-sme-filter">
-        <span class="gov-cap-filter-label">SME</span>
-        <button type="button" class="active" data-sme="" title="Show all companies">All</button>
-        <button type="button" data-sme="SME" title="Directors with an NSE Emerge / SME seat (includes single-board scanned SME)">SME</button>
-      </div>
-      <div class="gov-cap-filter gov-cross-filter" role="group" aria-label="SME crossover filter" id="govmap-cross-filter">
-        <span class="gov-cap-filter-label">Cross</span>
-        <button type="button" class="active" data-cross="" title="Show all directors">All</button>
-        <button type="button" data-cross="CROSS" title="Directors on both NSE mainboard and NSE SME">SME↔Main</button>
       </div>
       <span class="gov-search-meta" id="govmap-count"></span>
     </div>
@@ -533,15 +556,14 @@ def build_governance_map_html(
 <script>
 (function() {{
   const DATA = {data_json};
+  const HOLDERS = {holders_json};
   const COLS = {cols_str};
   const MIN_BOARDS = {min_boards_js};
   let expanded = null;
   let searchQuery = {initial}.trim().toLowerCase();
-  let viewMode = "director"; // director | company | role
+  let viewMode = "director"; // director | company | role | holder
   let capFilter = ""; // "" | NC | MIC | SC | MC | LC
   let holdFilter = ""; // "" | HOLD
-  let smeFilter = ""; // "" | SME
-  let smeCrossFilter = ""; // "" | CROSS
   let sortCol = "dir_score";
   let sortDir = -1; // -1 = high→low (top), +1 = low→high
   const ROLE_FAMILIES = [
@@ -659,8 +681,54 @@ def build_governance_map_html(
       const t = String(c.ticker || "").toLowerCase();
       const n = String(c.name || "").toLowerCase();
       const m = String(c.market || "").toLowerCase();
-      return t.includes(q) || n.includes(q) || m.includes(q);
+      if (t.includes(q) || n.includes(q) || m.includes(q)) return true;
+      return (c.public_holders || []).some(h =>
+        String(h && h.name ? h.name : "").toLowerCase().includes(q)
+      );
     }});
+  }}
+  function resolveHolder() {{
+    if (!searchQuery || searchQuery.length < 3) return null;
+    const q = searchQuery;
+    const list = Array.isArray(HOLDERS) ? HOLDERS : [];
+    let exact = list.find(h =>
+      String(h.name_key || "") === q || String(h.name || "").toLowerCase() === q
+    );
+    if (exact) return exact;
+    const hits = list.filter(h =>
+      String(h.name_key || "").includes(q) ||
+      String(h.name || "").toLowerCase().includes(q)
+    );
+    if (hits.length === 1) return hits[0];
+    const multi = hits.filter(h => Number(h.company_count || 0) >= 2);
+    if (multi.length === 1) return multi[0];
+    // Prefer the best multi-company match when query is a distinctive surname.
+    if (multi.length > 1 && q.length >= 5) {{
+      multi.sort((a, b) => Number(b.company_count || 0) - Number(a.company_count || 0));
+      return multi[0];
+    }}
+    return null;
+  }}
+  function holderTickers(holder) {{
+    const out = new Set();
+    (holder && holder.holdings ? holder.holdings : []).forEach(h => {{
+      const t = String(h.ticker || "").toUpperCase();
+      if (t) out.add(t);
+    }});
+    return out;
+  }}
+  function sitsOnHolder(r, holder) {{
+    const ts = holderTickers(holder);
+    if (!ts.size) return false;
+    return (r.companies || []).some(c => ts.has(String(c.ticker || "").toUpperCase()));
+  }}
+  function focusHolder(name) {{
+    const raw = String(name || "").trim();
+    if (!raw) return;
+    searchQuery = raw.toLowerCase();
+    const searchEl = document.getElementById("govmap-search");
+    if (searchEl) searchEl.value = raw;
+    setViewMode("holder");
   }}
   function designationText(c) {{
     return String(c && c.designation ? c.designation : "").toLowerCase();
@@ -685,17 +753,40 @@ def build_governance_map_html(
     if (!holdFilter) return true;
     return !!c.is_holding;
   }}
-  function companyMatchesSme(c) {{
-    if (!smeFilter) return true;
-    return !!c.is_sme || String(c.market || "").toUpperCase() === "NSE SME";
+  function shortHolderName(name, maxLen) {{
+    const s = String(name || "").replace(/\\s+/g, " ").trim();
+    const n = maxLen || 28;
+    if (s.length <= n) return s;
+    return s.slice(0, Math.max(1, n - 1)).trimEnd() + "…";
+  }}
+  function publicHolderRow(c) {{
+    const holders = Array.isArray(c && c.public_holders) ? c.public_holders : [];
+    if (!holders.length) return "";
+    const tags = holders.slice(0, 12).map(h => {{
+      const name = String(h && h.name ? h.name : "").trim();
+      if (!name) return "";
+      const pct = h && h.pct != null && !isNaN(Number(h.pct))
+        ? Number(h.pct).toFixed(1) + "%"
+        : "";
+      const tip = esc(`${{name}}${{pct ? " · " + pct : ""}} · individual (public >1%) — click to open holder`);
+      const label = esc(shortHolderName(name) + (pct ? " " + pct : ""));
+      return `<button type="button" class="gov-tag gov-tag-holder" data-holder="${{esc(name)}}" title="${{tip}}">${{label}}</button>`;
+    }}).filter(Boolean);
+    if (!tags.length) return "";
+    return (
+      `<div class="gov-holder-row">` +
+      `<span class="gov-holder-label">Individuals &gt;1%</span>` +
+      tags.join("") +
+      `</div>`
+    );
   }}
   function companyMatchesFilters(c) {{
-    return companyMatchesCap(c) && companyMatchesHold(c) && companyMatchesSme(c);
+    return companyMatchesCap(c) && companyMatchesHold(c);
   }}
   function matchingCompanies(r) {{
     return (r.companies || []).filter(companyMatchesFilters);
   }}
-  /** Cap/Hold/SME filter which directors appear; always show full board in the row. */
+  /** Cap/Hold filter which directors appear; always show full board in the row. */
   function displayCompanies(r) {{
     const all = r.companies || [];
     if (!activeFilters()) return all;
@@ -708,19 +799,16 @@ def build_governance_map_html(
     return hits.concat(rest);
   }}
   function rowHasMatchingCompany(r) {{
-    if (smeCrossFilter === "CROSS" && !r.sme_cross) return false;
-    if (!capFilter && !holdFilter && !smeFilter) return true;
+    if (!capFilter && !holdFilter) return true;
     return matchingCompanies(r).length > 0;
   }}
   function activeFilters() {{
-    return !!(capFilter || holdFilter || smeFilter || smeCrossFilter);
+    return !!(capFilter || holdFilter);
   }}
   function filterBits() {{
     const bits = [];
     if (capFilter) bits.push(`Cap ${{capFilter}}`);
     if (holdFilter) bits.push("Holding");
-    if (smeFilter) bits.push("SME");
-    if (smeCrossFilter) bits.push("SME↔Main");
     return bits;
   }}
   function designationMatchesRole(desig, needle, family) {{
@@ -778,7 +866,17 @@ def build_governance_map_html(
   }}
   function filteredRows() {{
     let rows;
-    if (viewMode === "company") {{
+    const holder = resolveHolder();
+    if (viewMode === "holder") {{
+      if (holder) {{
+        rows = DATA.filter(r => sitsOnHolder(r, holder));
+      }} else if (searchQuery) {{
+        rows = DATA.filter(r => rowMatches(r, searchQuery));
+      }} else {{
+        rows = [];
+      }}
+      rows.sort(compareRows);
+    }} else if (viewMode === "company") {{
       const hub = resolveHub();
       rows = hub
         ? DATA.filter(r => sitsOnHub(r, hub))
@@ -791,29 +889,46 @@ def build_governance_map_html(
         rows = DATA.filter(hasRole);
         rows.sort(compareRoleRows);
       }}
+    }} else if (holder) {{
+      rows = DATA.filter(r => sitsOnHolder(r, holder));
+      rows.sort(compareRows);
     }} else {{
       rows = DATA.filter(r => rowMatches(r, searchQuery));
       rows.sort(compareRows);
     }}
-    if (capFilter || holdFilter || smeFilter) {{
+    if (capFilter || holdFilter) {{
       rows = rows.filter(rowHasMatchingCompany);
-    }} else if (
-      viewMode === "director"
-      && !searchQuery
-      && smeCrossFilter !== "CROSS"
-    ) {{
-      // Payload includes single-board SME directors for the SME filter / hub
-      // search; keep the default director list multi-board only.
+    }} else if (viewMode === "director" && !searchQuery) {{
+      // Payload may include single-board SME directors for hub search;
+      // keep the default director list multi-board only.
       rows = rows.filter(r => Number(r.board_count || 0) >= MIN_BOARDS);
-    }}
-    if (smeCrossFilter === "CROSS") {{
-      rows = rows.filter(r => !!r.sme_cross);
     }}
     return rows;
   }}
   function renderRoleChips() {{
     const wrap = document.getElementById("gov-role-chips");
     if (!wrap) return;
+    if (viewMode === "holder") {{
+      wrap.hidden = false;
+      const multi = (Array.isArray(HOLDERS) ? HOLDERS : [])
+        .filter(h => Number(h.company_count || 0) >= 2)
+        .slice(0, 40);
+      const active = resolveHolder();
+      if (!multi.length) {{
+        wrap.innerHTML =
+          `<span class="govhub-sub">No multi-company individual holders cached yet — use <strong>Fill individuals &gt;1%</strong>.</span>`;
+        return;
+      }}
+      wrap.innerHTML = multi.map(h => {{
+        const on = active && active.name_key === h.name_key;
+        const label = `${{h.name}} (${{h.company_count}})`;
+        return `<button type="button" class="gov-role-chip${{on ? " active" : ""}}" data-holder-chip="${{esc(h.name)}}">${{esc(label)}}</button>`;
+      }}).join("");
+      wrap.querySelectorAll("[data-holder-chip]").forEach(btn => {{
+        btn.onclick = () => focusHolder(btn.getAttribute("data-holder-chip"));
+      }});
+      return;
+    }}
     if (viewMode !== "role") {{
       wrap.hidden = true;
       wrap.innerHTML = "";
@@ -836,9 +951,43 @@ def build_governance_map_html(
       }};
     }});
   }}
+  function renderHolderHero(holder) {{
+    const el = document.getElementById("govhub-hero");
+    if (!el || !holder) return false;
+    const holdings = holder.holdings || [];
+    const tags = holdings.slice(0, 16).map(h => {{
+      const t = String(h.ticker || "");
+      const pct = h.pct != null && !isNaN(Number(h.pct)) ? Number(h.pct).toFixed(1) + "%" : "";
+      const cat = h.category ? String(h.category) : "Individual";
+      return `<span class="gov-tag gov-tag-holder" title="${{esc(cat)}}">${{esc(t)}}${{pct ? " " + esc(pct) : ""}}</span>`;
+    }}).join("");
+    el.innerHTML =
+      `<div class="govhub-hero"><div class="govhub-hero-top"><div>` +
+      `<div class="govhub-name">${{esc(holder.name)}}</div>` +
+      `<p class="govhub-sub">Public individual / NRI · ≥1% stakes (SHP) · click a company board below</p>` +
+      `<div class="gov-holder-row" style="margin-top:8px">` +
+      `<span class="gov-holder-label">Holdings</span>${{tags}}</div>` +
+      `</div><div class="govhub-stats">` +
+      `<div><b>${{holdings.length}}</b><span>cos ≥1%</span></div>` +
+      `</div></div></div>`;
+    return true;
+  }}
   function renderHubHero(rows) {{
     const el = document.getElementById("govhub-hero");
     if (!el) return;
+    const holder = resolveHolder();
+    if (holder && (viewMode === "holder" || viewMode === "director" || viewMode === "company")) {{
+      if (renderHolderHero(holder)) return;
+    }}
+    if (viewMode === "holder") {{
+      el.innerHTML =
+        `<div class="govhub-hero"><div class="govhub-sub">` +
+        (searchQuery
+          ? `No individual holder match for “${{esc(searchQuery)}}”. Try a surname (e.g. <strong>Devabhaktuni</strong>, <strong>Kacholia</strong>).`
+          : `Pick a chip or search an individual public holder — people with ≥1% in one or more cos (NRI / resident).`) +
+        `</div></div>`;
+      return;
+    }}
     if (viewMode === "role") {{
       const fam = activeRoleFamily();
       const label = fam ? fam.label : (roleNeedle() || "Role");
@@ -901,7 +1050,9 @@ def build_governance_map_html(
       `<a href="${{esc(hub.sc || "#")}}" target="_blank" rel="noopener noreferrer">SC</a>` +
       `<a href="${{esc(hub.tv || "#")}}" target="_blank" rel="noopener noreferrer">TV</a>` +
       webLink +
-      `</div></div><div class="govhub-stats">` +
+      `</div>` +
+      publicHolderRow(hub) +
+      `</div><div class="govhub-stats">` +
       `<div><b>${{rows.length}}</b><span>on map</span></div>` +
       `<div><b>${{mcapLabel}}</b><span>mcap</span></div>` +
       `</div></div></div>`;
@@ -909,6 +1060,8 @@ def build_governance_map_html(
   function renderCompanies(r) {{
     const hub = viewMode === "company" ? resolveHub() : null;
     const hubT = hub ? String(hub.ticker || "").toUpperCase() : "";
+    const activeHolder = resolveHolder();
+    const holderTs = activeHolder ? holderTickers(activeHolder) : null;
     const bd = r.score_breakdown || {{}};
     const roleN = viewMode === "role" ? roleSeatCount(r) : 0;
     const cosList = displayCompanies(r);
@@ -945,10 +1098,11 @@ def build_governance_map_html(
             : "")
         : `<div class="gov-about muted">No about text yet</div>`;
       const isHub = hubT && String(c.ticker || "").toUpperCase() === hubT;
+      const isHolderCo = !!(holderTs && holderTs.has(String(c.ticker || "").toUpperCase()));
       const isRole = viewMode === "role" && seatMatchesRole(c);
       const isFilterHit = activeFilters() && companyMatchesFilters(c);
       const isFilterMiss = activeFilters() && !companyMatchesFilters(c);
-      const highlight = isHub || isRole || isFilterHit || (searchQuery && viewMode !== "role" && (
+      const highlight = isHub || isHolderCo || isRole || isFilterHit || (searchQuery && viewMode !== "role" && (
         String(c.ticker || "").toLowerCase().includes(searchQuery) ||
         String(c.name || "").toLowerCase().includes(searchQuery)
       ));
@@ -965,10 +1119,11 @@ def build_governance_map_html(
       const coCls = [
         "gov-co",
         isRole ? "role-hit" : "",
+        isHolderCo ? "filter-hit" : "",
         isFilterHit ? "filter-hit" : "",
         isFilterMiss ? "filter-miss" : "",
       ].filter(Boolean).join(" ");
-      const coStyle = highlight && !isRole && !isFilterHit
+      const coStyle = highlight && !isRole && !isFilterHit && !isHolderCo
         ? ' style="border-color:#93c5fd;background:#f8fbff"'
         : "";
       return (
@@ -985,6 +1140,7 @@ def build_governance_map_html(
         `<a href="${{esc(c.tv || "#")}}" target="_blank" rel="noopener noreferrer">TV</a>` +
         webLink +
         `</div>` +
+        publicHolderRow(c) +
         aboutHtml +
         `</div>`
       );
@@ -1125,7 +1281,11 @@ def build_governance_map_html(
       const td = document.createElement("td");
       td.colSpan = COLS.length;
       let emptyMsg = `No directors match “${{esc(searchQuery)}}”.`;
-      if (viewMode === "company" && !searchQuery) {{
+      if (viewMode === "holder" && !searchQuery) {{
+        emptyMsg = "Pick a multi-company individual chip above, or search a surname (e.g. Devabhaktuni).";
+      }} else if (viewMode === "holder") {{
+        emptyMsg = `No map directors sit on holdings for “${{esc(searchQuery)}}” (holder may still show in the hero).`;
+      }} else if (viewMode === "company" && !searchQuery) {{
         emptyMsg = "Enter a ticker above to list multi-board directors on that stock.";
       }} else if (viewMode === "company" && hub) {{
         emptyMsg = `No map directors sit on ${{esc(hub.ticker)}}.`;
@@ -1183,17 +1343,26 @@ def build_governance_map_html(
         btn.textContent = collapsed ? "Show more" : "Show less";
       }};
     }});
+    tb.querySelectorAll("button[data-holder]").forEach(btn => {{
+      btn.onclick = (e) => {{
+        e.stopPropagation();
+        focusHolder(btn.getAttribute("data-holder"));
+      }};
+    }});
   }}
   function setViewMode(mode) {{
     if (mode === "company") viewMode = "company";
     else if (mode === "role") viewMode = "role";
+    else if (mode === "holder") viewMode = "holder";
     else viewMode = "director";
     const hubBtn = document.getElementById("govmap-mode-hub");
     const dirBtn = document.getElementById("govmap-mode-dir");
     const roleBtn = document.getElementById("govmap-mode-role");
+    const holderBtn = document.getElementById("govmap-mode-holder");
     if (hubBtn) hubBtn.classList.toggle("active", viewMode === "company");
     if (dirBtn) dirBtn.classList.toggle("active", viewMode === "director");
     if (roleBtn) roleBtn.classList.toggle("active", viewMode === "role");
+    if (holderBtn) holderBtn.classList.toggle("active", viewMode === "holder");
     const searchEl = document.getElementById("govmap-search");
     if (searchEl) {{
       searchEl.placeholder =
@@ -1201,7 +1370,9 @@ def build_governance_map_html(
           ? "Search role e.g. compliance, cfo, company secretary…"
           : viewMode === "company"
             ? "Search ticker or company name…"
-            : "Search ticker, company, or director…";
+            : viewMode === "holder"
+              ? "Search individual holder e.g. Devabhaktuni, Kacholia…"
+              : "Search ticker, director, or individual holder…";
     }}
     expanded = null;
     render();
@@ -1209,9 +1380,11 @@ def build_governance_map_html(
   const hubBtn = document.getElementById("govmap-mode-hub");
   const dirBtn = document.getElementById("govmap-mode-dir");
   const roleBtn = document.getElementById("govmap-mode-role");
+  const holderBtn = document.getElementById("govmap-mode-holder");
   if (hubBtn) hubBtn.onclick = () => setViewMode("company");
   if (dirBtn) dirBtn.onclick = () => setViewMode("director");
   if (roleBtn) roleBtn.onclick = () => setViewMode("role");
+  if (holderBtn) holderBtn.onclick = () => setViewMode("holder");
   const capFilterEl = document.getElementById("govmap-cap-filter");
   if (capFilterEl) {{
     capFilterEl.querySelectorAll("button[data-cap]").forEach(btn => {{
@@ -1241,48 +1414,29 @@ def build_governance_map_html(
       }};
     }});
   }}
-  const smeFilterEl = document.getElementById("govmap-sme-filter");
-  if (smeFilterEl) {{
-    smeFilterEl.querySelectorAll("button[data-sme]").forEach(btn => {{
-      btn.onclick = (e) => {{
-        e.stopPropagation();
-        smeFilter = String(btn.getAttribute("data-sme") || "").toUpperCase();
-        smeFilterEl.querySelectorAll("button[data-sme]").forEach(b => {{
-          b.classList.toggle(
-            "active",
-            String(b.getAttribute("data-sme") || "").toUpperCase() === smeFilter
-          );
-        }});
-        render();
-      }};
-    }});
-  }}
-  const crossFilterEl = document.getElementById("govmap-cross-filter");
-  if (crossFilterEl) {{
-    crossFilterEl.querySelectorAll("button[data-cross]").forEach(btn => {{
-      btn.onclick = (e) => {{
-        e.stopPropagation();
-        smeCrossFilter = String(btn.getAttribute("data-cross") || "").toUpperCase();
-        crossFilterEl.querySelectorAll("button[data-cross]").forEach(b => {{
-          b.classList.toggle(
-            "active",
-            String(b.getAttribute("data-cross") || "").toUpperCase() === smeCrossFilter
-          );
-        }});
-        render();
-      }};
-    }});
-  }}
   const searchEl = document.getElementById("govmap-search");
   if (searchEl) {{
     searchEl.oninput = (e) => {{
       searchQuery = String(e.target.value || "").trim().toLowerCase();
+      if (resolveHolder() && viewMode !== "role") {{
+        // Keep holder mode sticky when typing a person name.
+        if (viewMode === "holder" || searchQuery.length >= 5) viewMode = "holder";
+        const holderModeBtn = document.getElementById("govmap-mode-holder");
+        const hubModeBtn = document.getElementById("govmap-mode-hub");
+        const dirModeBtn = document.getElementById("govmap-mode-dir");
+        const roleModeBtn = document.getElementById("govmap-mode-role");
+        if (holderModeBtn) holderModeBtn.classList.toggle("active", viewMode === "holder");
+        if (hubModeBtn) hubModeBtn.classList.toggle("active", viewMode === "company");
+        if (dirModeBtn) dirModeBtn.classList.toggle("active", viewMode === "director");
+        if (roleModeBtn) roleModeBtn.classList.toggle("active", viewMode === "role");
+      }}
       render();
     }};
     if (searchQuery) searchEl.focus();
   }}
   // Open Gov Hub when Streamlit search already has a ticker-like query.
-  if (searchQuery && resolveHub()) setViewMode("company");
+  if (searchQuery && resolveHolder()) setViewMode("holder");
+  else if (searchQuery && resolveHub()) setViewMode("company");
   else render();
 }})();
 </script>

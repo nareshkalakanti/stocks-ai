@@ -481,14 +481,15 @@ def test_governance_map_rows(tmp_path, monkeypatch):
     assert 'data-cap="SC"' in html_out
     assert "govmap-hold-filter" in html_out
     assert 'data-hold="HOLD"' in html_out
-    assert "govmap-sme-filter" in html_out
-    assert 'data-sme="SME"' in html_out
-    assert "govmap-cross-filter" in html_out
-    assert 'data-cross="CROSS"' in html_out
+    assert "govmap-sme-filter" not in html_out
+    assert "govmap-cross-filter" not in html_out
     assert "capFilter" in html_out
     assert "holdFilter" in html_out
-    assert "smeFilter" in html_out
-    assert "smeCrossFilter" in html_out
+    assert "publicHolderRow" in html_out
+    assert "Individuals &gt;1%" in html_out
+    assert "govmap-mode-holder" in html_out
+    assert "resolveHolder" in html_out
+    assert "HOLDERS" in html_out
     assert "displayCompanies" in html_out
     assert "matchingCompanies" in html_out
     assert "filter-hit" in html_out
