@@ -23,15 +23,14 @@ from stocks.shared.corp_tags import (
     nse_sme_ticker_set,
 )
 from stocks.shared.links import research_links
-from stocks.market.shareholding import (
-    hydrate_public_holders_for_tickers,
-    public_holders_for_tickers,
+from stocks.shared.superstars.holdings import (
+    is_superstar_best_pick,
+    superstar_pead_map,
 )
 
 # Screener backfill per map build (cached after first success).
 DEFAULT_PROFILE_HYDRATE = 60
 DEFAULT_MCAP_HYDRATE = 40
-DEFAULT_PUBLIC_HOLDER_HYDRATE = 25
 PROFILE_HYDRATE_WORKERS = 4
 
 
@@ -188,15 +187,33 @@ def missing_profile_tickers(ticker_markets: list[tuple[str, str]]) -> list[str]:
     return [t for t in tickers if _profile_incomplete(profiles.get(t))]
 
 
-def missing_public_holder_tickers(tickers: list[str]) -> list[str]:
-    """Map tickers not yet scanned for named public >1% holders."""
-    from stocks.core.database import load_shareholding_holder_scan_tickers
+def _superstar_change_badge(change_type: Any, change_qtr: Any) -> str:
+    ct = safe_str(change_type).lower()
+    if ct == "new":
+        return "NEW"
+    if ct == "increased":
+        try:
+            return f"↑{float(change_qtr):+.2f}%" if change_qtr is not None else "↑"
+        except (TypeError, ValueError):
+            return "↑"
+    if ct == "decreased":
+        try:
+            return f"↓{float(change_qtr):+.2f}%" if change_qtr is not None else "↓"
+        except (TypeError, ValueError):
+            return "↓"
+    return ""
 
-    keys = sorted({safe_str(t).upper() for t in tickers if safe_str(t)})
-    if not keys:
-        return []
-    have = load_shareholding_holder_scan_tickers(keys)
-    return [t for t in keys if t not in have]
+
+def _superstar_tags(holders: list[dict] | None) -> list[dict[str, Any]]:
+    """Compact superstar investor tags for company cards."""
+    out: list[dict[str, Any]] = []
+    for h in holders or []:
+        name = safe_str(h.get("investor"))
+        if not name:
+            continue
+        badge = _superstar_change_badge(h.get("change_type"), h.get("change_qtr"))
+        out.append({"name": name, "badge": badge or None})
+    return out
 
 
 def map_company_ticker_markets(*, min_boards: int = 2) -> list[tuple[str, str]]:
@@ -308,8 +325,6 @@ def build_governance_map_rows(
     hydrate_max: int = DEFAULT_PROFILE_HYDRATE,
     hydrate_mcaps: bool = True,
     hydrate_mcap_max: int = DEFAULT_MCAP_HYDRATE,
-    hydrate_public_holders: bool = True,
-    hydrate_public_holder_max: int = DEFAULT_PUBLIC_HOLDER_HYDRATE,
 ) -> pd.DataFrame:
     """
     One row per director on ``min_boards``+ companies.
@@ -330,16 +345,12 @@ def build_governance_map_rows(
     tickers = sorted(
         {safe_str(t).upper() for t in seats_df["ticker"].tolist() if safe_str(t)}
     )
-    if hydrate_public_holders and hydrate_public_holder_max > 0:
-        hydrate_public_holders_for_tickers(
-            tickers, max_fetch=hydrate_public_holder_max
-        )
     mcaps = _mcap_map(tickers)
     profiles = _apply_profile_overrides(load_company_profiles_from_db(tickers))
     clear_corp_tags_cache()
     holding_tickers = holdings_ticker_set()
     sme_tickers = nse_sme_ticker_set()
-    public_holders_by = public_holders_for_tickers(tickers)
+    ss_by = superstar_pead_map(tickers)
 
     rows: list[dict[str, Any]] = []
     for person_id, grp in seats_df.groupby("person_id", sort=False):
@@ -357,6 +368,8 @@ def build_governance_map_rows(
             website = sanitize_website(safe_str(override) or safe_str(profile.get("website")) or None)
             about = safe_str(profile.get("long_description")) or None
             sc_url, tv_url = research_links(ticker, market)
+            ss = ss_by.get(ticker) or {}
+            ss_holders = list(ss.get("ss_holders") or [])
             companies.append(
                 {
                     "ticker": ticker,
@@ -375,7 +388,9 @@ def build_governance_map_rows(
                     "is_sme": ticker in sme_tickers,
                     "is_main": ticker not in sme_tickers
                     and safe_str(seat.get("market")).upper() == "NSE",
-                    "public_holders": public_holders_by.get(ticker) or [],
+                    "superstars": _superstar_tags(ss_holders),
+                    "ss_best": bool(ss.get("ss_best"))
+                    or is_superstar_best_pick(ss_holders),
                     "sc": sc_url,
                     "tv": tv_url,
                 }

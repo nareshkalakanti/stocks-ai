@@ -485,11 +485,10 @@ def test_governance_map_rows(tmp_path, monkeypatch):
     assert "govmap-cross-filter" not in html_out
     assert "capFilter" in html_out
     assert "holdFilter" in html_out
-    assert "publicHolderRow" in html_out
-    assert "Individuals &gt;1%" in html_out
-    assert "govmap-mode-holder" in html_out
-    assert "resolveHolder" in html_out
-    assert "HOLDERS" in html_out
+    assert "publicHolderRow" not in html_out
+    assert "govmap-mode-holder" not in html_out
+    assert "superstarRow" in html_out
+    assert "Superstars" in html_out
     assert "displayCompanies" in html_out
     assert "matchingCompanies" in html_out
     assert "filter-hit" in html_out
