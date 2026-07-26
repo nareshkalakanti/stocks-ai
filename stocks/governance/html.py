@@ -82,10 +82,6 @@ GOVERNANCE_MAP_CSS = """
     color: #9a3412;
     background: #ffedd5;
   }
-  .gov-tag-main {
-    color: #1e40af;
-    background: #dbeafe;
-  }
   .gov-tag-cross {
     color: #6d28d9;
     background: #ede9fe;
@@ -474,11 +470,13 @@ def build_governance_map_html(
     title: str = "Governance Map",
     standalone: bool = True,
     initial_query: str = "",
+    min_boards: int = 2,
 ) -> str:
     work = df.copy() if df is not None else pd.DataFrame()
     data_json = json_dumps(_rows_for_json(work), separators=(",", ":"))
     cols_str = json.dumps(GOVERNANCE_MAP_COLS, separators=(",", ":"))
     initial = json.dumps(safe_str(initial_query))
+    min_boards_js = max(2, int(min_boards))
     section = f"""
 <details class="fund-section" open id="govmap-wrap">
   <summary>
@@ -512,7 +510,7 @@ def build_governance_map_html(
       <div class="gov-cap-filter gov-sme-filter" role="group" aria-label="SME filter" id="govmap-sme-filter">
         <span class="gov-cap-filter-label">SME</span>
         <button type="button" class="active" data-sme="" title="Show all companies">All</button>
-        <button type="button" data-sme="SME" title="Only directors with an NSE Emerge / SME company">SME</button>
+        <button type="button" data-sme="SME" title="Directors with an NSE Emerge / SME seat (includes single-board scanned SME)">SME</button>
       </div>
       <div class="gov-cap-filter gov-cross-filter" role="group" aria-label="SME crossover filter" id="govmap-cross-filter">
         <span class="gov-cap-filter-label">Cross</span>
@@ -536,6 +534,7 @@ def build_governance_map_html(
 (function() {{
   const DATA = {data_json};
   const COLS = {cols_str};
+  const MIN_BOARDS = {min_boards_js};
   let expanded = null;
   let searchQuery = {initial}.trim().toLowerCase();
   let viewMode = "director"; // director | company | role
@@ -796,7 +795,20 @@ def build_governance_map_html(
       rows = DATA.filter(r => rowMatches(r, searchQuery));
       rows.sort(compareRows);
     }}
-    if (capFilter || holdFilter || smeFilter) rows = rows.filter(rowHasMatchingCompany);
+    if (capFilter || holdFilter || smeFilter) {{
+      rows = rows.filter(rowHasMatchingCompany);
+    }} else if (
+      viewMode === "director"
+      && !searchQuery
+      && smeCrossFilter !== "CROSS"
+    ) {{
+      // Payload includes single-board SME directors for the SME filter / hub
+      // search; keep the default director list multi-board only.
+      rows = rows.filter(r => Number(r.board_count || 0) >= MIN_BOARDS);
+    }}
+    if (smeCrossFilter === "CROSS") {{
+      rows = rows.filter(r => !!r.sme_cross);
+    }}
     return rows;
   }}
   function renderRoleChips() {{
@@ -946,9 +958,6 @@ def build_governance_map_html(
       const smeTag = c.is_sme
         ? `<span class="gov-co-tags"><span class="gov-tag gov-tag-sme" title="NSE Emerge / SME listing">SME</span></span>`
         : "";
-      const mainTag = c.is_main
-        ? `<span class="gov-co-tags"><span class="gov-tag gov-tag-main" title="NSE mainboard listing">NSE</span></span>`
-        : "";
       const capCode = String(c.cap_code || "").toUpperCase();
       const capTag = capCode
         ? `<span class="gov-co-tags"><span class="gov-cap-tag gov-cap-${{capCode.toLowerCase()}}" title="${{esc(c.cap_label || capCode)}}">${{esc(capCode)}}</span></span>`
@@ -966,7 +975,7 @@ def build_governance_map_html(
         `<div class="${{coCls}}"${{coStyle}}>` +
         `<div class="gov-co-top">` +
         `<div>` +
-        `<div class="gov-co-name">${{esc(c.name || c.ticker)}}${{capTag}}${{mainTag}}${{smeTag}}${{holdTag}}</div>` +
+        `<div class="gov-co-name">${{esc(c.name || c.ticker)}}${{capTag}}${{smeTag}}${{holdTag}}</div>` +
         `<div class="gov-co-sub">${{esc(c.ticker)}} · ${{esc(c.market || "")}} · ${{esc(c.designation || "Director")}}</div>` +
         `</div>` +
         `<div class="gov-co-mcap">${{fmtMcap(c.market_cap_cr)}}</div>` +
@@ -1006,8 +1015,6 @@ def build_governance_map_html(
         }}
         if (c.is_sme) {{
           tags.push(`<span class="gov-tag gov-tag-sme" title="NSE Emerge / SME listing">SME</span>`);
-        }} else if (c.is_main) {{
-          tags.push(`<span class="gov-tag gov-tag-main" title="NSE mainboard listing">NSE</span>`);
         }}
         if (c.is_holding) {{
           tags.push(`<span class="gov-tag gov-tag-hold" title="In your Holdings">Holding</span>`);

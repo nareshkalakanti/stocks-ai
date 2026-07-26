@@ -197,12 +197,53 @@ def map_company_ticker_markets(*, min_boards: int = 2) -> list[tuple[str, str]]:
     return out
 
 
-def _load_multi_board_seats(*, min_boards: int = 2) -> pd.DataFrame:
+def _load_multi_board_seats(
+    *,
+    min_boards: int = 2,
+    include_sme_singles: bool = True,
+) -> pd.DataFrame:
+    """
+    Seats for map directors.
+
+    Always includes people on ``min_boards``+ NSE/NSE SME companies. When
+    ``include_sme_singles`` is True, also includes anyone seated on an NSE SME
+    company (so the SME filter and company-hub search can find scanned Emerge
+    names that do not yet share a director with another mapped board).
+    """
     init_governance_db()
     min_boards = max(2, int(min_boards))
+    if include_sme_singles:
+        person_clause = """
+              AND d.person_id IN (
+                SELECT s2.person_id
+                FROM board_seats s2
+                JOIN companies c2 ON c2.ticker = s2.ticker
+                WHERE UPPER(c2.market) IN ('NSE', 'NSE SME')
+                GROUP BY s2.person_id
+                HAVING COUNT(DISTINCT s2.ticker) >= ?
+                UNION
+                SELECT s3.person_id
+                FROM board_seats s3
+                JOIN companies c3 ON c3.ticker = s3.ticker
+                WHERE UPPER(c3.market) = 'NSE SME'
+              )
+            """
+        params: tuple[Any, ...] = (min_boards,)
+    else:
+        person_clause = """
+              AND d.person_id IN (
+                SELECT s2.person_id
+                FROM board_seats s2
+                JOIN companies c2 ON c2.ticker = s2.ticker
+                WHERE UPPER(c2.market) IN ('NSE', 'NSE SME')
+                GROUP BY s2.person_id
+                HAVING COUNT(DISTINCT s2.ticker) >= ?
+              )
+            """
+        params = (min_boards,)
     with get_governance_connection() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT
                 d.person_id,
                 d.din,
@@ -218,17 +259,10 @@ def _load_multi_board_seats(*, min_boards: int = 2) -> pd.DataFrame:
             JOIN board_seats s ON s.person_id = d.person_id
             JOIN companies c ON c.ticker = s.ticker
             WHERE UPPER(c.market) IN ('NSE', 'NSE SME')
-              AND d.person_id IN (
-                SELECT s2.person_id
-                FROM board_seats s2
-                JOIN companies c2 ON c2.ticker = s2.ticker
-                WHERE UPPER(c2.market) IN ('NSE', 'NSE SME')
-                GROUP BY s2.person_id
-                HAVING COUNT(DISTINCT s2.ticker) >= ?
-            )
+            {person_clause}
             ORDER BY d.name COLLATE NOCASE, c.name COLLATE NOCASE
             """,
-            (min_boards,),
+            params,
         ).fetchall()
     return pd.DataFrame([dict(r) for r in rows])
 
@@ -324,7 +358,15 @@ def build_governance_map_rows(
             )
 
         if len({c["ticker"] for c in companies}) < min_boards:
-            continue
+            # Keep single-board SME directors so Map SME filter / hub search
+            # can surface scanned Emerge names that are not yet multi-board.
+            has_sme = any(
+                c.get("is_sme")
+                or safe_str(c.get("market")).upper() == "NSE SME"
+                for c in companies
+            )
+            if not has_sme:
+                continue
 
         din = safe_str(grp.iloc[0].get("din")) or None
         director = safe_str(grp.iloc[0].get("director_name"))

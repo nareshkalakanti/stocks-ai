@@ -552,3 +552,51 @@ def test_governance_map_sme_cross(tmp_path, monkeypatch):
     by_ticker = {c["ticker"]: c for c in row["companies"]}
     assert by_ticker["SME001"]["is_sme"] is True
     assert by_ticker["MAIN001"]["is_main"] is True
+
+
+def test_governance_map_includes_single_board_sme(tmp_path, monkeypatch):
+    """Scanned SME boards must appear even when the director has only one seat."""
+    from stocks.governance.html import build_governance_map_html
+    from stocks.governance.map_data import build_governance_map_rows
+
+    db_path = tmp_path / "governance_sme_single.db"
+    monkeypatch.setattr("stocks.governance.db.GOVERNANCE_DB_PATH", db_path)
+    monkeypatch.setattr(
+        "stocks.governance.map_data.load_market_cap_from_db",
+        lambda tickers: pd.DataFrame(),
+    )
+    monkeypatch.setattr(
+        "stocks.governance.map_data.load_company_profiles_from_db",
+        lambda tickers: {},
+    )
+    monkeypatch.setattr(
+        "stocks.governance.map_data.nse_sme_ticker_set",
+        lambda: {"AARON"},
+    )
+
+    save_company_board(
+        ticker="AARON",
+        name="Aaron Industries Limited",
+        market="NSE SME",
+        seats=[
+            {
+                "din": "00856635",
+                "name": "Amar Chinubhai Doshi",
+                "designation": "Managing Director",
+                "source": "test",
+            }
+        ],
+        protect_din_board=False,
+    )
+
+    rows = build_governance_map_rows(
+        min_boards=2, hydrate_profiles=False, hydrate_mcaps=False
+    )
+    assert len(rows) == 1
+    row = rows.iloc[0]
+    assert int(row["board_count"]) == 1
+    assert int(row["sme_n"]) == 1
+    assert {c["ticker"] for c in row["companies"]} == {"AARON"}
+    html_out = build_governance_map_html(rows, standalone=False, min_boards=2)
+    assert "MIN_BOARDS" in html_out
+    assert "AARON" in html_out

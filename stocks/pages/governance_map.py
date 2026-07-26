@@ -20,9 +20,9 @@ def render_governance_map(*, show_title: bool = True) -> None:
     if show_title:
         st.markdown("### Governance Map")
     st.caption(
-        "Directors on **2+** boards · **By company** = shared board · "
-        "**By role** = same title across cos (Compliance / CFO / CS) · "
-        "Red **suspect** = likely name collision."
+        "**DIN-backed** directors on **2+** boards · tap **SME** for scanned Emerge "
+        "names (incl. single-board) · **By company** = shared board · "
+        "**By role** = same title across cos."
     )
 
     stats = governance_stats()
@@ -36,43 +36,8 @@ def render_governance_map(*, show_title: bool = True) -> None:
     with c4:
         st.metric("Seats", stats["seats"])
 
-    f1, f2, f3, f4 = st.columns([1, 1, 1, 1])
-    with f1:
-        min_boards = st.selectbox(
-            "Min boards",
-            options=[2, 3, 4],
-            index=0,
-            key="gov_map_min_boards",
-        )
-    with f2:
-        din_only = st.checkbox(
-            "DIN-backed only",
-            value=False,
-            key="gov_map_din_only",
-            help="Hide name-only matches (noisier Yahoo overlaps).",
-        )
-    with f3:
-        hide_collisions = st.checkbox(
-            "Hide name collisions",
-            value=True,
-            key="gov_map_hide_collisions",
-            help="Hide name-only directors on 5+ boards (common-name false merges).",
-            disabled=din_only,
-        )
-    with f4:
-        sme_cross_only = st.checkbox(
-            "SME↔Main only",
-            value=False,
-            key="gov_map_sme_cross",
-            help="Directors on both NSE mainboard and NSE SME companies.",
-        )
-
-    search_q = st.text_input(
-        "Search stock / director",
-        key="gov_map_search",
-        placeholder="e.g. INA, Insolation, or director name",
-        help="Filters the map by ticker, company name, or director.",
-    )
+    # Fixed defaults (filters UI removed): DIN-only, min 2 boards.
+    min_boards = 2
 
     ticker_markets = map_company_ticker_markets(min_boards=int(min_boards))
     missing = missing_profile_tickers(ticker_markets)
@@ -111,53 +76,27 @@ def render_governance_map(*, show_title: bool = True) -> None:
         )
         return
 
-    collision_n = 0
-    if "name_collision" in rows.columns:
-        collision_n = int(rows["name_collision"].fillna(False).astype(bool).sum())
-
-    if din_only and "din_backed" in rows.columns:
+    if "din_backed" in rows.columns:
         rows = rows[rows["din_backed"].astype(bool)].copy()
         if rows.empty:
             st.warning("No DIN-backed multi-board directors yet.")
             return
         rows = rows.reset_index(drop=True)
         rows["rank"] = range(1, len(rows) + 1)
-    elif hide_collisions and "name_collision" in rows.columns:
-        rows = rows[~rows["name_collision"].fillna(False).astype(bool)].copy()
-        if rows.empty:
-            st.warning("All remaining rows look like name collisions. Turn the filter off or use DIN sources.")
-            return
-        rows = rows.reset_index(drop=True)
-        rows["rank"] = range(1, len(rows) + 1)
-
-    if sme_cross_only and "sme_cross" in rows.columns:
-        rows = rows[rows["sme_cross"].fillna(False).astype(bool)].copy()
-        if rows.empty:
-            st.warning("No directors on both NSE mainboard and NSE SME yet.")
-            return
-        rows = rows.reset_index(drop=True)
-        rows["rank"] = range(1, len(rows) + 1)
 
     bridge_n = int(rows["bridge"].fillna(False).astype(bool).sum()) if "bridge" in rows.columns else 0
     cross_n = int(rows["sme_cross"].fillna(False).astype(bool).sum()) if "sme_cross" in rows.columns else 0
-    filter_note = ""
-    if din_only:
-        filter_note = " · DIN only"
-    elif hide_collisions and collision_n:
-        filter_note = f" · hid {collision_n:,} name collisions"
-    if sme_cross_only:
-        filter_note += " · SME↔Main only"
     st.caption(
         f"**{len(rows):,}** directors · **{bridge_n:,}** big↔small bridge · "
-        f"**{cross_n:,}** SME↔Main crossover"
-        f"{filter_note} · toolbar tags: Cap · Holdings · SME · Cross"
+        f"**{cross_n:,}** SME↔Main crossover · DIN only · "
+        "toolbar tags: Cap · Holdings · SME · Cross"
     )
 
     embed_html = build_governance_map_html(
         rows,
         title="Governance Map",
         standalone=False,
-        initial_query=str(search_q or ""),
+        min_boards=int(min_boards),
     )
     embed_html_iframe(
         embed_html,

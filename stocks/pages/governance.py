@@ -345,7 +345,8 @@ def render_governance(*, show_title: bool = True) -> None:
                 if hold_uni.empty:
                     st.warning("No holdings.")
                 else:
-                    st.session_state.gov_sf_market = HOLDINGS_PLAYLIST_LABEL
+                    # Don't touch gov_sf_market here — the Market selectbox is
+                    # already mounted; gov_holdings_scan forces the universe.
                     st.session_state.gov_auto_scan = True
                     st.session_state.gov_auto_totals = {
                         "saved": 0,
