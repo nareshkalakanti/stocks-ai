@@ -237,19 +237,6 @@ EXPAND_PANEL_CSS = """
   }
   .pattern-cup-fill { fill: rgba(59, 130, 246, 0.16); }
   .pattern-handle-fill { fill: rgba(245, 158, 11, 0.18); }
-  .pattern-bb-upper, .pattern-bb-lower {
-    fill: none;
-    stroke: #c4b5fd;
-    stroke-width: 1.1;
-    opacity: 0.9;
-  }
-  .pattern-bb-mid {
-    fill: none;
-    stroke: #64748b;
-    stroke-width: 1;
-    stroke-dasharray: 4 3;
-    opacity: 0.75;
-  }
   .pattern-zone-cup { fill: rgba(59, 130, 246, 0.10); }
   .pattern-zone-handle { fill: rgba(245, 158, 11, 0.14); }
   .pattern-zone-contraction { fill: rgba(16, 185, 129, 0.14); stroke: #34d399; stroke-width: 1; }
@@ -899,13 +886,6 @@ function renderPatternChart(r) {
   const w = 640, h = 300, padL = 18, padR = 18, padT = 22, padB = 22;
   const vals = pts.map(pt => Number(pt.v));
   const rimLvl = p.rim != null ? Number(p.rim) : null;
-  const bb = p.bb || null;
-  const bbVals = [];
-  if (bb) {
-    ["upper", "mid", "lower"].forEach(k => {
-      (bb[k] || []).forEach(pt => bbVals.push(Number(pt.v)));
-    });
-  }
   let min = Math.min(...vals, rimLvl == null ? Infinity : rimLvl);
   let max = Math.max(...vals, rimLvl == null ? -Infinity : rimLvl);
   if (candles.length) {
@@ -913,10 +893,6 @@ function renderPatternChart(r) {
       min = Math.min(min, Number(c.l));
       max = Math.max(max, Number(c.h));
     });
-  }
-  if (bbVals.length) {
-    min = Math.min(min, ...bbVals);
-    max = Math.max(max, ...bbVals);
   }
   const span = (max - min) || 1;
   const padY = span * 0.06;
@@ -935,16 +911,6 @@ function renderPatternChart(r) {
   const zones = p.zones || [];
   const lm = p.landmarks || {};
   const isCup = p.shape === "cup_handle" || (lm.left && lm.trough && lm.right);
-
-  if (bb && bb.mid && bb.mid.length) {
-    overlays += `<path class="pattern-bb-mid" d="${patternSeriesPath(bb.mid, xy)}"/>`;
-    if (bb.upper && bb.upper.length) {
-      overlays += `<path class="pattern-bb-upper" d="${patternSeriesPath(bb.upper, xy)}"/>`;
-    }
-    if (bb.lower && bb.lower.length) {
-      overlays += `<path class="pattern-bb-lower" d="${patternSeriesPath(bb.lower, xy)}"/>`;
-    }
-  }
 
   zones.forEach(z => {
     if ((z.kind === "base" || z.kind === "cup" || z.kind === "handle" || z.kind === "contraction") && z.i0 != null && z.i1 != null) {
@@ -1036,12 +1002,12 @@ function renderPatternChart(r) {
   const detail = r.detail ? `<div class="sub">${esc(r.detail)}</div>` : "";
   const legendBits = [];
   if (candles.length) legendBits.push("Candles");
-  if (bb && bb.mid) legendBits.push("BB(20)");
   if (zones.some(z => z.kind === "base")) legendBits.push("Blue = base");
   if (zones.some(z => z.kind === "cup") || isCup) legendBits.push("Cup / handle");
   if (zones.some(z => z.kind === "contraction")) legendBits.push("Contractions");
-  if (zones.some(z => z.kind === "rim" || z.kind === "pivot")) legendBits.push("Rim / pivot");
-  if (zones.some(z => z.kind === "breakout") || (p.markings || []).some(m => m.kind === "buy")) legendBits.push("Buy mark");
+  if (zones.some(z => z.kind === "rim" || z.kind === "pivot")) legendBits.push("Rim");
+  if (zones.some(z => z.kind === "breakout")) legendBits.push("Breakout");
+  if ((p.markings || []).some(m => m.kind === "buy")) legendBits.push("Buy");
   const tf = p.timeframe ? String(p.timeframe) : "daily";
   const tvDaily = r.tv || "";
   const tvWeekly = tvDaily
@@ -1084,7 +1050,7 @@ function renderPatternChart(r) {
   }
   return (
     `<div class="pead-section">` +
-    `<div class="pead-section-title">${title} — candles + markings</div>` +
+    `<div class="pead-section-title">${title} — breakout setup</div>` +
     detail +
     `<svg class="pattern-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet">` +
     overlays +

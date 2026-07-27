@@ -29,52 +29,6 @@ def _downsample_series(values: list[float], *, max_points: int = 120) -> list[di
     return out
 
 
-def _bollinger_on_chart(
-    values: list[float],
-    chart_closes: list[dict[str, float]],
-    *,
-    period: int = 20,
-    std_mult: float = 2.0,
-) -> dict[str, Any] | None:
-    """Bollinger bands aligned to downsampled chart close points."""
-    arr = np.asarray(values, dtype=float)
-    n = len(arr)
-    if n < period or not chart_closes:
-        return None
-    upper = np.full(n, np.nan)
-    mid = np.full(n, np.nan)
-    lower = np.full(n, np.nan)
-    for i in range(period - 1, n):
-        window = arr[i + 1 - period : i + 1]
-        m = float(np.mean(window))
-        s = float(np.std(window))
-        mid[i] = m
-        upper[i] = m + std_mult * s
-        lower[i] = m - std_mult * s
-
-    def _pick(line: np.ndarray) -> list[dict[str, float]]:
-        pts: list[dict[str, float]] = []
-        for k, pt in enumerate(chart_closes):
-            ri = int(min(n - 1, max(0, round(float(pt["i"])))))
-            v = line[ri]
-            if np.isnan(v):
-                continue
-            pts.append({"i": float(k), "v": float(v)})
-        return pts
-
-    up_pts = _pick(upper)
-    mid_pts = _pick(mid)
-    lo_pts = _pick(lower)
-    if len(mid_pts) < 3:
-        return None
-    return {
-        "period": period,
-        "upper": up_pts,
-        "mid": mid_pts,
-        "lower": lo_pts,
-    }
-
-
 def _downsample_ohlc(
     frame: pd.DataFrame,
     *,
@@ -239,7 +193,6 @@ def detect_cup_and_handle(
     if len(candles) != chart_n and candles:
         chart_n = len(candles)
         chart_closes = [{"i": float(c["i"]), "v": float(c["c"])} for c in candles]
-    bb = _bollinger_on_chart(vals.tolist(), chart_closes)
     left_c = _map_index(left_i, n, chart_n)
     trough_c = _map_index(trough_i, n, chart_n)
     right_c = _map_index(right_i, n, chart_n)
@@ -303,7 +256,6 @@ def detect_cup_and_handle(
                 },
             },
             "rim": round(rim, 2),
-            **({"bb": bb} if bb else {}),
         },
         "detail": (
             f"Cup depth {depth_pct:.0f}% · handle {handle_depth / rim * 100:.1f}% · "
