@@ -195,6 +195,115 @@ EXPAND_PANEL_CSS = """
     border: 2px solid #fff;
     box-shadow: 0 1px 4px rgba(15, 23, 42, 0.3);
   }
+  .pattern-chart {
+    width: 100%;
+    height: 300px;
+    min-height: 240px;
+    display: block;
+    background: #0b1220;
+    border: 2px solid #334155;
+    border-radius: 8px;
+    margin-bottom: 8px;
+  }
+  .pead-section:has(.pattern-chart) {
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 10px;
+    background: #0f1827;
+    margin-bottom: 10px;
+  }
+  .pattern-line {
+    fill: none;
+    stroke: #e2e8f0;
+    stroke-width: 1.8;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+  .pattern-guide-cup {
+    fill: none;
+    stroke: #60a5fa;
+    stroke-width: 2.6;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    opacity: 0.95;
+  }
+  .pattern-guide-handle {
+    fill: none;
+    stroke: #fbbf24;
+    stroke-width: 2.4;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    opacity: 0.95;
+  }
+  .pattern-cup-fill { fill: rgba(59, 130, 246, 0.16); }
+  .pattern-handle-fill { fill: rgba(245, 158, 11, 0.18); }
+  .pattern-bb-upper, .pattern-bb-lower {
+    fill: none;
+    stroke: #c4b5fd;
+    stroke-width: 1.1;
+    opacity: 0.9;
+  }
+  .pattern-bb-mid {
+    fill: none;
+    stroke: #64748b;
+    stroke-width: 1;
+    stroke-dasharray: 4 3;
+    opacity: 0.75;
+  }
+  .pattern-zone-cup { fill: rgba(59, 130, 246, 0.10); }
+  .pattern-zone-handle { fill: rgba(245, 158, 11, 0.14); }
+  .pattern-zone-contraction { fill: rgba(16, 185, 129, 0.14); stroke: #34d399; stroke-width: 1; }
+  .pattern-level {
+    stroke: #f87171;
+    stroke-width: 1.2;
+    stroke-dasharray: 5 4;
+  }
+  .pattern-break {
+    fill: #4ade80;
+  }
+  .pattern-candle-wick { stroke-width: 1.2; }
+  .pattern-candle-bull { fill: #22c55e; stroke: #16a34a; }
+  .pattern-candle-bear { fill: #ef4444; stroke: #dc2626; }
+  .pattern-mark-buy {
+    fill: #3b82f6;
+    stroke: #1d4ed8;
+    stroke-width: 0.8;
+  }
+  .pattern-mark-label-buy { fill: #93c5fd; font-size: 11px; font-weight: 700; }
+  .pattern-mark-label-setup { fill: #fcd34d; font-size: 10px; font-weight: 600; }
+  .pattern-dot {
+    stroke: #0b1220;
+    stroke-width: 1.2;
+  }
+  .pattern-label {
+    fill: #cbd5e1;
+    font-size: 11px;
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+    font-weight: 700;
+  }
+  .pattern-label-cup { fill: #93c5fd; }
+  .pattern-label-handle { fill: #fcd34d; }
+  .pattern-label-rim { fill: #fca5a5; font-weight: 600; font-size: 10px; }
+  .pattern-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    margin-top: 6px;
+    font-size: 10px;
+    color: #64748b;
+  }
+  .pattern-tv-verify {
+    margin-top: 8px;
+    font-size: 12px;
+  }
+  .pattern-tv-verify a {
+    color: #38bdf8;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .pattern-tv-verify a:hover {
+    text-decoration: underline;
+  }
   .company-cell { min-width: 0; }
   .company-top {
     display: flex;
@@ -774,6 +883,218 @@ function trendLinePath(points, w, h, pad) {
     return (i ? "L" : "M") + x.toFixed(1) + "," + y.toFixed(1);
   }).join(" ");
 }
+function patternSeriesPath(points, xy) {
+  if (!points || !points.length) return "";
+  return points.map((pt, idx) => {
+    const i = pt.i != null ? Number(pt.i) : idx;
+    const [x, y] = xy(i, Number(pt.v));
+    return (idx ? "L" : "M") + x.toFixed(1) + "," + y.toFixed(1);
+  }).join(" ");
+}
+function renderPatternChart(r) {
+  const p = r.pattern_chart;
+  if (!p || !p.closes || !p.closes.length) return "";
+  const candles = Array.isArray(p.candles) ? p.candles : [];
+  const pts = candles.length ? candles.map((c, i) => ({ i: i, v: c.c })) : p.closes;
+  const w = 640, h = 300, padL = 18, padR = 18, padT = 22, padB = 22;
+  const vals = pts.map(pt => Number(pt.v));
+  const rimLvl = p.rim != null ? Number(p.rim) : null;
+  const bb = p.bb || null;
+  const bbVals = [];
+  if (bb) {
+    ["upper", "mid", "lower"].forEach(k => {
+      (bb[k] || []).forEach(pt => bbVals.push(Number(pt.v)));
+    });
+  }
+  let min = Math.min(...vals, rimLvl == null ? Infinity : rimLvl);
+  let max = Math.max(...vals, rimLvl == null ? -Infinity : rimLvl);
+  if (candles.length) {
+    candles.forEach(c => {
+      min = Math.min(min, Number(c.l));
+      max = Math.max(max, Number(c.h));
+    });
+  }
+  if (bbVals.length) {
+    min = Math.min(min, ...bbVals);
+    max = Math.max(max, ...bbVals);
+  }
+  const span = (max - min) || 1;
+  const padY = span * 0.06;
+  const yMin = min - padY;
+  const yMax = max + padY;
+  const ySpan = yMax - yMin || 1;
+  const plotW = w - padL - padR;
+  const plotH = h - padT - padB;
+  const xy = (i, v) => {
+    const x = padL + (i / Math.max(1, pts.length - 1)) * plotW;
+    const y = padT + (1 - ((Number(v) - yMin) / ySpan)) * plotH;
+    return [x, y];
+  };
+  const clampI = (i) => Math.max(0, Math.min(pts.length - 1, Number(i)));
+  let overlays = "";
+  const zones = p.zones || [];
+  const lm = p.landmarks || {};
+  const isCup = p.shape === "cup_handle" || (lm.left && lm.trough && lm.right);
+
+  if (bb && bb.mid && bb.mid.length) {
+    overlays += `<path class="pattern-bb-mid" d="${patternSeriesPath(bb.mid, xy)}"/>`;
+    if (bb.upper && bb.upper.length) {
+      overlays += `<path class="pattern-bb-upper" d="${patternSeriesPath(bb.upper, xy)}"/>`;
+    }
+    if (bb.lower && bb.lower.length) {
+      overlays += `<path class="pattern-bb-lower" d="${patternSeriesPath(bb.lower, xy)}"/>`;
+    }
+  }
+
+  zones.forEach(z => {
+    if ((z.kind === "base" || z.kind === "cup" || z.kind === "handle" || z.kind === "contraction") && z.i0 != null && z.i1 != null) {
+      const i0 = clampI(z.i0);
+      const i1 = clampI(z.i1);
+      const [x0] = xy(i0, vals[i0]);
+      const [x1] = xy(i1, vals[i1]);
+      const cls = z.kind === "base" ? "pattern-zone-base"
+        : (z.kind === "cup" ? "pattern-zone-cup"
+        : (z.kind === "handle" ? "pattern-zone-handle" : "pattern-zone-contraction"));
+      overlays += `<rect class="${cls}" x="${Math.min(x0,x1).toFixed(1)}" y="${padT}" width="${Math.abs(x1-x0).toFixed(1)}" height="${(h-padT-padB).toFixed(1)}"/>`;
+    }
+  });
+
+  if (isCup && lm.left && lm.trough && lm.right) {
+    const L = [clampI(lm.left.i), Number(lm.left.v)];
+    const T = [clampI(lm.trough.i), Number(lm.trough.v)];
+    const R = [clampI(lm.right.i), Number(lm.right.v)];
+    const [lx, ly] = xy(L[0], L[1]);
+    const [tx, ty] = xy(T[0], T[1]);
+    const [rx, ry] = xy(R[0], R[1]);
+    // Soft U fill under the cup guide.
+    const cupFill =
+      `M${lx.toFixed(1)},${ly.toFixed(1)} ` +
+      `Q${((lx+tx)/2).toFixed(1)},${ty.toFixed(1)} ${tx.toFixed(1)},${ty.toFixed(1)} ` +
+      `Q${((tx+rx)/2).toFixed(1)},${ty.toFixed(1)} ${rx.toFixed(1)},${ry.toFixed(1)} ` +
+      `L${rx.toFixed(1)},${(h-padB).toFixed(1)} L${lx.toFixed(1)},${(h-padB).toFixed(1)} Z`;
+    overlays += `<path class="pattern-cup-fill" d="${cupFill}"/>`;
+    // Exact cup outline (left rim → trough → right rim).
+    const cupGuide =
+      `M${lx.toFixed(1)},${ly.toFixed(1)} ` +
+      `Q${((lx+tx)/2).toFixed(1)},${ty.toFixed(1)} ${tx.toFixed(1)},${ty.toFixed(1)} ` +
+      `Q${((tx+rx)/2).toFixed(1)},${ty.toFixed(1)} ${rx.toFixed(1)},${ry.toFixed(1)}`;
+    overlays += `<path class="pattern-guide-cup" d="${cupGuide}"/>`;
+    overlays += `<text class="pattern-label pattern-label-cup" x="${((lx+rx)/2).toFixed(1)}" y="${(ty + 16).toFixed(1)}" text-anchor="middle">CUP</text>`;
+    // Handle outline: right rim → handle low → last close.
+    if (lm.handle_low) {
+      const H = [clampI(lm.handle_low.i), Number(lm.handle_low.v)];
+      const endI = pts.length - 1;
+      const [hx, hy] = xy(H[0], H[1]);
+      const [ex, ey] = xy(endI, vals[endI]);
+      const handleFill =
+        `M${rx.toFixed(1)},${ry.toFixed(1)} ` +
+        `Q${((rx+hx)/2).toFixed(1)},${hy.toFixed(1)} ${hx.toFixed(1)},${hy.toFixed(1)} ` +
+        `Q${((hx+ex)/2).toFixed(1)},${hy.toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)} ` +
+        `L${ex.toFixed(1)},${(h-padB).toFixed(1)} L${rx.toFixed(1)},${(h-padB).toFixed(1)} Z`;
+      overlays += `<path class="pattern-handle-fill" d="${handleFill}"/>`;
+      const handleGuide =
+        `M${rx.toFixed(1)},${ry.toFixed(1)} ` +
+        `Q${((rx+hx)/2).toFixed(1)},${hy.toFixed(1)} ${hx.toFixed(1)},${hy.toFixed(1)} ` +
+        `Q${((hx+ex)/2).toFixed(1)},${hy.toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}`;
+      overlays += `<path class="pattern-guide-handle" d="${handleGuide}"/>`;
+      overlays += `<text class="pattern-label pattern-label-handle" x="${((rx+ex)/2).toFixed(1)}" y="${(hy - 8).toFixed(1)}" text-anchor="middle">HANDLE</text>`;
+      overlays += `<circle class="pattern-dot" cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="3.2" fill="#fbbf24"/>`;
+    }
+    overlays += `<circle class="pattern-dot" cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="3.4" fill="#60a5fa"/>`;
+    overlays += `<circle class="pattern-dot" cx="${tx.toFixed(1)}" cy="${ty.toFixed(1)}" r="3.4" fill="#38bdf8"/>`;
+    overlays += `<circle class="pattern-dot" cx="${rx.toFixed(1)}" cy="${ry.toFixed(1)}" r="3.4" fill="#60a5fa"/>`;
+  }
+
+  (p.markings || []).forEach(m => {
+    if (m.i == null) return;
+    const idx = clampI(m.i);
+    const baseV = candles.length ? Number(candles[idx].l) : vals[idx];
+    const [cx, yLow] = xy(idx, baseV);
+    if (m.kind === "buy") {
+      overlays += `<polygon class="pattern-mark-buy" points="${cx.toFixed(1)},${(yLow+10).toFixed(1)} ${(cx-7).toFixed(1)},${(yLow+22).toFixed(1)} ${(cx+7).toFixed(1)},${(yLow+22).toFixed(1)}"/>`;
+      overlays += `<text class="pattern-mark-label-buy" x="${cx.toFixed(1)}" y="${(yLow+34).toFixed(1)}" text-anchor="middle">${esc(m.label || "Buy")}</text>`;
+    } else if (m.kind === "setup") {
+      overlays += `<text class="pattern-mark-label-setup" x="${cx.toFixed(1)}" y="${(yLow+14).toFixed(1)}" text-anchor="middle">▲ ${esc(m.label || "Setup")}</text>`;
+    }
+  });
+
+  zones.forEach(z => {
+    if ((z.kind === "rim" || z.kind === "pivot") && z.level != null) {
+      const [, y] = xy(0, z.level);
+      overlays += `<line class="pattern-level" x1="${padL}" y1="${y.toFixed(1)}" x2="${(w-padR).toFixed(1)}" y2="${y.toFixed(1)}"/>`;
+      overlays += `<text class="pattern-label pattern-label-rim" x="${(w-padR).toFixed(1)}" y="${(y - 5).toFixed(1)}" text-anchor="end">${esc(z.label || (z.kind === "pivot" ? "Pivot" : "Rim"))}</text>`;
+    }
+    if (z.kind === "breakout" && z.i != null) {
+      const idx = clampI(z.i);
+      const [x, y] = xy(idx, vals[idx]);
+      overlays += `<circle class="pattern-break" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4"/>`;
+      overlays += `<text class="pattern-label" x="${(x-6).toFixed(1)}" y="${(y-8).toFixed(1)}" text-anchor="end" fill="#86efac">Breakout</text>`;
+    }
+  });
+
+  const title = esc(p.title || r.pattern || "Pattern");
+  const detail = r.detail ? `<div class="sub">${esc(r.detail)}</div>` : "";
+  const legendBits = [];
+  if (candles.length) legendBits.push("Candles");
+  if (bb && bb.mid) legendBits.push("BB(20)");
+  if (zones.some(z => z.kind === "base")) legendBits.push("Blue = base");
+  if (zones.some(z => z.kind === "cup") || isCup) legendBits.push("Cup / handle");
+  if (zones.some(z => z.kind === "contraction")) legendBits.push("Contractions");
+  if (zones.some(z => z.kind === "rim" || z.kind === "pivot")) legendBits.push("Rim / pivot");
+  if (zones.some(z => z.kind === "breakout") || (p.markings || []).some(m => m.kind === "buy")) legendBits.push("Buy mark");
+  const tf = p.timeframe ? String(p.timeframe) : "daily";
+  const tvDaily = r.tv || "";
+  const tvWeekly = tvDaily
+    ? (tvDaily + (tvDaily.indexOf("?") >= 0 ? "&" : "?") + "interval=W")
+    : "";
+  let tvVerify = "";
+  if (tvDaily) {
+    tvVerify =
+      `<div class="pattern-tv-verify">` +
+      `<a href="${esc(tvDaily)}" target="_blank" rel="noopener noreferrer">TV ${esc(tf)}</a>` +
+      (tvWeekly ? ` · <a href="${esc(tvWeekly)}" target="_blank" rel="noopener noreferrer">TV weekly</a>` : "") +
+      `</div>`;
+  }
+  let priceLayer = "";
+  if (candles.length) {
+    const slot = plotW / Math.max(1, candles.length);
+    const bodyW = Math.max(2, Math.min(8, slot * 0.55));
+    candles.forEach((c, i) => {
+      const o = Number(c.o), hi = Number(c.h), lo = Number(c.l), cl = Number(c.c);
+      const bull = cl >= o;
+      const [cx] = xy(i, cl);
+      const [, yHi] = xy(i, hi);
+      const [, yLo] = xy(i, lo);
+      const [, yO] = xy(i, o);
+      const [, yC] = xy(i, cl);
+      const top = Math.min(yO, yC);
+      const bot = Math.max(yO, yC);
+      const cls = bull ? "pattern-candle-bull" : "pattern-candle-bear";
+      const wickCls = bull ? "pattern-candle-wick" : "pattern-candle-wick";
+      priceLayer +=
+        `<line class="${wickCls}" x1="${cx.toFixed(1)}" y1="${yHi.toFixed(1)}" x2="${cx.toFixed(1)}" y2="${yLo.toFixed(1)}" stroke="${bull ? "#22c55e" : "#ef4444"}"/>` +
+        `<rect class="${cls}" x="${(cx - bodyW/2).toFixed(1)}" y="${top.toFixed(1)}" width="${bodyW.toFixed(1)}" height="${Math.max(1.5, bot-top).toFixed(1)}"/>`;
+    });
+  } else {
+    const path = pts.map((pt, i) => {
+      const [x, y] = xy(i, pt.v);
+      return (i ? "L" : "M") + x.toFixed(1) + "," + y.toFixed(1);
+    }).join(" ");
+    priceLayer = `<path class="pattern-line" d="${path}"/>`;
+  }
+  return (
+    `<div class="pead-section">` +
+    `<div class="pead-section-title">${title} — candles + markings</div>` +
+    detail +
+    `<svg class="pattern-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet">` +
+    overlays +
+    priceLayer +
+    `</svg>` +
+    (legendBits.length ? `<div class="pattern-legend">${legendBits.join(" · ")}</div>` : "") +
+    tvVerify +
+    `</div>`
+  );
+}
 function renderTrendSection(s) {
   const pts = s?.price_trend || [];
   if (!pts.length) return "";
@@ -1172,14 +1493,16 @@ function renderStockNotes(r) {
 function renderExpandPanel(r) {
   const snap = rowSnapshot(r);
   const hero = renderPeadHero(r, snap);
+  const pattern = renderPatternChart(r);
   const trend = renderTrendSection(snap);
   const range = renderRangeSection(snap);
   const qHtml = renderQuarterPanel(r.quarters);
   const newsHtml = renderPeadNewsSection(r);
-  if (!hero && !trend && !range && !qHtml && !newsHtml) {
+  if (!hero && !pattern && !trend && !range && !qHtml && !newsHtml) {
     return renderExpandPanelNews(r);
   }
   let body = `<div class="pead-card">`;
+  if (pattern) body += pattern;
   if (hero) body += hero;
   if (trend) body += trend;
   if (range) body += range;
@@ -1329,13 +1652,15 @@ function renderPeadMetricsCard(s, r) {
 }
 function renderPeadExpandPanel(r) {
   const snap = rowSnapshot(r);
+  const pattern = renderPatternChart(r);
   const metrics = renderPeadMetricsCard(snap, r);
   const insight = renderPeadInsightRow(snap, r);
   const qHtml = renderQuarterPanel(r.quarters);
-  if (!metrics && !insight && !qHtml) {
+  if (!pattern && !metrics && !insight && !qHtml) {
     return renderExpandPanelNews(r);
   }
   let body = `<div class="pead-card pead-card-compact">`;
+  if (pattern) body += pattern;
   const holdingsHead = renderHoldingsExpandHeader(r, snap);
   if (holdingsHead) body += holdingsHead;
   if (metrics || qHtml) {

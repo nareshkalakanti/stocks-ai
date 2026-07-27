@@ -186,7 +186,11 @@ def load_google_news_for_tickers(
     return out
 
 
-def attach_google_news_to_rows(rows: list[dict]) -> list[dict]:
+def attach_google_news_to_rows(
+    rows: list[dict],
+    *,
+    fetch_missing: bool = True,
+) -> list[dict]:
     """Add a ``news`` list to each row dict (for expand-panel JSON)."""
     if not rows:
         return rows
@@ -195,7 +199,10 @@ def attach_google_news_to_rows(rows: list[dict]) -> list[dict]:
         for row in rows
         if safe_str(row.get("ticker"))
     ]
-    news_map = load_google_news_for_tickers(specs)
+    news_map = load_google_news_for_tickers(
+        specs,
+        max_fetch=GOOGLE_NEWS_MAX_FETCH if fetch_missing else 0,
+    )
     if not news_map:
         return rows
     for row in rows:

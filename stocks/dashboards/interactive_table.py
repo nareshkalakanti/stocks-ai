@@ -249,7 +249,12 @@ def _has_quarter_panel(val: object) -> bool:
     )
 
 
-def rows_for_json(df: pd.DataFrame, *, extra_cols: tuple[str, ...] = ()) -> list[dict]:
+def rows_for_json(
+    df: pd.DataFrame,
+    *,
+    extra_cols: tuple[str, ...] = (),
+    fetch_news: bool = True,
+) -> list[dict]:
     if df.empty:
         return []
     sync_stock_notes_from_file()
@@ -276,6 +281,8 @@ def rows_for_json(df: pd.DataFrame, *, extra_cols: tuple[str, ...] = ()) -> list
         "fair_price", "upside_pct", "implied_growth", "verdict",
         "base_fcf", "equity_value", "pv_forecast", "pv_terminal",
         "discount_rate", "terminal_growth", "growth",
+        "pattern", "pattern_code", "detail", "rim", "pivot",
+        "cup_depth_pct", "contractions", "dist_to_rim_pct", "dist_to_pivot_pct",
     ) + extra_cols
     for _, row in work.iterrows():
         ticker = safe_str(row.get("ticker"))
@@ -313,6 +320,12 @@ def rows_for_json(df: pd.DataFrame, *, extra_cols: tuple[str, ...] = ()) -> list
                 if isinstance(val, float) and pd.isna(val):
                     continue
                 item[col] = json_safe_scalar(val)
+        pattern_chart = row.get("pattern_chart")
+        if isinstance(pattern_chart, dict) and pattern_chart.get("closes"):
+            item["pattern_chart"] = json_safe_obj(pattern_chart)
+        patterns_found = row.get("patterns_found")
+        if isinstance(patterns_found, list) and patterns_found:
+            item["patterns_found"] = [safe_str(x) for x in patterns_found if safe_str(x)]
         _attach_snapshot_to_item(
             item,
             row,
@@ -340,13 +353,14 @@ def rows_for_json(df: pd.DataFrame, *, extra_cols: tuple[str, ...] = ()) -> list
                 "source": safe_str(note.get("source")) or None,
             }
         rows.append(json_safe_obj(item))
-    return attach_google_news_to_rows(rows)
+    return attach_google_news_to_rows(rows, fetch_missing=fetch_news)
 
 
 def prepare_interactive_report_df(
     df: pd.DataFrame,
     *,
     max_workers: int | None = None,
+    expand_cache_only: bool = False,
 ) -> pd.DataFrame:
     """PEAD-style expand payload: PEAD2 cache + throttled Yahoo fetch."""
     if df is None or df.empty:
@@ -355,7 +369,11 @@ def prepare_interactive_report_df(
     from stocks.strategies.pead2.expand_data import attach_pead_expand
 
     workers = min(int(max_workers or 8), 8)
-    out = attach_pead_expand(df, max_workers=workers)
+    out = attach_pead_expand(
+        df,
+        max_workers=workers,
+        cache_only=expand_cache_only,
+    )
     out = attach_research_links(out)
     if "website" not in out.columns:
         out["website"] = None
@@ -381,9 +399,13 @@ def build_interactive_section(
     kind: str,
     open_section: bool = False,
     expand_hint: str = "Click row — same detail as PEAD (quarterly, links, news)",
+    fetch_news: bool = True,
 ) -> str:
     del kind
-    data_json = json_dumps(rows_for_json(df), separators=(",", ":"))
+    data_json = json_dumps(
+        rows_for_json(df, fetch_news=fetch_news),
+        separators=(",", ":"),
+    )
     cols_str = json.dumps(cols_json, separators=(",", ":"))
     open_attr = " open" if open_section else ""
     hint = html.escape(expand_hint)

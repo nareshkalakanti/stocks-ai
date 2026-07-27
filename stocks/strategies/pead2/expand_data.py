@@ -243,6 +243,7 @@ def attach_pead_expand(
     max_workers: int | None = None,
     cache_hours: int | None = None,
     progress_callback: Callable[[int, int], None] | None = None,
+    cache_only: bool = False,
 ) -> pd.DataFrame:
     """Merge ``quarters`` + ``snapshot`` (MAs) onto each holdings row."""
     if df is None or df.empty:
@@ -277,6 +278,14 @@ def attach_pead_expand(
                 prefilled[idx] = apply_scan_price_to_payload(payload, price_f)
                 continue
         jobs.append((idx, ticker, market, price_f))
+
+    if cache_only:
+        for idx, payload in prefilled.items():
+            for key, val in payload.items():
+                if key not in out.columns:
+                    out[key] = None
+                out.at[idx, key] = val
+        return out
 
     workers = min(
         max(1, int(max_workers or 8)),

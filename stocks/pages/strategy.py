@@ -30,12 +30,31 @@ from stocks.strategies.ema_daily.service import (
     prepare_ema_daily_universe,
     run_ema_daily_scan,
 )
+from stocks.strategies.base_breakout.html import (
+    base_breakout_iframe_height,
+    build_base_breakout_html,
+)
+from stocks.strategies.base_breakout.service import (
+    prepare_base_breakout_universe,
+    run_base_breakout_scan,
+)
 from stocks.strategies.rsi_weekly.html import build_rsi_weekly_html, rsi_weekly_iframe_height
 from stocks.strategies.rsi_weekly.service import (
     RSI_ENTRY,
     RSI_ENTRY_MAX,
     prepare_rsi_weekly_universe,
     run_rsi_weekly_scan,
+)
+from stocks.strategies.cup_vcp.html import (
+    build_cup_handle_html,
+    build_vcp_html,
+    pattern_scan_iframe_height,
+)
+from stocks.strategies.cup_vcp.service import (
+    prepare_cup_handle_universe,
+    prepare_vcp_universe,
+    run_cup_handle_scan,
+    run_vcp_scan,
 )
 from stocks.strategies.tq_bb.html import build_strategy_dashboard_html, strategy_iframe_height
 from stocks.strategies.tq_bb.service import (
@@ -58,7 +77,24 @@ STRATEGY_OPTIONS = (
     "TQ W52 Recovery",
     "RSI Weekly",
     "Above All EMAs",
+    "Weekly Base Breakout",
+    "Cup & Handle",
+    "VCP",
 )
+
+
+STRATEGY_SECTIONS = (
+    "Quant Tab",
+    "PEAD",
+    "H&T",
+    "Governance",
+    "Governance Map",
+)
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _load_stocks_cached() -> pd.DataFrame:
+    return load_india_stocks()
 
 
 def _prepare_quant_report(df: pd.DataFrame) -> pd.DataFrame:
@@ -66,11 +102,19 @@ def _prepare_quant_report(df: pd.DataFrame) -> pd.DataFrame:
     return prepare_interactive_report_df(df, max_workers=8)
 
 
+def _prepare_pattern_report(df: pd.DataFrame) -> pd.DataFrame:
+    """Fast path: pattern chart + cached quarterly only (no live Yahoo/news fetch)."""
+    return prepare_interactive_report_df(df, max_workers=4, expand_cache_only=True)
+
+
 QUANT_HTML_CACHE_KEYS = {
     "ema": "strat_ema_html_v3",
     "rsi": "strat_rsi_html_v3",
     "recovery": "strat_recovery_html_v3",
+    "base_breakout": "strat_base_breakout_html_v2",
     "tq_bb": "strat_tq_bb_html_v3",
+    "cup_handle": "strat_cup_handle_html_v3",
+    "vcp": "strat_vcp_html_v3",
 }
 
 
@@ -88,26 +132,32 @@ def _export_scan_csv(df: pd.DataFrame) -> bytes:
 
 
 def render_strategy() -> None:
-    tab_quant, tab_pead2, tab_ht, tab_gov, tab_gov_map = st.tabs(
-        ["Quant Tab", "PEAD", "H&T", "Governance", "Governance Map"]
+    if "strategy_section" not in st.session_state:
+        st.session_state.strategy_section = STRATEGY_SECTIONS[0]
+
+    section = st.radio(
+        "Section",
+        STRATEGY_SECTIONS,
+        horizontal=True,
+        label_visibility="collapsed",
+        key="strategy_section",
     )
 
-    with tab_quant:
+    if section == "Quant Tab":
         render_strategy_scan()
-
-    with tab_pead2:
+    elif section == "PEAD":
         from stocks.pages.pead2 import render_pead2
 
         render_pead2(show_title=False)
-    with tab_ht:
+    elif section == "H&T":
         from stocks.pages.headwind_tailwind import render_headwind_tailwind
 
         render_headwind_tailwind()
-    with tab_gov:
+    elif section == "Governance":
         from stocks.pages.governance import render_governance
 
         render_governance(show_title=False)
-    with tab_gov_map:
+    elif section == "Governance Map":
         from stocks.pages.governance_map import render_governance_map
 
         render_governance_map(show_title=False)
@@ -124,6 +174,74 @@ def _show_ema_daily_results(result: pd.DataFrame) -> None:
         file_name="above_all_emas_daily.csv",
         mime="text/csv",
         key="strat_ema_csv",
+    )
+
+
+def _show_pattern_scan_results(
+    result: pd.DataFrame,
+    *,
+    label: str,
+    html_key: str,
+    build_html,
+    csv_name: str,
+    csv_button_key: str,
+) -> None:
+    st.caption(
+        f"**{len(result):,}** {label} (daily) · expand row for drawn chart · **TV** link to verify on TradingView."
+    )
+    embed_html = build_html(result, standalone=False)
+    _embed_cached_quant_html(
+        html_key,
+        embed_html,
+        height=pattern_scan_iframe_height(len(result)),
+    )
+    st.download_button(
+        "Download CSV",
+        data=_export_scan_csv(result),
+        file_name=csv_name,
+        mime="text/csv",
+        key=csv_button_key,
+    )
+
+
+def _show_cup_handle_results(result: pd.DataFrame) -> None:
+    _show_pattern_scan_results(
+        result,
+        label="Cup & Handle setups",
+        html_key=QUANT_HTML_CACHE_KEYS["cup_handle"],
+        build_html=build_cup_handle_html,
+        csv_name="cup_handle_daily.csv",
+        csv_button_key="strat_cup_handle_csv",
+    )
+
+
+def _show_vcp_results(result: pd.DataFrame) -> None:
+    _show_pattern_scan_results(
+        result,
+        label="VCP setups",
+        html_key=QUANT_HTML_CACHE_KEYS["vcp"],
+        build_html=build_vcp_html,
+        csv_name="vcp_daily.csv",
+        csv_button_key="strat_vcp_csv",
+    )
+
+
+def _show_base_breakout_results(result: pd.DataFrame) -> None:
+    st.caption(
+        f"**{len(result):,}** Weekly Base Breakout setups · expand row for weekly base chart · **TV** link to verify."
+    )
+    embed_html = build_base_breakout_html(result, standalone=False)
+    _embed_cached_quant_html(
+        QUANT_HTML_CACHE_KEYS["base_breakout"],
+        embed_html,
+        height=base_breakout_iframe_height(len(result)),
+    )
+    st.download_button(
+        "Download CSV",
+        data=_export_scan_csv(result),
+        file_name="weekly_base_breakout.csv",
+        mime="text/csv",
+        key="strat_base_breakout_csv",
     )
 
 
@@ -183,6 +301,81 @@ def _render_quant_cached_results(strategy_choice: str) -> None:
             return
         if cached is not None and hasattr(cached, "empty") and not cached.empty:
             _show_ema_daily_results(cached)
+        return
+    if strategy_choice == "Cup & Handle":
+        cached_html = st.session_state.get(QUANT_HTML_CACHE_KEYS["cup_handle"])
+        cached = st.session_state.get("strat_cup_handle_result")
+        if cached_html:
+            if cached is not None and hasattr(cached, "__len__"):
+                st.caption(
+                    f"**{len(cached):,}** Cup & Handle setups (daily) · expand row · TV to verify."
+                )
+            _embed_cached_quant_html(
+                QUANT_HTML_CACHE_KEYS["cup_handle"],
+                cached_html,
+                height=pattern_scan_iframe_height(len(cached) if cached is not None else 0),
+            )
+            if cached is not None and hasattr(cached, "empty") and not cached.empty:
+                st.download_button(
+                    "Download CSV",
+                    data=_export_scan_csv(cached),
+                    file_name="cup_handle_daily.csv",
+                    mime="text/csv",
+                    key="strat_cup_handle_csv",
+                )
+            return
+        if cached is not None and hasattr(cached, "empty") and not cached.empty:
+            _show_cup_handle_results(cached)
+        return
+    if strategy_choice == "VCP":
+        cached_html = st.session_state.get(QUANT_HTML_CACHE_KEYS["vcp"])
+        cached = st.session_state.get("strat_vcp_result")
+        if cached_html:
+            if cached is not None and hasattr(cached, "__len__"):
+                st.caption(
+                    f"**{len(cached):,}** VCP setups (daily) · expand row · TV to verify."
+                )
+            _embed_cached_quant_html(
+                QUANT_HTML_CACHE_KEYS["vcp"],
+                cached_html,
+                height=pattern_scan_iframe_height(len(cached) if cached is not None else 0),
+            )
+            if cached is not None and hasattr(cached, "empty") and not cached.empty:
+                st.download_button(
+                    "Download CSV",
+                    data=_export_scan_csv(cached),
+                    file_name="vcp_daily.csv",
+                    mime="text/csv",
+                    key="strat_vcp_csv",
+                )
+            return
+        if cached is not None and hasattr(cached, "empty") and not cached.empty:
+            _show_vcp_results(cached)
+        return
+    if strategy_choice == "Weekly Base Breakout":
+        cached_html = st.session_state.get(QUANT_HTML_CACHE_KEYS["base_breakout"])
+        cached = st.session_state.get("strat_base_breakout_result")
+        if cached_html:
+            if cached is not None and hasattr(cached, "__len__"):
+                st.caption(
+                    f"**{len(cached):,}** Weekly Base Breakout setups · expand row · TV to verify."
+                )
+            _embed_cached_quant_html(
+                QUANT_HTML_CACHE_KEYS["base_breakout"],
+                cached_html,
+                height=base_breakout_iframe_height(len(cached) if cached is not None else 0),
+            )
+            if cached is not None and hasattr(cached, "empty") and not cached.empty:
+                st.download_button(
+                    "Download CSV",
+                    data=_export_scan_csv(cached),
+                    file_name="weekly_base_breakout.csv",
+                    mime="text/csv",
+                    key="strat_base_breakout_csv",
+                )
+            return
+        if cached is not None and hasattr(cached, "empty") and not cached.empty:
+            _show_base_breakout_results(cached)
         return
     if strategy_choice == "RSI Weekly":
         cached_html = st.session_state.get(QUANT_HTML_CACHE_KEYS["rsi"])
@@ -311,6 +504,94 @@ def _run_tq_recovery_scan(filtered: pd.DataFrame, *, cap_tier_id: str) -> None:
     _show_tq_recovery_results(result)
 
 
+def _run_pattern_scan(
+    filtered: pd.DataFrame,
+    *,
+    cap_tier_id: str,
+    label: str,
+    run_scan,
+    prepare_universe,
+    empty_message: str,
+    session_key: str,
+    show_results,
+) -> None:
+    max_workers = int(st.session_state.strategy_max_workers)
+    base_universe = analysis_universe(filtered, limit=0)
+    universe, _, _ = prepare_universe(base_universe, cap_tier_id=cap_tier_id)
+    if universe.empty:
+        st.warning("No tickers in the selected universe.")
+        return
+
+    progress = st.progress(0, text=f"{label} scan...")
+
+    try:
+
+        def _progress(done: int, total: int) -> None:
+            progress.progress(done / total, text=f"{label} {done}/{total}...")
+
+        result = run_scan(
+            universe,
+            max_workers=max_workers,
+            progress_callback=_progress,
+            should_stop=lambda: st.session_state.get("strategy_scan_stop", False),
+        )
+    except Exception as exc:
+        progress.empty()
+        st.error(f"{label} scan failed: {exc}")
+        return
+    progress.empty()
+
+    if result.empty:
+        st.session_state.pop(session_key, None)
+        st.warning(empty_message)
+        return
+
+    with st.spinner("Loading quarterly data & links..."):
+        result = _prepare_pattern_report(result)
+
+    st.session_state[session_key] = result
+    show_results(result)
+
+
+def _run_cup_handle_scan(filtered: pd.DataFrame, *, cap_tier_id: str) -> None:
+    _run_pattern_scan(
+        filtered,
+        cap_tier_id=cap_tier_id,
+        label="Cup & Handle",
+        run_scan=run_cup_handle_scan,
+        prepare_universe=prepare_cup_handle_universe,
+        empty_message="No Cup & Handle setups near rim in the current selection.",
+        session_key="strat_cup_handle_result",
+        show_results=_show_cup_handle_results,
+    )
+
+
+def _run_vcp_scan(filtered: pd.DataFrame, *, cap_tier_id: str) -> None:
+    _run_pattern_scan(
+        filtered,
+        cap_tier_id=cap_tier_id,
+        label="VCP",
+        run_scan=run_vcp_scan,
+        prepare_universe=prepare_vcp_universe,
+        empty_message="No VCP setups near pivot in the current selection.",
+        session_key="strat_vcp_result",
+        show_results=_show_vcp_results,
+    )
+
+
+def _run_base_breakout_scan(filtered: pd.DataFrame, *, cap_tier_id: str) -> None:
+    _run_pattern_scan(
+        filtered,
+        cap_tier_id=cap_tier_id,
+        label="Weekly Base Breakout",
+        run_scan=run_base_breakout_scan,
+        prepare_universe=prepare_base_breakout_universe,
+        empty_message="No weekly base breakout setups near pivot in the current selection.",
+        session_key="strat_base_breakout_result",
+        show_results=_show_base_breakout_results,
+    )
+
+
 def _run_rsi_weekly_scan(filtered: pd.DataFrame, *, cap_tier_id: str) -> None:
     max_workers = int(st.session_state.strategy_max_workers)
     base_universe = analysis_universe(filtered, limit=0)
@@ -353,7 +634,7 @@ def _run_rsi_weekly_scan(filtered: pd.DataFrame, *, cap_tier_id: str) -> None:
 
 def render_strategy_scan() -> None:
     try:
-        stocks = load_india_stocks()
+        stocks = _load_stocks_cached()
     except Exception as exc:
         st.error(f"Could not load dataset `{INDIA_STOCKS_DATASET}`: {exc}")
         return
@@ -382,8 +663,8 @@ def render_strategy_scan() -> None:
                 key="strat_choice",
                 help=(
                     "TQ = trend quality · BB = Bollinger breakout · "
-                    "W52 Recovery = weekly TQ red→yellow · RSI Weekly = fresh RSI 60–61 cross · "
-                    "Above All EMAs = daily price above EMA 20/50/100/200"
+                    "Weekly Base Breakout = long consolidation near breakout · "
+                    "Cup & Handle and VCP = separate daily pattern scans · TV in report"
                 ),
             )
         with row[5]:
@@ -396,7 +677,7 @@ def render_strategy_scan() -> None:
                 key="strat_timeframe",
                 help=(
                     "TQ / BB timeframe · W52 Recovery and RSI Weekly use weekly · "
-                    "Above All EMAs uses daily"
+                    "Weekly Base Breakout uses weekly · Above All EMAs, Cup & Handle, and VCP use daily"
                 ),
             )
         with row[6]:
@@ -436,6 +717,15 @@ def render_strategy_scan() -> None:
         return
     if strategy_choice == "RSI Weekly":
         _run_rsi_weekly_scan(filtered, cap_tier_id=cap_tier_id)
+        return
+    if strategy_choice == "Weekly Base Breakout":
+        _run_base_breakout_scan(filtered, cap_tier_id=cap_tier_id)
+        return
+    if strategy_choice == "Cup & Handle":
+        _run_cup_handle_scan(filtered, cap_tier_id=cap_tier_id)
+        return
+    if strategy_choice == "VCP":
+        _run_vcp_scan(filtered, cap_tier_id=cap_tier_id)
         return
 
     with st.spinner(
