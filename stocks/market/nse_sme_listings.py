@@ -191,7 +191,7 @@ def merge_nse_sme_into_stocks(
     Upsert ``NSE SME`` rows into the India stocks universe.
 
     Symbols on the NSE Emerge CSV are stored as market=``NSE SME`` (and removed
-    from mainboard ``NSE`` when the HF dataset had them mis-tagged).
+    from mainboard ``NSE`` when still present there).
     Classification (sector / industry / sub_sector) is filled later by
     ``enrich_stocks_classification`` from SME.db when blank.
     """
@@ -206,7 +206,7 @@ def merge_nse_sme_into_stocks(
     if not base.empty and "market" in base.columns:
         base = base[base["market"].astype(str) != NSE_SME_MARKET].copy()
 
-    # HF india.csv often tags Emerge names as NSE — move them to NSE SME.
+    # Mainboard list can still include names that trade on Emerge — move to NSE SME.
     relocated = pd.DataFrame()
     if not base.empty and "market" in base.columns and sme_tickers:
         is_nse = base["market"].astype(str).str.upper() == "NSE"
@@ -230,7 +230,7 @@ def merge_nse_sme_into_stocks(
         if not relocated.empty and col not in relocated.columns:
             relocated[col] = ""
 
-    # Prefer richer name/sector labels from the relocated HF row when present.
+    # Prefer richer name/sector labels from a prior mainboard row when present.
     if not relocated.empty:
         look = relocated.drop_duplicates("ticker").set_index(
             relocated["ticker"].astype(str).str.upper()

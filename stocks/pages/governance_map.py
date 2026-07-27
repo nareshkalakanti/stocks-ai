@@ -93,7 +93,7 @@ def render_governance_map(*, show_title: bool = True) -> None:
     )
     st.caption(
         f"**{len(rows):,}** directors · **{bridge_n:,}** big↔small bridge · "
-        "DIN only · Cap · Holdings · Superstar tags on stocks"
+        "DIN only · min **2** shared boards · Cap · Holdings · Superstar tags"
     )
 
     embed_html = build_governance_map_html(

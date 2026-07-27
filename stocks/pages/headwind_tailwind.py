@@ -23,6 +23,7 @@ from stocks.scans.scan_toolbar import (
     scan_toolbar_row,
 )
 from stocks.scans.stock_filters import apply_stock_filters, filter_caption_suffix
+from stocks.scans.scan_playlists import is_scan_playlist
 from stocks.strategies.intrinsic_value.cache import (
     ensure_pe_ratios,
     load_cached_headwind_scan,
@@ -133,10 +134,14 @@ def _resolve_mcap_floor(cap_tier_id: str) -> float:
 
 
 def _filtered_universe(stocks: pd.DataFrame, market: str) -> pd.DataFrame:
+    from stocks.listings.stocks_data import apply_market_column_filter
+
     universe = analysis_universe(stocks, limit=0)
-    market = safe_str(market).upper()
-    if market in ("NSE", "BSE") and "market" in universe.columns:
-        universe = universe[universe["market"].astype(str).str.upper() == market]
+    market_key = safe_str(market)
+    if market_key and market_key != "All" and "market" in universe.columns:
+        if is_scan_playlist(market_key):
+            return universe.reset_index(drop=True)
+        universe = apply_market_column_filter(universe, market_key)
     return universe.reset_index(drop=True)
 
 

@@ -26,7 +26,7 @@ def test_parse_sme_csv_keeps_equity_series():
     assert "IGNOREME" not in set(df["ticker"])
 
 
-def test_merge_nse_sme_relocates_hf_nse_tags():
+def test_merge_nse_sme_relocates_mainboard_nse_tags():
     base = pd.DataFrame(
         [
             {

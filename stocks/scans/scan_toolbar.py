@@ -95,6 +95,9 @@ def default_cap_tier_label() -> str:
 def render_cap_tier_select(market: str, *, key: str) -> str:
     tier_labels = cap_tier_labels()
     default = default_cap_tier_label()
+    # Drop removed tiers (e.g. legacy ≤ 5,000 Cr) from session.
+    if key in st.session_state and st.session_state[key] not in tier_labels:
+        st.session_state[key] = default
     return st.selectbox(
         "Market cap",
         tier_labels,
@@ -137,6 +140,7 @@ def render_base_scan_filters(
     *,
     key_prefix: str,
     cap_tier_key: str,
+    share_quant_market: bool = True,
 ) -> tuple["StockFilters", str]:
     """Render Market / Sector / Sub sector / Market cap in one toolbar row."""
     from stocks.scans.stock_filters import render_stock_filters
@@ -145,6 +149,7 @@ def render_base_scan_filters(
         stocks,
         cols=(row[IDX_MARKET], row[IDX_SECTOR], row[IDX_INDUSTRY]),
         key_prefix=key_prefix,
+        share_quant_market=share_quant_market,
     )
     with row[IDX_CAP_TIER]:
         cap_tier_label_ui = render_cap_tier_select(filters.market, key=cap_tier_key)

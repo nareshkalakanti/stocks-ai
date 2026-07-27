@@ -28,6 +28,7 @@ from stocks.scans.nifty_index_playlist import (
     nifty_playlist_count,
     nifty_playlist_listings,
 )
+from stocks.core.text_utils import safe_str
 
 SCAN_PLAYLIST_LABELS = (
     HOLDINGS_PLAYLIST_LABEL,
@@ -134,11 +135,18 @@ def market_option_count(stocks: pd.DataFrame, market: str) -> int:
     if is_scan_playlist(market):
         return scan_playlist_count(market)
     if not stocks.empty and "market" in stocks.columns:
-        return int((stocks["market"].astype(str) == market).sum())
+        from stocks.listings.stocks_data import market_filter_labels
+
+        labels = market_filter_labels(market)
+        if labels is None:
+            return len(stocks)
+        return int(stocks["market"].astype(str).isin(labels).sum())
     return 0
 
 
 def format_market_option(stocks: pd.DataFrame, market: str) -> str:
+    if safe_str(market).upper() == "NSE":
+        return f"NSE + SME ({market_option_count(stocks, market):,})"
     return f"{market} ({market_option_count(stocks, market):,})"
 
 

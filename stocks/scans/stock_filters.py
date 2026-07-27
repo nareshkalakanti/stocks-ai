@@ -29,6 +29,67 @@ from stocks.listings.stocks_data import (
 
 # Default session key prefix — filters persist when switching sidebar pages.
 _DEFAULT_KEY_PREFIX = "sf"
+# Shared Market across Quant Tab / PEAD / H&T / Governance / Governance Map.
+QUANT_SHARED_MARKET_KEY = "quant_market"
+_QUANT_MARKET_TRIGGER_KEY = "_quant_market_trigger"
+_LEGACY_MARKET_KEYS = (
+    "pead2_market",
+    "htf_market",
+    "strat_market",
+    "gov_sf_market",
+    "govmap_market",
+    "pead1_market",
+)
+
+
+def ensure_quant_shared_market(options: list[str]) -> None:
+    """Keep one Market selection for all Quant strategy tabs."""
+    key = QUANT_SHARED_MARKET_KEY
+    if key not in st.session_state:
+        for legacy in _LEGACY_MARKET_KEYS:
+            val = st.session_state.get(legacy)
+            if val in options:
+                st.session_state[key] = val
+                break
+        else:
+            st.session_state[key] = "All" if "All" in options else (options[0] if options else "All")
+    elif st.session_state[key] not in options:
+        st.session_state[key] = "All" if "All" in options else (options[0] if options else "All")
+
+
+def render_quant_market_selectbox(
+    stocks: pd.DataFrame,
+    *,
+    widget_key: str,
+    include_scan_playlists: bool = True,
+    on_change_extra: Callable[[], None] | None = None,
+) -> str:
+    """Market selectbox synced across Quant tabs (unique widget key per tab)."""
+    market_opts = market_options(stocks, include_scan_playlists=include_scan_playlists)
+    ensure_quant_shared_market(market_opts)
+    shared = QUANT_SHARED_MARKET_KEY
+    trigger = st.session_state.get(_QUANT_MARKET_TRIGGER_KEY)
+    # Pull shared value into this tab unless this widget caused the rerun.
+    if trigger != widget_key or widget_key not in st.session_state:
+        st.session_state[widget_key] = st.session_state[shared]
+    if st.session_state[widget_key] not in market_opts:
+        st.session_state[widget_key] = st.session_state[shared]
+
+    def _sync() -> None:
+        st.session_state[shared] = st.session_state[widget_key]
+        st.session_state[_QUANT_MARKET_TRIGGER_KEY] = widget_key
+        if on_change_extra is not None:
+            on_change_extra()
+
+    market = st.selectbox(
+        "Market",
+        market_opts,
+        key=widget_key,
+        format_func=lambda m: format_market_option(stocks, m),
+        on_change=_sync,
+    )
+    st.session_state[shared] = market
+    return market
 
 
 def _filter_session_keys(prefix: str) -> tuple[str, str, str, str]:
@@ -96,7 +157,9 @@ def _market_frame(stocks: pd.DataFrame, market: str) -> pd.DataFrame:
         return stocks
     if is_scan_playlist(market):
         return scan_playlist_listings(stocks, market)
-    return stocks[stocks["market"] == market]
+    from stocks.listings.stocks_data import apply_market_column_filter
+
+    return apply_market_column_filter(stocks, market)
 
 def render_sector_selectbox(
     stocks: pd.DataFrame,
@@ -177,6 +240,7 @@ def render_stock_filters(
     include_scan_playlists: bool = True,
     cols: tuple | None = None,
     key_prefix: str = _DEFAULT_KEY_PREFIX,
+    share_quant_market: bool = False,
 ) -> StockFilters:
     """Render Market · Sector · Sub sector filter row.
 
@@ -186,10 +250,6 @@ def render_stock_filters(
     """
     key_market, key_industries, key_sectors, key_search = _filter_session_keys(key_prefix)
 
-    if key_market not in st.session_state:
-        st.session_state[key_market] = "All"
-    elif st.session_state[key_market] in {"Parents", "Spinoffs"}:
-        st.session_state[key_market] = DS_PLAYLIST_LABEL
     for key in (key_industries, key_sectors):
         if key not in st.session_state:
             st.session_state[key] = []
@@ -207,16 +267,30 @@ def render_stock_filters(
             raise ValueError(f"render_stock_filters cols needs {need} columns, got {len(cols)}")
 
     with cols[0]:
-        market_opts = market_options(stocks, include_scan_playlists=include_scan_playlists)
-        if st.session_state[key_market] not in market_opts:
-            st.session_state[key_market] = "All"
-        market = st.selectbox(
-            "Market",
-            market_opts,
-            key=key_market,
-            format_func=lambda m: format_market_option(stocks, m),
-            on_change=partial(_clear_keys, key_sectors, key_industries),
-        )
+        if share_quant_market:
+            market = render_quant_market_selectbox(
+                stocks,
+                widget_key=key_market,
+                include_scan_playlists=include_scan_playlists,
+                on_change_extra=partial(_clear_keys, key_sectors, key_industries),
+            )
+        else:
+            market_opts = market_options(
+                stocks, include_scan_playlists=include_scan_playlists
+            )
+            if key_market not in st.session_state:
+                st.session_state[key_market] = "All"
+            elif st.session_state[key_market] in {"Parents", "Spinoffs"}:
+                st.session_state[key_market] = DS_PLAYLIST_LABEL
+            if st.session_state[key_market] not in market_opts:
+                st.session_state[key_market] = "All"
+            market = st.selectbox(
+                "Market",
+                market_opts,
+                key=key_market,
+                format_func=lambda m: format_market_option(stocks, m),
+                on_change=partial(_clear_keys, key_sectors, key_industries),
+            )
 
     mframe = _market_frame(stocks, market)
     sector_opts = sector_options(stocks, mframe)[1:]

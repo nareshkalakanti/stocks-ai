@@ -42,58 +42,47 @@ from stocks.scans.holdings_playlist import (
     holdings_playlist_listings,
 )
 from stocks.scans.results_utils import analysis_universe
-from stocks.scans.scan_playlists import format_market_option
-from stocks.scans.stock_filters import StockFilters, apply_stock_filters
+from stocks.scans.scan_playlists import is_scan_playlist
+from stocks.scans.stock_filters import (
+    StockFilters,
+    apply_stock_filters,
+    ensure_quant_shared_market,
+    render_quant_market_selectbox,
+)
 from stocks.market.nse_sme_listings import NSE_SME_MARKET
+from stocks.scans.scan_toolbar import default_cap_tier_label
 
 _DEFAULT_GOV_MARKET = "All"
-_DEFAULT_GOV_CAP_LABEL = "≤ 5,000 Cr (0–5k)"
 _BATCH_SIZE = 20
 _NSE_GOV_MARKETS = frozenset({"NSE", "NSE SME"})
-
-
-def _gov_nse_stock_count(stocks: pd.DataFrame) -> int:
-    """NSE mainboard + NSE SME — governance DIN universe for Market=All."""
-    if stocks.empty or "market" not in stocks.columns:
-        return 0
-    mk = stocks["market"].astype(str).str.upper()
-    return int(mk.isin(_NSE_GOV_MARKETS).sum())
-
-
-def _format_gov_market_option(stocks: pd.DataFrame, market: str) -> str:
-    if market == "All":
-        return f"NSE ({_gov_nse_stock_count(stocks):,})"
-    return format_market_option(stocks, market)
+_REMOVED_CAP_LABEL = "≤ 5,000 Cr (0–5k)"
 
 
 def _gov_cap_tier_id() -> str:
-    label = safe_str(st.session_state.get("gov_cap_tier")) or _DEFAULT_GOV_CAP_LABEL
+    label = safe_str(st.session_state.get("gov_cap_tier")) or default_cap_tier_label()
     return cap_tier_id_from_label(label)
-
-
-def _gov_market_options(stocks: pd.DataFrame) -> list[str]:
-    """Same Market list as other scan pages."""
-    return market_options(stocks, include_scan_playlists=True)
 
 
 def _default_market_session(options: list[str]) -> None:
     if st.session_state.get("gov_holdings_scan"):
         return
-    key = "gov_sf_market"
-    # Prefer All (full dataset) when migrating from the short Governance list.
-    if not st.session_state.get("gov_market_all_v1"):
-        if _DEFAULT_GOV_MARKET in options:
-            st.session_state[key] = _DEFAULT_GOV_MARKET
-        st.session_state["gov_market_all_v1"] = True
-        st.session_state["gov_cap_tier"] = _DEFAULT_GOV_CAP_LABEL
-    if key not in st.session_state or st.session_state[key] not in options:
+    ensure_quant_shared_market(options)
+    from stocks.scans.stock_filters import QUANT_SHARED_MARKET_KEY
+
+    key = QUANT_SHARED_MARKET_KEY
+    if st.session_state.get(key) == "≤5k + Holdings":
         st.session_state[key] = (
             _DEFAULT_GOV_MARKET if _DEFAULT_GOV_MARKET in options else options[0]
         )
-    elif st.session_state[key] == "≤5k + Holdings":
-        st.session_state[key] = (
-            _DEFAULT_GOV_MARKET if _DEFAULT_GOV_MARKET in options else options[0]
-        )
+    # Cap: drop removed 0–5k tier; prefer All caps.
+    if (
+        "gov_cap_tier" not in st.session_state
+        or st.session_state.gov_cap_tier == _REMOVED_CAP_LABEL
+        or st.session_state.gov_cap_tier not in cap_tier_labels()
+    ):
+        st.session_state["gov_cap_tier"] = default_cap_tier_label()
+    if not st.session_state.get("gov_market_all_v2"):
+        st.session_state["gov_market_all_v2"] = True
 
 
 def _universe_ticker_set(universe: pd.DataFrame) -> set[str]:
@@ -145,17 +134,17 @@ def _build_universe(
 
     filters = StockFilters(market=market, sectors=[], industries=[], search="")
     filtered = apply_stock_filters(stocks, filters)
+    # apply_stock_filters already expands Market=NSE → NSE + NSE SME.
+    # For All / index playlists, keep DIN-eligible NSE family only (skip BSE).
     if "market" in filtered.columns:
         mk = filtered["market"].astype(str).str.upper()
-        market_u = market_key.upper()
-        if market_u == "NSE SME":
-            filtered = filtered[mk == "NSE SME"]
-        elif market_u == "NSE":
-            # Mainboard + Emerge/SME — one NSE DIN universe after Scan.
+        if is_scan_playlist(market_key):
+            if market_key != HOLDINGS_PLAYLIST_LABEL:
+                filtered = filtered[mk.isin(_NSE_GOV_MARKETS)]
+        elif market_key.upper() in ("ALL", ""):
             filtered = filtered[mk.isin(_NSE_GOV_MARKETS)]
-        else:
-            # All / indexes / playlists: keep mainboard + SME for DIN scans.
-            filtered = filtered[mk.isin(_NSE_GOV_MARKETS)]
+        elif market_key.upper() == "BSE":
+            filtered = filtered[mk == "BSE"]
     universe = analysis_universe(filtered, limit=0)
     tier = cap_tier_id if cap_tier_id not in ("", None) else "all"
     if tier in ("all",) or universe.empty:
@@ -179,9 +168,9 @@ def render_governance(*, show_title: bool = True) -> None:
         st.markdown("### Governance")
     st.markdown(
         "**Scan & see DIN**  \n"
-        "1. **Market** **NSE** (mainboard **+ NSE SME**) + **Cap** → **Scan**. "
+        "1. **Market** (same as PEAD / H&T) + **Cap** → **Scan**. "
         "DIN filings are NSE-only, so BSE names are skipped.  \n"
-        "2. **Governance Map** tab → filter **SME** / **Cross** tags for directors on both boards.  \n"
+        "2. **Governance Map** tab → Cap / Holdings filters.  \n"
         "3. **Companies** tab → **DIN** column."
     )
 
@@ -191,7 +180,7 @@ def render_governance(*, show_title: bool = True) -> None:
         st.error(f"Could not load dataset `{INDIA_STOCKS_DATASET}`: {exc}")
         return
 
-    market_opts = _gov_market_options(stocks)
+    market_opts = market_options(stocks, include_scan_playlists=True)
     _default_market_session(market_opts)
 
     if not st.session_state.get("gov_indexes_warmed"):
@@ -223,26 +212,17 @@ def render_governance(*, show_title: bool = True) -> None:
 
     cap_labels = cap_tier_labels()
     if "gov_cap_tier" not in st.session_state or st.session_state.gov_cap_tier not in cap_labels:
-        st.session_state.gov_cap_tier = (
-            _DEFAULT_GOV_CAP_LABEL
-            if _DEFAULT_GOV_CAP_LABEL in cap_labels
-            else cap_labels[0]
-        )
+        st.session_state.gov_cap_tier = default_cap_tier_label()
 
     row = st.columns([1.7, 1.5, 1.0, 0.65, 0.65])
     with row[0]:
-        market = st.selectbox(
-            "Market",
-            market_opts,
-            key="gov_sf_market",
-            format_func=lambda m: _format_gov_market_option(stocks, m),
-        )
+        market = render_quant_market_selectbox(stocks, widget_key="gov_market")
     with row[1]:
         st.selectbox(
             "Cap",
             cap_labels,
             key="gov_cap_tier",
-            help="Filter by cached market cap (₹ Cr). Default ≤ 5,000 Cr.",
+            help="Filter by cached market cap (₹ Cr). Same Cap tiers as PEAD / H&T.",
         )
     market_label = (
         HOLDINGS_PLAYLIST_LABEL
@@ -291,12 +271,12 @@ def render_governance(*, show_title: bool = True) -> None:
             f"Universe **{len(universe):,}** holdings (Cap ignored for portfolio scan)"
         )
     elif market_label == "NSE":
-        st.caption(
-            f"Universe **{len(universe):,}** = NSE mainboard **+ NSE SME** (one DIN scan)"
-        )
+        st.caption(f"Universe **{len(universe):,}** NSE + NSE SME")
+    elif market_label == "NSE SME" or market_label == NSE_SME_MARKET:
+        st.caption(f"Universe **{len(universe):,}** NSE SME")
     elif market_label == "All":
         st.caption(
-            f"Universe **{len(universe):,}** NSE (mainboard + SME)"
+            f"Universe **{len(universe):,}** NSE + NSE SME"
             + (
                 f" · Cap **{st.session_state.gov_cap_tier}**"
                 if effective_cap != "all"
@@ -345,7 +325,7 @@ def render_governance(*, show_title: bool = True) -> None:
                 if hold_uni.empty:
                     st.warning("No holdings.")
                 else:
-                    # Don't touch gov_sf_market here — the Market selectbox is
+                    # Don't touch quant_market here — the Market selectbox is
                     # already mounted; gov_holdings_scan forces the universe.
                     st.session_state.gov_auto_scan = True
                     st.session_state.gov_auto_totals = {

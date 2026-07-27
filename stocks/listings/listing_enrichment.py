@@ -146,7 +146,7 @@ def ensure_tickers_in_universe(
         return stocks, still_missing
 
     out = pd.concat([stocks, pd.DataFrame(rows)], ignore_index=True)
-    out = out.drop_duplicates(subset=["ticker"], keep="first")
+    out = out.drop_duplicates(subset=["ticker", "market"], keep="last")
     if persist:
         save_stocks_to_db(out)
     return out, still_missing

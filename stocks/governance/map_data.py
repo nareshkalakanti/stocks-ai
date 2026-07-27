@@ -233,47 +233,60 @@ def map_company_ticker_markets(*, min_boards: int = 2) -> list[tuple[str, str]]:
 def _load_multi_board_seats(
     *,
     min_boards: int = 2,
-    include_sme_singles: bool = True,
+    include_sme_singles: bool = False,
+    include_holdings_singles: bool = False,
 ) -> pd.DataFrame:
     """
-    Seats for map directors.
+    Seats for map directors on ``min_boards``+ distinct NSE/NSE SME companies.
 
-    Always includes people on ``min_boards``+ NSE/NSE SME companies. When
-    ``include_sme_singles`` is True, also includes anyone seated on an NSE SME
-    company (so the SME filter and company-hub search can find scanned Emerge
-    names that do not yet share a director with another mapped board).
+    Optional singles flags exist for debug only — the default map requires
+    shared boards (min 2 companies).
     """
     init_governance_db()
     min_boards = max(2, int(min_boards))
-    if include_sme_singles:
-        person_clause = """
-              AND d.person_id IN (
+    holding_tickers = sorted(holdings_ticker_set()) if include_holdings_singles else []
+
+    unions: list[str] = [
+        """
                 SELECT s2.person_id
                 FROM board_seats s2
                 JOIN companies c2 ON c2.ticker = s2.ticker
                 WHERE UPPER(c2.market) IN ('NSE', 'NSE SME')
                 GROUP BY s2.person_id
                 HAVING COUNT(DISTINCT s2.ticker) >= ?
-                UNION
+        """
+    ]
+    params: list[Any] = [min_boards]
+
+    if include_sme_singles:
+        unions.append(
+            """
                 SELECT s3.person_id
                 FROM board_seats s3
                 JOIN companies c3 ON c3.ticker = s3.ticker
                 WHERE UPPER(c3.market) = 'NSE SME'
-              )
             """
-        params: tuple[Any, ...] = (min_boards,)
-    else:
-        person_clause = """
-              AND d.person_id IN (
-                SELECT s2.person_id
-                FROM board_seats s2
-                JOIN companies c2 ON c2.ticker = s2.ticker
-                WHERE UPPER(c2.market) IN ('NSE', 'NSE SME')
-                GROUP BY s2.person_id
-                HAVING COUNT(DISTINCT s2.ticker) >= ?
-              )
+        )
+
+    if holding_tickers:
+        placeholders = ",".join("?" * len(holding_tickers))
+        unions.append(
+            f"""
+                SELECT s4.person_id
+                FROM board_seats s4
+                JOIN companies c4 ON c4.ticker = s4.ticker
+                WHERE UPPER(c4.market) IN ('NSE', 'NSE SME')
+                  AND UPPER(s4.ticker) IN ({placeholders})
             """
-        params = (min_boards,)
+        )
+        params.extend(holding_tickers)
+
+    person_clause = (
+        "AND d.person_id IN (\n"
+        + "\nUNION\n".join(unions)
+        + "\n)"
+    )
+
     with get_governance_connection() as conn:
         rows = conn.execute(
             f"""
@@ -295,7 +308,7 @@ def _load_multi_board_seats(
             {person_clause}
             ORDER BY d.name COLLATE NOCASE, c.name COLLATE NOCASE
             """,
-            params,
+            tuple(params),
         ).fetchall()
     return pd.DataFrame([dict(r) for r in rows])
 
@@ -397,15 +410,7 @@ def build_governance_map_rows(
             )
 
         if len({c["ticker"] for c in companies}) < min_boards:
-            # Keep single-board SME directors so Map SME filter / hub search
-            # can surface scanned Emerge names that are not yet multi-board.
-            has_sme = any(
-                c.get("is_sme")
-                or safe_str(c.get("market")).upper() == "NSE SME"
-                for c in companies
-            )
-            if not has_sme:
-                continue
+            continue
 
         din = safe_str(grp.iloc[0].get("din")) or None
         director = safe_str(grp.iloc[0].get("director_name"))
@@ -469,6 +474,66 @@ def _mcap_in_band(
     if max_cr is not None and cap >= float(max_cr):
         return False
     return True
+
+
+def filter_governance_map_by_tickers(
+    df: pd.DataFrame,
+    tickers: set[str] | frozenset[str],
+    *,
+    min_boards: int = 2,
+) -> pd.DataFrame:
+    """Keep directors who still have ``min_boards`` companies inside ``tickers``."""
+    if df is None or df.empty:
+        return df if df is not None else pd.DataFrame()
+    keep = {safe_str(t).upper() for t in tickers if safe_str(t)}
+    if not keep:
+        return df.iloc[0:0].copy()
+
+    min_boards = max(2, int(min_boards))
+    rows: list[dict[str, Any]] = []
+    for _, row in df.iterrows():
+        companies = row.get("companies") or []
+        if not isinstance(companies, list):
+            continue
+        kept = [
+            c
+            for c in companies
+            if safe_str(c.get("ticker")).upper() in keep
+        ]
+        if len({safe_str(c.get("ticker")).upper() for c in kept if safe_str(c.get("ticker"))}) < min_boards:
+            continue
+        scored = score_director_seats(
+            kept,
+            person_id=safe_str(row.get("person_id")),
+            din=safe_str(row.get("din")) or None,
+        )
+        updated = dict(row)
+        updated["companies"] = kept
+        updated["tickers"] = ", ".join(c["ticker"] for c in kept)
+        updated["board_count"] = scored["board_count"]
+        updated["dir_score"] = scored["dir_score"]
+        updated["din_backed"] = scored["din_backed"]
+        updated["name_collision"] = scored["name_collision"]
+        updated["big_n"] = scored["big_n"]
+        updated["small_n"] = scored["small_n"]
+        updated["bridge"] = scored["bridge"]
+        sme_n, main_n, sme_cross = _sme_main_counts(kept, sme_tickers=nse_sme_ticker_set())
+        updated["sme_n"] = sme_n
+        updated["main_n"] = main_n
+        updated["sme_cross"] = sme_cross
+        updated["score_breakdown"] = scored
+        rows.append(updated)
+
+    if not rows:
+        return pd.DataFrame()
+    out = pd.DataFrame(rows)
+    out = out.sort_values(
+        by=["dir_score", "board_count", "name"],
+        ascending=[False, False, True],
+        kind="mergesort",
+    ).reset_index(drop=True)
+    out["rank"] = range(1, len(out) + 1)
+    return out
 
 
 def filter_governance_map_by_mcap(
