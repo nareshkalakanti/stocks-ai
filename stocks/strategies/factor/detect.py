@@ -8,11 +8,12 @@ import numpy as np
 import pandas as pd
 
 from stocks.core.text_utils import safe_str
-from stocks.market.momentum import MIN_HISTORY, momentum_from_close
+from stocks.market.momentum import LOOKBACK_1M, momentum_from_close
 
 HISTORY_PERIOD = "2y"
 HISTORY_INTERVAL = "1d"
-MIN_BARS = MIN_HISTORY
+# Include any Yahoo-priced name; full 12–1 momentum still needs longer history.
+MIN_BARS = 1
 
 
 def analyze_factor_stock(
@@ -28,10 +29,13 @@ def analyze_factor_stock(
 
     mom = momentum_from_close(close)
     momentum_pct = mom.get("momentum_pct")
-    if momentum_pct is None:
-        return None
-
     price = float(mom.get("current_price") or close.iloc[-1])
+    price_1y = mom.get("price_1y")
+    price_1m = mom.get("price_1m")
+    # Short history: still surface last price (and 1M if available).
+    if price_1m is None and len(close) > LOOKBACK_1M:
+        price_1m = round(float(close.iloc[-LOOKBACK_1M]), 2)
+
     latest = data.iloc[-1]
     date = ""
     try:
@@ -39,19 +43,24 @@ def analyze_factor_stock(
     except Exception:
         date = safe_str(latest.name)[:10]
 
+    detail = (
+        f"Mom {float(momentum_pct):+.1f}%"
+        if momentum_pct is not None
+        else "price only (short history)"
+    )
     return {
         "ticker": safe_str(ticker).upper(),
         "market": safe_str(market) or None,
         "price": round(price, 2),
-        "price_1y": mom.get("price_1y"),
-        "price_1m": mom.get("price_1m"),
+        "price_1y": price_1y,
+        "price_1m": price_1m,
         "momentum_pct": momentum_pct,
         "signal": "FACTOR",
         "date": date,
         "timeframe": "daily",
         "pattern": "Momentum",
         "pattern_code": "FACTOR",
-        "detail": f"Mom {float(momentum_pct):+.1f}%",
+        "detail": detail,
     }
 
 

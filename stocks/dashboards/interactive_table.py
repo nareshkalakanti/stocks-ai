@@ -260,6 +260,26 @@ def rows_for_json(
     sync_stock_notes_from_file()
     work = attach_stock_notes(attach_research_links(df), sync_file=False)
     mcap_map, metrics_map, pead_map = _load_expand_metric_maps(work)
+    tickers = (
+        work["ticker"].astype(str).str.strip().str.upper().unique().tolist()
+        if "ticker" in work.columns
+        else []
+    )
+    ss_map: dict[str, dict] = {}
+    breakout_map: dict[str, dict] = {}
+    if tickers:
+        try:
+            from stocks.shared.superstars.holdings import superstar_pead_map
+
+            ss_map = superstar_pead_map(tickers)
+        except Exception:
+            ss_map = {}
+        try:
+            from stocks.core.database import load_strategy_breakout_map
+
+            breakout_map = load_strategy_breakout_map(tickers)
+        except Exception:
+            breakout_map = {}
     rows: list[dict] = []
     base_cols = (
         "price", "rsi", "supertrend", "adx", "di_plus", "di_minus",
@@ -301,6 +321,33 @@ def rows_for_json(
             "sc": sc_url,
             "tv": tv_url,
         }
+        # Superstar / TQ / BB tags (same badges as PEAD / company cell).
+        key = safe_str(ticker).upper()
+        ss = ss_map.get(key) or {}
+        if ss.get("ss_holders_label"):
+            item["ss_holders_label"] = ss["ss_holders_label"]
+        if ss.get("ss_best"):
+            item["ss_best"] = True
+        br = breakout_map.get(key) or {}
+        tq = br.get("tq") if isinstance(br.get("tq"), dict) else None
+        bb = br.get("bb") if isinstance(br.get("bb"), dict) else None
+        if tq:
+            item["has_tq"] = True
+            if tq.get("score") is not None:
+                item["tq_score"] = json_safe_scalar(tq.get("score"))
+            xo = safe_str(tq.get("crossover_type"))
+            if xo:
+                item["tq_crossover"] = xo
+            tf = safe_str(tq.get("timeframe"))
+            if tf:
+                item["tq_timeframe"] = tf
+        if bb:
+            item["has_bb"] = True
+            sig = safe_str(bb.get("signal")) or "ABOVE_BAND"
+            item["bb_signal"] = sig
+            tf = safe_str(bb.get("timeframe"))
+            if tf:
+                item["bb_timeframe"] = tf
         snapshot = row.get("snapshot")
         web = sanitize_website(row.get("website"))
         if not web and isinstance(snapshot, dict):

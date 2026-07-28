@@ -125,7 +125,7 @@ QUANT_HTML_CACHE_KEYS = {
     "recovery": "strat_recovery_html_v4",
     "base_breakout": "strat_base_breakout_html_v3",
     "low_vol": "strat_low_vol_html_v2",
-    "factor": "strat_factor_html_v5",
+    "factor": "strat_factor_html_v8",
     "tq_bb": "strat_tq_bb_html_v4",
     "cup_handle": "strat_cup_handle_html_v5",
     "vcp": "strat_vcp_html_v4",
@@ -283,7 +283,7 @@ def _show_low_vol_results(result: pd.DataFrame) -> None:
 
 def _show_factor_results(result: pd.DataFrame) -> None:
     st.caption(
-        f"**{len(result):,}** Momentum names (top 20% by 12–1) · expand row · website · quarterly · **TV**."
+        f"**{len(result):,}** Momentum names (all, sorted by 12–1) · expand row · website · quarterly · **TV**."
     )
     embed_html = build_factor_html(result, standalone=False)
     _embed_cached_quant_html(
@@ -804,7 +804,7 @@ def render_strategy_scan() -> None:
                 key="strat_choice",
                 help=(
                     "TQ = trend quality · BB = Bollinger breakout · "
-                    "Momentum = top 20% by 12–1 return · "
+                    "Momentum = all names by 12–1 return · "
                     "Low Volatility = bottom 20% short+long realized vol · "
                     "Weekly Base Breakout = long consolidation near breakout · "
                     "Cup & Handle = weekly (or daily) pattern · VCP = daily · TV in report"

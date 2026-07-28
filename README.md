@@ -36,3 +36,7 @@ Listings dataset: Hugging Face `kjhq/India-Stock-Symbols-and-Metadata` (cached i
 ## Environment
 
 See `.env` — `HF_TOKEN`, `MIN_MARKET_CAP_CR`, `STRATEGY_MAX_WORKERS`, etc.
+
+python scripts/refresh_sector_classification.py
+# optional: also refresh NSE listing CSVs
+python scripts/refresh_sector_classification.py --refresh-csv

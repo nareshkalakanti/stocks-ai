@@ -6,8 +6,9 @@ import pandas as pd
 
 from stocks.dashboards.interactive_table import build_interactive_section, wrap_interactive_page
 
-# Match: Symbol | Company | Sector | Subsector | Price | Price 1Y | Price 1M | Momentum
+# S.No | Symbol | Company | Sector | Subsector | Price | Price 1Y | Price 1M | Momentum
 FACTOR_JS_COLS = [
+    {"id": "factor_rank", "label": "S.No", "fmt": "int"},
     {"id": "ticker", "label": "Symbol", "fmt": "text"},
     {"id": "company", "label": "Company Name", "fmt": "company"},
     {"id": "sector", "label": "Sector", "fmt": "text"},
@@ -26,7 +27,7 @@ def build_factor_html(
 ) -> str:
     section = build_interactive_section(
         "factor",
-        "Momentum — top 20% by 12–1 return (sorted by Momentum)",
+        "Momentum — all names by 12–1 return (sorted by Momentum)",
         df,
         FACTOR_JS_COLS,
         kind="factor",
@@ -42,4 +43,4 @@ def build_factor_html(
 
 
 def factor_iframe_height(row_count: int) -> int:
-    return min(2400, max(620, 420 + min(row_count, 50) * 24))
+    return min(4800, max(620, 420 + min(row_count, 120) * 24))

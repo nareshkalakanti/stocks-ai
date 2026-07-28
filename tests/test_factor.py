@@ -37,6 +37,16 @@ def test_analyze_factor_stock_has_momentum():
     assert "roe" not in hit
 
 
+def test_analyze_factor_stock_short_history_keeps_price():
+    """Yahoo-priced names with <400 bars still appear (momentum blank)."""
+    hit = analyze_factor_stock("NIBE", "NSE", _ohlc(n=360))
+    assert hit is not None
+    assert hit["price"] is not None
+    assert hit["momentum_pct"] is None
+    assert hit["price_1y"] is None
+    assert hit["price_1m"] is not None
+
+
 def test_attach_factor_scores_ranks_by_momentum():
     df = pd.DataFrame(
         [
@@ -74,6 +84,7 @@ def test_build_factor_html():
     html = build_factor_html(df, standalone=False)
     assert "Momentum" in html
     assert "BSE" in html
+    assert "S.No" in html
     assert "Sector" in html
     assert "Subsector" in html
     assert "Price 1Y" in html

@@ -355,6 +355,8 @@ EXPAND_PANEL_CSS = """
   .corp-tag-spin { color: #0e7490; background: #cffafe; }
   .corp-tag-spec { color: #9d174d; background: #fce7f3; }
   .corp-tag-ss { color: #854d0e; background: #fef9c3; max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+  .corp-tag-tq { color: #065f46; background: #d1fae5; }
+  .corp-tag-bb { color: #1e3a8a; background: #dbeafe; }
   .bg-tag {
     color: #7c3aed;
     font-size: 10px;
