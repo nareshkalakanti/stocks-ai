@@ -283,6 +283,10 @@ def rows_for_json(
         "discount_rate", "terminal_growth", "growth",
         "pattern", "pattern_code", "detail", "rim", "pivot",
         "cup_depth_pct", "contractions", "dist_to_rim_pct", "dist_to_pivot_pct",
+        "short_vol", "long_vol", "composite_vol", "vol_rank",
+        "momentum_pct", "factor_rank", "f_momentum", "f_low_vol", "roe", "div_yield",
+        "avg_volume", "dollar_volume", "factors_used", "price_1y", "price_1m",
+        "sub_sector",
     ) + extra_cols
     for _, row in work.iterrows():
         ticker = safe_str(row.get("ticker"))
@@ -473,6 +477,9 @@ def build_interactive_section(
       case "num1": return v != null && !isNaN(v) ? Number(v).toFixed(1) : "—";
       case "num2": return v != null && !isNaN(v) ? Number(v).toFixed(2) : "—";
       case "num4": return v != null && !isNaN(v) ? Number(v).toFixed(4) : "—";
+      case "pct2":
+        if (v == null || isNaN(v)) return "—";
+        return Number(v).toFixed(2) + "%";
       default: return v != null ? esc(v) : "—";
     }}
   }}

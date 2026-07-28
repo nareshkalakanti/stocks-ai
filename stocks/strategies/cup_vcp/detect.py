@@ -95,20 +95,26 @@ def _map_index(raw_i: int, n: int, chart_n: int) -> int:
 def detect_cup_and_handle(
     data: pd.DataFrame,
     *,
-    min_bars: int = 60,
-    max_bars: int = 160,
+    min_bars: int | None = None,
+    max_bars: int | None = None,
     min_cup_depth_pct: float = 12.0,
     max_cup_depth_pct: float = 50.0,
     max_handle_depth_frac: float = 0.45,
     rim_tolerance_pct: float = 8.0,
     near_breakout_pct: float = 5.0,
+    timeframe: str = "daily",
 ) -> dict[str, Any] | None:
     """
-    Geometric Cup & Handle on daily closes.
+    Geometric Cup & Handle on closes (daily or weekly bars).
 
     Requires a U-shaped cup (left rim → trough → right rim) and a shallow
     handle pullback. Prefers setups near / just through the rim.
     """
+    tf = safe_str(timeframe).lower() or "daily"
+    if min_bars is None:
+        min_bars = 40 if tf == "weekly" else 60
+    if max_bars is None:
+        max_bars = 104 if tf == "weekly" else 160
     close = _closes(data)
     if len(close) < min_bars:
         return None
@@ -237,7 +243,7 @@ def detect_cup_and_handle(
             "zones": zones,
             "title": "Cup & Handle",
             "shape": "cup_handle",
-            "timeframe": "daily",
+            "timeframe": tf,
             "markings": [
                 {
                     "kind": "buy" if broken else "setup",
@@ -446,15 +452,21 @@ def detect_vcp(
     }
 
 
-def detect_patterns(data: pd.DataFrame) -> list[dict[str, Any]]:
+def detect_patterns(
+    data: pd.DataFrame,
+    *,
+    timeframe: str = "daily",
+) -> list[dict[str, Any]]:
     """Return matching patterns (Cup & Handle and/or VCP), best first."""
     hits: list[dict[str, Any]] = []
-    cup = detect_cup_and_handle(data)
+    cup = detect_cup_and_handle(data, timeframe=timeframe)
     if cup:
         hits.append(cup)
-    vcp = detect_vcp(data)
-    if vcp:
-        hits.append(vcp)
+    # VCP stays daily-oriented; skip on weekly bars.
+    if safe_str(timeframe).lower() != "weekly":
+        vcp = detect_vcp(data)
+        if vcp:
+            hits.append(vcp)
     hits.sort(key=lambda h: float(h.get("score") or 0), reverse=True)
     return hits
 
@@ -465,9 +477,11 @@ def analyze_ticker_patterns(
     data: pd.DataFrame,
     *,
     pattern_code: str | None = None,
+    timeframe: str = "daily",
 ) -> dict[str, Any] | None:
     """Pick the best pattern hit for one ticker (optionally one pattern type only)."""
-    hits = detect_patterns(data)
+    tf = safe_str(timeframe).lower() or "daily"
+    hits = detect_patterns(data, timeframe=tf)
     if pattern_code:
         code = safe_str(pattern_code).upper()
         hits = [h for h in hits if safe_str(h.get("pattern_code")).upper() == code]
@@ -480,6 +494,9 @@ def analyze_ticker_patterns(
         date = latest.name.strftime("%Y-%m-%d")
     except Exception:
         date = safe_str(latest.name)[:10]
+    chart = best.get("pattern_chart")
+    if isinstance(chart, dict):
+        chart = {**chart, "timeframe": tf}
     return {
         "ticker": safe_str(ticker).upper(),
         "market": safe_str(market) or None,
@@ -493,8 +510,8 @@ def analyze_ticker_patterns(
         "pivot": best.get("pivot"),
         "cup_depth_pct": best.get("cup_depth_pct"),
         "contractions": best.get("contractions"),
-        "pattern_chart": best.get("pattern_chart"),
+        "pattern_chart": chart,
         "date": date,
-        "timeframe": "daily",
+        "timeframe": tf,
         "patterns_found": [h.get("pattern_code") for h in hits],
     }

@@ -65,6 +65,7 @@ _INDUSTRY_DISPLAY: dict[str, str] = {
     "Two Wheelers": AUTOMOBILE,
     "Three Wheelers": AUTOMOBILE,
     "Four Wheelers": AUTOMOBILE,
+    "Dealers-Commercial Vehicles": AUTOMOBILE,
     "Trucks & Buses": AUTOMOBILE,
     "Tractors": AUTOMOBILE,
     "Tyres & Tubes": AUTOMOBILE,
@@ -98,6 +99,7 @@ _INDUSTRY_DISPLAY: dict[str, str] = {
     "Technology services": IT,
     "Online Services": IT,
     "Animation": IT,
+    "IT Enabled Services": IT,
     # Pharma & Healthcare
     "Pharmaceuticals": PHARMA,
     "Drug Manufacturers - Specialty & Generic": PHARMA,
@@ -161,6 +163,8 @@ _INDUSTRY_DISPLAY: dict[str, str] = {
     "Construction": REAL_ESTATE,
     # Metals & mining
     "Iron & Steel": METALS,
+    "Iron & Steel Products": METALS,
+    "Castings & Containers": CAPITAL_GOODS,
     "Steel": METALS,
     "Metals - Aluminium": METALS,
     "Metals - Coke": METALS,
@@ -188,6 +192,7 @@ _INDUSTRY_DISPLAY: dict[str, str] = {
     "Energy minerals": OIL_GAS,
     "Energy": OIL_GAS,
     "Coal": OIL_GAS,
+    "Biofuels": OIL_GAS,
     # Power & utilities
     "Power Generation": POWER,
     "Power Infrastructure": POWER,
@@ -282,6 +287,8 @@ _INDUSTRY_DISPLAY: dict[str, str] = {
     # Services
     "Academic & Educational Services": SERVICES,
     "Education & Training Services": SERVICES,
+    "Diversified Commercial Services": SERVICES,
+    "Commercial Services & Supplies": SERVICES,
     "Education Services": SERVICES,
     "Business Support Services": SERVICES,
     "Consulting Services": SERVICES,
@@ -292,7 +299,6 @@ _INDUSTRY_DISPLAY: dict[str, str] = {
     "Commercial services": SERVICES,
     "Consumer services": SERVICES,
     "Distribution services": SERVICES,
-    "Commercial Services & Supplies": SERVICES,
     # Diversified / misc
     "Conglomerates": DIVERSIFIED,
     "Commodities Trading": DIVERSIFIED,
@@ -507,6 +513,223 @@ def refine_display_sector_from_name(
     return current
 
 
+_FINANCE_LABEL_RE = re.compile(
+    r"bank|finance|financial|broker|capital market|asset management|"
+    r"nbfc|insurance|fintech|mutual fund|credit service|diversified financial|"
+    r"payment infrastructure|stock exchange|investment banking|specialized finance",
+    re.I,
+)
+
+# HF coarse sectors that are not finance (stale HF is common; sqlite finance tags can be wrong).
+_NON_FINANCE_SOURCE = frozenset(
+    {
+        "Process industries",
+        "Producer manufacturing",
+        "Non-energy minerals",
+        "Basic materials",
+        "Industrials",
+        "Energy",
+        "Energy minerals",
+        "Utilities",
+        "Technology services",
+        "Electronic technology",
+        "Communications",
+        "Consumer durables",
+        "Consumer non-durables",
+        "Health technology",
+        "Health services",
+        "Transportation",
+        "Retail trade",
+        "Commercial services",
+        "Consumer services",
+        "Industrial services",
+        "Distribution services",
+    }
+)
+
+_NON_FINANCE_NAME_MARKERS = (
+    " cast",
+    " casting",
+    " ferrous",
+    " cement",
+    " chemical",
+    " pharma",
+    " textile",
+    " garment",
+    " hotel",
+    " resort",
+    " biodiesel",
+    " biofuel",
+    " foundry",
+    " forging",
+    " minerals",
+    " mining",
+    " sugar",
+    " shipping",
+    " airline",
+    " hospital",
+    " diagnostic",
+    " e-governance",
+    " egovernance",
+)
+
+# Soft markers only win when HF source is also non-finance (avoid "Power Finance", "Steel City Securities").
+_SOFT_NON_FINANCE_NAME_MARKERS = (
+    " steel",
+    " iron",
+    " engineering",
+    " industries limited",
+    " industries ltd",
+    " power",
+    " logistics",
+    " software",
+    " technologies",
+    " technology",
+    " infra ",
+    " infrastructure",
+)
+
+_FINANCE_NAME_MARKERS = (
+    " bank",
+    " finance",
+    " financial",
+    " fintrade",
+    " investment",
+    " securities",
+    " capital",
+    " brokerage",
+    " broker",
+    " mutual",
+    " amc",
+    " asset management",
+    " insurance",
+    " nbfc",
+    " fintech",
+    " housing finance",
+    " microfinance",
+    " wealth",
+    " gilts",
+    " ratings",
+    " credit",
+    " lending",
+    " payment",
+    " wallet",
+)
+
+
+def _label_looks_finance(label: str) -> bool:
+    return bool(_FINANCE_LABEL_RE.search(safe_str(label)))
+
+
+def _name_suggests_non_finance_business(name: str, *, strong_only: bool = False) -> bool:
+    n = _name_lower(name)
+    if any(m in n for m in _NON_FINANCE_NAME_MARKERS):
+        return True
+    if strong_only:
+        return False
+    return any(m in n for m in _SOFT_NON_FINANCE_NAME_MARKERS)
+
+
+def _name_suggests_finance_business(name: str) -> bool:
+    if _name_suggests_banking(name):
+        return True
+    n = _name_lower(name)
+    return any(m in n for m in _FINANCE_NAME_MARKERS)
+
+
+def _source_looks_finance(source: str) -> bool:
+    return _label_looks_finance(source) or safe_str(source) in {"Finance", "Financial"}
+
+
+def reconcile_taxonomy_conflicts(stocks: pd.DataFrame) -> pd.DataFrame:
+    """
+    Drop sqlite finance industries that conflict with HF source / company name.
+
+    Local-only (no Screener). When industry looks like Banking/Brokerage but
+    source_sector or name points elsewhere, prefer the non-finance signal.
+    """
+    if stocks is None or stocks.empty:
+        return stocks if stocks is not None else pd.DataFrame()
+
+    out = stocks.copy()
+    for col in ("sector", "industry", "sub_sector", "source_sector", "name"):
+        if col not in out.columns:
+            out[col] = ""
+
+    industries: list[str] = []
+    sub_sectors: list[str] = []
+    for _, row in out.iterrows():
+        industry = safe_str(row.get("industry"))
+        sub = safe_str(row.get("sub_sector"))
+        source = safe_str(row.get("source_sector"))
+        name = safe_str(row.get("name"))
+
+        finance_ind = _label_looks_finance(industry) or _label_looks_finance(sub)
+        if not finance_ind:
+            industries.append(industry)
+            sub_sectors.append(sub)
+            continue
+
+        # Real finance names keep sqlite industry (e.g. Power Finance, Steel City Securities).
+        if _name_suggests_finance_business(name):
+            industries.append(industry)
+            sub_sectors.append(sub)
+            continue
+
+        source_non_fin = source in _NON_FINANCE_SOURCE
+        strong_non_fin = _name_suggests_non_finance_business(name, strong_only=True)
+        soft_non_fin = _name_suggests_non_finance_business(name, strong_only=False)
+
+        should_replace = False
+        if strong_non_fin:
+            should_replace = True
+        elif source_non_fin and (soft_non_fin or strong_non_fin):
+            # Need a name hint — HF source alone is often stale (AMC tagged Technology, etc.).
+            should_replace = True
+        elif source_non_fin and source in {
+            "Process industries",
+            "Producer manufacturing",
+            "Non-energy minerals",
+            "Basic materials",
+            "Industrials",
+            "Energy minerals",
+            "Health technology",
+            "Health services",
+        }:
+            # Strong industrial HF buckets: replace only when name is not finance-like
+            # and industry is a thin/generic finance tag that holding cos often get.
+            thin_finance = industry in {
+                "Investment Banking & Brokerage",
+                "Capital Markets",
+                "Asset Management",
+                "Consumer Finance",
+                "Specialized Finance",
+            } or sub in {
+                "Investment Banking & Brokerage",
+                "Capital Markets",
+                "Asset Management",
+                "Consumer Finance",
+                "Specialized Finance",
+            }
+            # Holding / venture shells with industrial HF source — leave alone unless thin IB tag
+            # paired with "Industries" style names (covered by soft markers). Skip pure *Ventures*.
+            if thin_finance and soft_non_fin:
+                should_replace = True
+
+        if not should_replace:
+            industries.append(industry)
+            sub_sectors.append(sub)
+            continue
+
+        replacement = _industry_from_name(name) or _humanize_coarse_industry(source) or source
+        industries.append(replacement)
+        sub_sectors.append(replacement)
+
+    out["industry"] = industries
+    out["sub_sector"] = sub_sectors
+    return out
+
+
 def display_sector(
     *,
     sector: str = "",
@@ -551,6 +774,48 @@ def display_sector(
             return TELECOM
 
     return coarse
+
+
+def apply_display_sector_mapping(stocks: pd.DataFrame) -> pd.DataFrame:
+    """Replace ``sector`` with display-friendly labels; keep ``source_sector`` when changed."""
+    if stocks is None or stocks.empty:
+        return stocks if stocks is not None else pd.DataFrame()
+
+    out = reconcile_taxonomy_conflicts(stocks.copy())
+    if "sector" not in out.columns:
+        out["sector"] = ""
+    if "industry" not in out.columns:
+        out["industry"] = ""
+    if "sub_sector" not in out.columns:
+        out["sub_sector"] = ""
+
+    source_sectors: list[str] = []
+    display_sectors: list[str] = []
+    for _, row in out.iterrows():
+        existing_source = safe_str(row.get("source_sector"))
+        raw = existing_source or safe_str(row.get("sector"))
+        mapped = display_sector(
+            sector=raw,
+            industry=safe_str(row.get("industry")),
+            sub_sector=safe_str(row.get("sub_sector")),
+        )
+        mapped = refine_display_sector_from_name(
+            name=safe_str(row.get("name")),
+            sector=mapped or raw,
+            source_sector=existing_source or raw,
+        )
+        display_sectors.append(mapped or raw)
+        source_sectors.append(existing_source or (raw if raw and raw != mapped else ""))
+
+    out["sector"] = display_sectors
+    if "source_sector" not in out.columns:
+        out["source_sector"] = source_sectors
+    else:
+        out["source_sector"] = [
+            src or safe_str(existing)
+            for src, existing in zip(source_sectors, out["source_sector"], strict=False)
+        ]
+    return reconcile_industry_labels(out)
 
 
 def display_sectors_for_labels(labels) -> set[str]:
@@ -658,45 +923,3 @@ def reconcile_industry_labels(stocks: pd.DataFrame) -> pd.DataFrame:
     out["industry"] = industries
     out["sub_sector"] = sub_sectors
     return out
-
-
-def apply_display_sector_mapping(stocks: pd.DataFrame) -> pd.DataFrame:
-    """Replace ``sector`` with display-friendly labels; keep ``source_sector`` when changed."""
-    if stocks is None or stocks.empty:
-        return stocks if stocks is not None else pd.DataFrame()
-
-    out = stocks.copy()
-    if "sector" not in out.columns:
-        out["sector"] = ""
-    if "industry" not in out.columns:
-        out["industry"] = ""
-    if "sub_sector" not in out.columns:
-        out["sub_sector"] = ""
-
-    source_sectors: list[str] = []
-    display_sectors: list[str] = []
-    for _, row in out.iterrows():
-        existing_source = safe_str(row.get("source_sector"))
-        raw = existing_source or safe_str(row.get("sector"))
-        mapped = display_sector(
-            sector=raw,
-            industry=safe_str(row.get("industry")),
-            sub_sector=safe_str(row.get("sub_sector")),
-        )
-        mapped = refine_display_sector_from_name(
-            name=safe_str(row.get("name")),
-            sector=mapped or raw,
-            source_sector=existing_source or raw,
-        )
-        display_sectors.append(mapped or raw)
-        source_sectors.append(existing_source or (raw if raw and raw != mapped else ""))
-
-    out["sector"] = display_sectors
-    if "source_sector" not in out.columns:
-        out["source_sector"] = source_sectors
-    else:
-        out["source_sector"] = [
-            src or safe_str(existing)
-            for src, existing in zip(source_sectors, out["source_sector"], strict=False)
-        ]
-    return reconcile_industry_labels(out)

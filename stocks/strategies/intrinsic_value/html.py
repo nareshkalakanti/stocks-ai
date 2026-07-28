@@ -1037,7 +1037,7 @@ const stockPageLimits = {{}};
 let fpeMax = null;
 let pcfMax = null;
 let stockSortCol = "total_score";
-let stockSortDir = -1;
+let stockSortDir = 1; // lower total_score = better (good → bad)
 const STOCK_SORT_COLS = [
   {{id:"rank", label:"#", key:"rank", cls:"col-rank", sortable:false}},
   {{id:"company", label:"Company", key:"name", cls:"col-company", sortable:true}},
@@ -1049,7 +1049,7 @@ const STOCK_SORT_COLS = [
   {{id:"pe_ratio", label:"PE", key:"pe_ratio", cls:"num col-pe", sortable:true, title:"Option A: 4+ qtrs → sum last 4 EPS (TTM); 1–3 → sum available; else Yahoo trailingPE"}},
   {{id:"forward_pe", label:"Fwd PE", key:"forward_pe", cls:"num col-fpe", sortable:true, title:"Option B: price ÷ (latest quarter EPS × 4)"}},
   {{id:"pcf", label:"P/CF", key:"pcf", cls:"num col-pcf", sortable:true, title:"Price ÷ operating cash flow per share"}},
-  {{id:"total_score", label:"Score", key:"total_score", cls:"num col-score", sortable:true}},
+  {{id:"total_score", label:"Score", key:"total_score", cls:"num col-score", sortable:true, title:"Lower is better (growth + ROCE + P/B ranks)"}},
 ];
 
 {CORP_TAGS_JS}
@@ -1187,7 +1187,7 @@ function setStockSort(colId) {{
   if (stockSortCol === colId) stockSortDir *= -1;
   else {{
     stockSortCol = colId;
-    stockSortDir = (colId === "company" || colId === "industry") ? 1 : -1;
+    stockSortDir = (colId === "company" || colId === "industry" || colId === "total_score") ? 1 : -1;
   }}
   Object.keys(stockPageLimits).forEach(k => delete stockPageLimits[k]);
   render();
@@ -1276,6 +1276,10 @@ function renderStocksForSector(sector, tbody) {{
   const limit = stockPageLimits[sector] || Math.min(STOCK_PAGE, all.length);
   const stocks = all.slice(0, limit);
   stocks.forEach(s => {{
+    const score = Math.round(num(s.total_score) || 0);
+    const scoreCls = (num(s.rank) !== null && num(s.rank) <= 20)
+      ? "score-good"
+      : (num(s.rank) !== null && num(s.rank) >= Math.max(40, (all.length || 0) * 0.7) ? "score-bad" : "");
     const tr = document.createElement("tr");
     tr.innerHTML =
       `<td class="col-rank">${{s.rank || ""}}</td>` +
@@ -1288,7 +1292,7 @@ function renderStocksForSector(sector, tbody) {{
       `<td class="num col-pe">${{fmtPe(s.pe_ratio)}}</td>` +
       `<td class="num col-fpe">${{fmtFpe(s.forward_pe)}}</td>` +
       `<td class="num col-pcf" title="Price ÷ operating cash flow per share">${{fmtNum(s.pcf, 2)}}</td>` +
-      `<td class="num col-score">${{Math.round(num(s.total_score) || 0)}}</td>`;
+      `<td class="num col-score ${{scoreCls}}" title="Lower is better">${{score}}</td>`;
     tbody.appendChild(tr);
   }});
   if (all.length > limit) {{

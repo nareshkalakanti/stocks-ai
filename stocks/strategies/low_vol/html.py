@@ -1,4 +1,4 @@
-"""HTML report for weekly base breakout scan."""
+"""HTML report for low-volatility factor scan."""
 
 from __future__ import annotations
 
@@ -6,30 +6,32 @@ import pandas as pd
 
 from stocks.dashboards.interactive_table import build_interactive_section, wrap_interactive_page
 
-BASE_BREAKOUT_JS_COLS = [
+LOW_VOL_JS_COLS = [
     {"id": "company", "label": "Stock", "fmt": "company"},
     {"id": "market", "label": "Mkt", "fmt": "text"},
-    {"id": "signal", "label": "Signal", "fmt": "text"},
+    {"id": "vol_rank", "label": "Rank", "fmt": "int"},
+    {"id": "short_vol", "label": "ST Vol%", "fmt": "num1"},
+    {"id": "long_vol", "label": "LT Vol%", "fmt": "num1"},
+    {"id": "composite_vol", "label": "Avg Vol%", "fmt": "num1"},
     {"id": "score", "label": "Score", "fmt": "score"},
     {"id": "price", "label": "Price", "fmt": "num2"},
-    {"id": "detail", "label": "Setup", "fmt": "text"},
     {"id": "date", "label": "As of", "fmt": "date"},
 ]
 
 
-def build_base_breakout_html(
+def build_low_vol_html(
     df: pd.DataFrame,
     *,
     standalone: bool = True,
 ) -> str:
     section = build_interactive_section(
-        "basebreakout",
-        "Weekly Base Breakout — long consolidation near breakout (expand row for chart · TV to verify)",
+        "lowvol",
+        "Low Volatility — bottom 20% by short (21d) + long (252d) annualized vol",
         df,
-        BASE_BREAKOUT_JS_COLS,
-        kind="base_breakout",
+        LOW_VOL_JS_COLS,
+        kind="low_vol",
         open_section=True,
-        expand_hint="Click row — weekly base chart · website · quarterly · TV",
+        expand_hint="Click row — website · quarterly · TV",
         fetch_news=True,
     )
     return wrap_interactive_page(
@@ -39,5 +41,5 @@ def build_base_breakout_html(
     )
 
 
-def base_breakout_iframe_height(row_count: int) -> int:
-    return min(2600, max(700, 480 + min(row_count, 50) * 24))
+def low_vol_iframe_height(row_count: int) -> int:
+    return min(2400, max(620, 420 + min(row_count, 50) * 24))

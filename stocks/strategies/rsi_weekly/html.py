@@ -33,6 +33,7 @@ def build_rsi_weekly_html(
         RSI_WEEKLY_JS_COLS,
         kind="rsi_weekly",
         open_section=True,
+        expand_hint="Click row — website · quarterly · TV",
     )
     return wrap_interactive_page(
         title="",

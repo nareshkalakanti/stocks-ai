@@ -35,6 +35,7 @@ def build_tq_recovery_html(
         TQ_RECOVERY_JS_COLS,
         kind="recovery",
         open_section=True,
+        expand_hint="Click row — website · quarterly · TV",
     )
     return wrap_interactive_page(
         title="",

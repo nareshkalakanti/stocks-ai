@@ -53,6 +53,69 @@ _REQUIRED_NSE: dict[str, dict[str, str]] = {
     },
 }
 
+# Sector / industry fixes when sqlite taxonomy is wrong (optional market / name match).
+# Prefer Screener peer buckets where checked.
+_CLASSIFICATION_OVERRIDES: tuple[dict[str, str], ...] = (
+    {
+        "ticker": "KIRLOSIND",
+        "sector": "Industrials",
+        "industry": "Iron & Steel Products",
+        "sub_sector": "Iron & Steel Products",
+    },
+    {
+        # BSE SME castings / containers — not Consumer Finance (ticker collides with NSE commercials).
+        "ticker": "KALYANI",
+        "market": "BSE",
+        "name_contains": "Cast-Tech",
+        "sector": "Industrials",
+        "industry": "Castings & Containers",
+        "sub_sector": "Castings & Containers",
+    },
+    {
+        # NSE — commercial vehicle / petroleum dealer, surrendered NBFC.
+        "ticker": "KALYANI",
+        "market": "NSE",
+        "name_contains": "Commercial",
+        "sector": "Automobile & Ancillaries",
+        "industry": "Dealers-Commercial Vehicles",
+        "sub_sector": "Dealers-Commercial Vehicles",
+    },
+    {
+        # Healthcare ITES / US payer BPO — not Specialized Finance.
+        "ticker": "SAGILITY",
+        "sector": "IT & Technology",
+        "industry": "IT Enabled Services",
+        "sub_sector": "IT Enabled Services",
+    },
+    {
+        # e-Governance / commercial services — not Investment Banking.
+        "ticker": "ALANKIT",
+        "sector": "Commercial & Business Services",
+        "industry": "Diversified Commercial Services",
+        "sub_sector": "Diversified Commercial Services",
+    },
+    {
+        # NSE SME biodiesel — not Investment Banking (ticker collides with BSE finance name).
+        "ticker": "RAJPUTANA",
+        "name_contains": "Biodiesel",
+        "sector": "Oil & Gas & Energy",
+        "industry": "Biofuels",
+        "sub_sector": "Biofuels",
+    },
+    {
+        # IT / ITES holding — not Capital Markets.
+        "ticker": "UNITEDINT",
+        "sector": "IT & Technology",
+        "industry": "IT Enabled Services",
+        "sub_sector": "IT Enabled Services",
+    },
+)
+
+
+def classification_overrides() -> tuple[dict[str, str], ...]:
+    """Ticker classification patches (also applied when refreshing sqlite DBs)."""
+    return _CLASSIFICATION_OVERRIDES
+
 
 def stock_display_name(ticker: str) -> str | None:
     key = safe_str(ticker).upper()
@@ -77,11 +140,51 @@ def ticker_meta_override(ticker: str) -> dict[str, str]:
         val = safe_str(required.get(col))
         if val:
             out[col] = val
+    for rule in _CLASSIFICATION_OVERRIDES:
+        if safe_str(rule.get("ticker")).upper() != key:
+            continue
+        if rule.get("market") or rule.get("name_contains"):
+            continue  # ambiguous without row context
+        for col in ("sector", "industry", "sub_sector"):
+            val = safe_str(rule.get(col))
+            if val:
+                out[col] = val
+        break
+    return out
+
+
+def _apply_classification_overrides(out: pd.DataFrame) -> pd.DataFrame:
+    if out.empty or not _CLASSIFICATION_OVERRIDES:
+        return out
+    tickers = out["ticker"].astype(str).str.upper()
+    markets = (
+        out["market"].astype(str).str.upper()
+        if "market" in out.columns
+        else pd.Series("", index=out.index)
+    )
+    names = out["name"].astype(str) if "name" in out.columns else pd.Series("", index=out.index)
+    for rule in _CLASSIFICATION_OVERRIDES:
+        ticker = safe_str(rule.get("ticker")).upper()
+        if not ticker:
+            continue
+        mask = tickers == ticker
+        market = safe_str(rule.get("market")).upper()
+        if market:
+            mask &= markets == market
+        name_contains = safe_str(rule.get("name_contains"))
+        if name_contains:
+            mask &= names.str.contains(name_contains, case=False, na=False)
+        if not mask.any():
+            continue
+        for col in ("sector", "industry", "sub_sector"):
+            val = safe_str(rule.get(col))
+            if val:
+                out.loc[mask, col] = val
     return out
 
 
 def apply_stock_overrides(stocks: pd.DataFrame) -> pd.DataFrame:
-    if stocks.empty and not _REQUIRED_NSE:
+    if stocks.empty and not _REQUIRED_NSE and not _CLASSIFICATION_OVERRIDES:
         return stocks
 
     out = stocks.copy()
@@ -110,4 +213,4 @@ def apply_stock_overrides(stocks: pd.DataFrame) -> pd.DataFrame:
     if extra_rows:
         out = pd.concat([out, pd.DataFrame(extra_rows)], ignore_index=True)
 
-    return out
+    return _apply_classification_overrides(out)

@@ -49,6 +49,7 @@ def build_strategy_dashboard_html(
                 _TQ_JS_COLS,
                 kind="tq",
                 open_section=True,
+                expand_hint="Click row — website · quarterly · TV",
             )
         )
     if include_bb:
@@ -60,6 +61,7 @@ def build_strategy_dashboard_html(
                 _BB_JS_COLS,
                 kind="bb",
                 open_section=not include_tq,
+                expand_hint="Click row — website · quarterly · TV",
             )
         )
 

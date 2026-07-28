@@ -30,6 +30,7 @@ def build_ema_daily_html(
         EMA_DAILY_JS_COLS,
         kind="ema_daily",
         open_section=True,
+        expand_hint="Click row — website · quarterly · MAs · TV",
     )
     return wrap_interactive_page(
         title="",

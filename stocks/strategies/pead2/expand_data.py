@@ -175,7 +175,10 @@ def fetch_pead_expand_data(
                         ticker=ticker_key,
                         market=market,
                     )
-            return apply_scan_price_to_payload({"snapshot": snapshot} if snapshot else None, price)
+            payload = {"snapshot": snapshot} if snapshot else None
+            if payload and snapshot and snapshot.get("roe") is not None:
+                payload["roe"] = snapshot["roe"]
+            return apply_scan_price_to_payload(payload, price)
 
         def _align(base: pd.Series | None) -> pd.Series:
             if base is not None and not base.empty:
@@ -223,6 +226,9 @@ def fetch_pead_expand_data(
             out["pe_ratio"] = pe_ratio
         if forward_pe is not None:
             out["forward_pe"] = forward_pe
+        snap_roe = snapshot.get("roe") if isinstance(snapshot, dict) else None
+        if snap_roe is not None and not (isinstance(snap_roe, float) and pd.isna(snap_roe)):
+            out["roe"] = snap_roe
         return apply_scan_price_to_payload(out or None, price)
 
     def _log(exc: Exception) -> None:
@@ -250,7 +256,7 @@ def attach_pead_expand(
         return df if df is not None else pd.DataFrame()
 
     out = df.copy()
-    for col in ("quarters", "snapshot", "pe_ratio", "forward_pe"):
+    for col in ("quarters", "snapshot", "pe_ratio", "forward_pe", "roe"):
         if col not in out.columns:
             out[col] = None
     tickers = out["ticker"].astype(str).str.upper().tolist()
@@ -324,6 +330,19 @@ def attach_pead_expand(
         for key, val in payload.items():
             if key not in out.columns:
                 out[key] = None
+            # Keep scan-time ROE / PE when expand payload omits them.
+            if key in {"roe", "pe_ratio", "forward_pe"} and (
+                val is None or (isinstance(val, float) and pd.isna(val))
+            ):
+                existing = out.at[idx, key] if key in out.columns else None
+                if existing is not None and not (isinstance(existing, float) and pd.isna(existing)):
+                    continue
             out.at[idx, key] = val
+        # Backfill ROE from snapshot when row still empty.
+        cur_roe = out.at[idx, "roe"] if "roe" in out.columns else None
+        if cur_roe is None or (isinstance(cur_roe, float) and pd.isna(cur_roe)):
+            snap = out.at[idx, "snapshot"] if "snapshot" in out.columns else None
+            if isinstance(snap, dict) and snap.get("roe") is not None:
+                out.at[idx, "roe"] = snap.get("roe")
 
     return out

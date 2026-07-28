@@ -45,6 +45,16 @@ from stocks.strategies.rsi_weekly.service import (
     prepare_rsi_weekly_universe,
     run_rsi_weekly_scan,
 )
+from stocks.strategies.factor.html import build_factor_html, factor_iframe_height
+from stocks.strategies.factor.service import (
+    prepare_factor_universe,
+    run_factor_scan,
+)
+from stocks.strategies.low_vol.html import build_low_vol_html, low_vol_iframe_height
+from stocks.strategies.low_vol.service import (
+    prepare_low_vol_universe,
+    run_low_vol_scan,
+)
 from stocks.strategies.cup_vcp.html import (
     build_cup_handle_html,
     build_vcp_html,
@@ -77,6 +87,8 @@ STRATEGY_OPTIONS = (
     "TQ W52 Recovery",
     "RSI Weekly",
     "Above All EMAs",
+    "Momentum",
+    "Low Volatility",
     "Weekly Base Breakout",
     "Cup & Handle",
     "VCP",
@@ -98,23 +110,25 @@ def _load_stocks_cached() -> pd.DataFrame:
 
 
 def _prepare_quant_report(df: pd.DataFrame) -> pd.DataFrame:
-    # Expand enrichment uses throttled Yahoo calls — keep separate from scan concurrency.
+    # Expand: PEAD cache + Yahoo fill for quarters / website / snapshot.
     return prepare_interactive_report_df(df, max_workers=8)
 
 
 def _prepare_pattern_report(df: pd.DataFrame) -> pd.DataFrame:
-    """Fast path: pattern chart + cached quarterly only (no live Yahoo/news fetch)."""
-    return prepare_interactive_report_df(df, max_workers=4, expand_cache_only=True)
+    """Same as full quant report — website + quarterly on expand."""
+    return _prepare_quant_report(df)
 
 
 QUANT_HTML_CACHE_KEYS = {
-    "ema": "strat_ema_html_v3",
-    "rsi": "strat_rsi_html_v3",
-    "recovery": "strat_recovery_html_v3",
-    "base_breakout": "strat_base_breakout_html_v2",
-    "tq_bb": "strat_tq_bb_html_v3",
-    "cup_handle": "strat_cup_handle_html_v3",
-    "vcp": "strat_vcp_html_v3",
+    "ema": "strat_ema_html_v4",
+    "rsi": "strat_rsi_html_v4",
+    "recovery": "strat_recovery_html_v4",
+    "base_breakout": "strat_base_breakout_html_v3",
+    "low_vol": "strat_low_vol_html_v2",
+    "factor": "strat_factor_html_v5",
+    "tq_bb": "strat_tq_bb_html_v4",
+    "cup_handle": "strat_cup_handle_html_v5",
+    "vcp": "strat_vcp_html_v4",
 }
 
 
@@ -187,7 +201,7 @@ def _show_pattern_scan_results(
     csv_button_key: str,
 ) -> None:
     st.caption(
-        f"**{len(result):,}** {label} (daily) · expand row for drawn chart · **TV** link to verify on TradingView."
+        f"**{len(result):,}** {label} · expand row for drawn chart · **TV** link to verify on TradingView."
     )
     embed_html = build_html(result, standalone=False)
     _embed_cached_quant_html(
@@ -205,12 +219,15 @@ def _show_pattern_scan_results(
 
 
 def _show_cup_handle_results(result: pd.DataFrame) -> None:
+    tf = "weekly"
+    if result is not None and not result.empty and "timeframe" in result.columns:
+        tf = str(result["timeframe"].iloc[0] or "weekly")
     _show_pattern_scan_results(
         result,
-        label="Cup & Handle setups",
+        label=f"Cup & Handle setups ({tf})",
         html_key=QUANT_HTML_CACHE_KEYS["cup_handle"],
         build_html=build_cup_handle_html,
-        csv_name="cup_handle_daily.csv",
+        csv_name=f"cup_handle_{tf}.csv",
         csv_button_key="strat_cup_handle_csv",
     )
 
@@ -242,6 +259,44 @@ def _show_base_breakout_results(result: pd.DataFrame) -> None:
         file_name="weekly_base_breakout.csv",
         mime="text/csv",
         key="strat_base_breakout_csv",
+    )
+
+
+def _show_low_vol_results(result: pd.DataFrame) -> None:
+    st.caption(
+        f"**{len(result):,}** Low Volatility names (bottom 20% by ST+LT vol) · expand row · **TV** to verify."
+    )
+    embed_html = build_low_vol_html(result, standalone=False)
+    _embed_cached_quant_html(
+        QUANT_HTML_CACHE_KEYS["low_vol"],
+        embed_html,
+        height=low_vol_iframe_height(len(result)),
+    )
+    st.download_button(
+        "Download CSV",
+        data=_export_scan_csv(result),
+        file_name="low_volatility.csv",
+        mime="text/csv",
+        key="strat_low_vol_csv",
+    )
+
+
+def _show_factor_results(result: pd.DataFrame) -> None:
+    st.caption(
+        f"**{len(result):,}** Momentum names (top 20% by 12–1) · expand row · website · quarterly · **TV**."
+    )
+    embed_html = build_factor_html(result, standalone=False)
+    _embed_cached_quant_html(
+        QUANT_HTML_CACHE_KEYS["factor"],
+        embed_html,
+        height=factor_iframe_height(len(result)),
+    )
+    st.download_button(
+        "Download CSV",
+        data=_export_scan_csv(result),
+        file_name="momentum.csv",
+        mime="text/csv",
+        key="strat_momentum_csv",
     )
 
 
@@ -308,7 +363,7 @@ def _render_quant_cached_results(strategy_choice: str) -> None:
         if cached_html:
             if cached is not None and hasattr(cached, "__len__"):
                 st.caption(
-                    f"**{len(cached):,}** Cup & Handle setups (daily) · expand row · TV to verify."
+                    f"**{len(cached):,}** Cup & Handle setups · expand row · TV to verify."
                 )
             _embed_cached_quant_html(
                 QUANT_HTML_CACHE_KEYS["cup_handle"],
@@ -376,6 +431,56 @@ def _render_quant_cached_results(strategy_choice: str) -> None:
             return
         if cached is not None and hasattr(cached, "empty") and not cached.empty:
             _show_base_breakout_results(cached)
+        return
+    if strategy_choice == "Low Volatility":
+        cached_html = st.session_state.get(QUANT_HTML_CACHE_KEYS["low_vol"])
+        cached = st.session_state.get("strat_low_vol_result")
+        if cached_html:
+            if cached is not None and hasattr(cached, "__len__"):
+                st.caption(
+                    f"**{len(cached):,}** Low Volatility names · expand row · TV to verify."
+                )
+            _embed_cached_quant_html(
+                QUANT_HTML_CACHE_KEYS["low_vol"],
+                cached_html,
+                height=low_vol_iframe_height(len(cached) if cached is not None else 0),
+            )
+            if cached is not None and hasattr(cached, "empty") and not cached.empty:
+                st.download_button(
+                    "Download CSV",
+                    data=_export_scan_csv(cached),
+                    file_name="low_volatility.csv",
+                    mime="text/csv",
+                    key="strat_low_vol_csv",
+                )
+            return
+        if cached is not None and hasattr(cached, "empty") and not cached.empty:
+            _show_low_vol_results(cached)
+        return
+    if strategy_choice == "Momentum":
+        cached_html = st.session_state.get(QUANT_HTML_CACHE_KEYS["factor"])
+        cached = st.session_state.get("strat_factor_result")
+        if cached_html:
+            if cached is not None and hasattr(cached, "__len__"):
+                st.caption(
+                    f"**{len(cached):,}** Momentum names · expand row · website · quarterly · TV."
+                )
+            _embed_cached_quant_html(
+                QUANT_HTML_CACHE_KEYS["factor"],
+                cached_html,
+                height=factor_iframe_height(len(cached) if cached is not None else 0),
+            )
+            if cached is not None and hasattr(cached, "empty") and not cached.empty:
+                st.download_button(
+                    "Download CSV",
+                    data=_export_scan_csv(cached),
+                    file_name="momentum.csv",
+                    mime="text/csv",
+                    key="strat_momentum_csv",
+                )
+            return
+        if cached is not None and hasattr(cached, "empty") and not cached.empty:
+            _show_factor_results(cached)
         return
     if strategy_choice == "RSI Weekly":
         cached_html = st.session_state.get(QUANT_HTML_CACHE_KEYS["rsi"])
@@ -457,7 +562,7 @@ def _run_ema_daily_scan(filtered: pd.DataFrame, *, cap_tier_id: str) -> None:
         )
         return
 
-    with st.spinner("Loading quarterly data & links..."):
+    with st.spinner("Loading website, quarterly data & links..."):
         result = _prepare_quant_report(result)
 
     st.session_state.strat_ema_result = result
@@ -497,7 +602,7 @@ def _run_tq_recovery_scan(filtered: pd.DataFrame, *, cap_tier_id: str) -> None:
         )
         return
 
-    with st.spinner("Loading quarterly data & links..."):
+    with st.spinner("Loading website, quarterly data & links..."):
         result = _prepare_quant_report(result)
 
     st.session_state.strat_recovery_result = result
@@ -514,6 +619,7 @@ def _run_pattern_scan(
     empty_message: str,
     session_key: str,
     show_results,
+    scan_kwargs: dict | None = None,
 ) -> None:
     max_workers = int(st.session_state.strategy_max_workers)
     base_universe = analysis_universe(filtered, limit=0)
@@ -523,6 +629,7 @@ def _run_pattern_scan(
         return
 
     progress = st.progress(0, text=f"{label} scan...")
+    extra = dict(scan_kwargs or {})
 
     try:
 
@@ -534,6 +641,7 @@ def _run_pattern_scan(
             max_workers=max_workers,
             progress_callback=_progress,
             should_stop=lambda: st.session_state.get("strategy_scan_stop", False),
+            **extra,
         )
     except Exception as exc:
         progress.empty()
@@ -546,23 +654,30 @@ def _run_pattern_scan(
         st.warning(empty_message)
         return
 
-    with st.spinner("Loading quarterly data & links..."):
+    with st.spinner("Loading website, quarterly data & links..."):
         result = _prepare_pattern_report(result)
 
     st.session_state[session_key] = result
     show_results(result)
 
 
-def _run_cup_handle_scan(filtered: pd.DataFrame, *, cap_tier_id: str) -> None:
+def _run_cup_handle_scan(
+    filtered: pd.DataFrame,
+    *,
+    cap_tier_id: str,
+    timeframe: str = "weekly",
+) -> None:
+    tf = timeframe if timeframe in {"daily", "weekly"} else "weekly"
     _run_pattern_scan(
         filtered,
         cap_tier_id=cap_tier_id,
-        label="Cup & Handle",
+        label=f"Cup & Handle ({tf})",
         run_scan=run_cup_handle_scan,
         prepare_universe=prepare_cup_handle_universe,
-        empty_message="No Cup & Handle setups near rim in the current selection.",
+        empty_message=f"No Cup & Handle setups near rim ({tf}) in the current selection.",
         session_key="strat_cup_handle_result",
         show_results=_show_cup_handle_results,
+        scan_kwargs={"timeframe": tf},
     )
 
 
@@ -589,6 +704,32 @@ def _run_base_breakout_scan(filtered: pd.DataFrame, *, cap_tier_id: str) -> None
         empty_message="No weekly base breakout setups near pivot in the current selection.",
         session_key="strat_base_breakout_result",
         show_results=_show_base_breakout_results,
+    )
+
+
+def _run_low_vol_scan(filtered: pd.DataFrame, *, cap_tier_id: str) -> None:
+    _run_pattern_scan(
+        filtered,
+        cap_tier_id=cap_tier_id,
+        label="Low Volatility",
+        run_scan=run_low_vol_scan,
+        prepare_universe=prepare_low_vol_universe,
+        empty_message="No low-volatility names in the current selection.",
+        session_key="strat_low_vol_result",
+        show_results=_show_low_vol_results,
+    )
+
+
+def _run_factor_scan(filtered: pd.DataFrame, *, cap_tier_id: str) -> None:
+    _run_pattern_scan(
+        filtered,
+        cap_tier_id=cap_tier_id,
+        label="Momentum",
+        run_scan=run_factor_scan,
+        prepare_universe=prepare_factor_universe,
+        empty_message="No momentum names in the current selection.",
+        session_key="strat_factor_result",
+        show_results=_show_factor_results,
     )
 
 
@@ -625,7 +766,7 @@ def _run_rsi_weekly_scan(filtered: pd.DataFrame, *, cap_tier_id: str) -> None:
         )
         return
 
-    with st.spinner("Loading quarterly data & links..."):
+    with st.spinner("Loading website, quarterly data & links..."):
         result = _prepare_quant_report(result)
 
     st.session_state.strat_rsi_result = result
@@ -663,8 +804,10 @@ def render_strategy_scan() -> None:
                 key="strat_choice",
                 help=(
                     "TQ = trend quality · BB = Bollinger breakout · "
+                    "Momentum = top 20% by 12–1 return · "
+                    "Low Volatility = bottom 20% short+long realized vol · "
                     "Weekly Base Breakout = long consolidation near breakout · "
-                    "Cup & Handle and VCP = separate daily pattern scans · TV in report"
+                    "Cup & Handle = weekly (or daily) pattern · VCP = daily · TV in report"
                 ),
             )
         with row[5]:
@@ -677,7 +820,9 @@ def render_strategy_scan() -> None:
                 key="strat_timeframe",
                 help=(
                     "TQ / BB timeframe · W52 Recovery and RSI Weekly use weekly · "
-                    "Weekly Base Breakout uses weekly · Above All EMAs, Cup & Handle, and VCP use daily"
+                    "Cup & Handle defaults to weekly (daily also available) · "
+                    "Weekly Base Breakout / RSI / W52 use weekly · "
+                    "Above All EMAs, Momentum, Low Volatility, and VCP use daily"
                 ),
             )
         with row[6]:
@@ -721,8 +866,16 @@ def render_strategy_scan() -> None:
     if strategy_choice == "Weekly Base Breakout":
         _run_base_breakout_scan(filtered, cap_tier_id=cap_tier_id)
         return
+    if strategy_choice == "Low Volatility":
+        _run_low_vol_scan(filtered, cap_tier_id=cap_tier_id)
+        return
+    if strategy_choice == "Momentum":
+        _run_factor_scan(filtered, cap_tier_id=cap_tier_id)
+        return
     if strategy_choice == "Cup & Handle":
-        _run_cup_handle_scan(filtered, cap_tier_id=cap_tier_id)
+        _run_cup_handle_scan(
+            filtered, cap_tier_id=cap_tier_id, timeframe=scan_timeframe
+        )
         return
     if strategy_choice == "VCP":
         _run_vcp_scan(filtered, cap_tier_id=cap_tier_id)
@@ -821,13 +974,13 @@ def render_strategy_scan() -> None:
         return
 
     if has_tq and not tq_result.empty:
-        with st.spinner("Loading quarterly data & links for TQ signals..."):
+        with st.spinner("Loading website, quarterly data & links for TQ signals..."):
             tq_result = _prepare_quant_report(tq_result)
         saved_tq = save_strategy_tq_signals(tq_result, timeframe=scan_timeframe)
     else:
         saved_tq = 0
     if has_bb and not bb_result.empty:
-        with st.spinner("Loading quarterly data & links for BB signals..."):
+        with st.spinner("Loading website, quarterly data & links for BB signals..."):
             bb_result = _prepare_quant_report(bb_result)
         saved_bb = save_strategy_bb_signals(bb_result, timeframe=scan_timeframe)
     else:

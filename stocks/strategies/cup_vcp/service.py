@@ -1,8 +1,9 @@
-"""Cup & Handle and VCP daily pattern scanners."""
+"""Cup & Handle and VCP pattern scanners (daily / weekly)."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import partial
 
 import pandas as pd
 
@@ -19,12 +20,18 @@ from stocks.strategies.tq_bb.service import (
     run_tq_worker_count,
 )
 
-HISTORY_PERIOD = "1y"
-HISTORY_INTERVAL = "1d"
-MIN_BARS = 60
+HISTORY_BY_TF = {
+    "daily": ("1y", "1d", 60),
+    "weekly": ("5y", "1wk", 40),
+}
 
 PATTERN_CUP_HANDLE = "CUP_HANDLE"
 PATTERN_VCP = "VCP"
+
+
+def _history_cfg(timeframe: str) -> tuple[str, str, int]:
+    tf = safe_str(timeframe).lower() or "daily"
+    return HISTORY_BY_TF.get(tf, HISTORY_BY_TF["daily"])
 
 
 def _analyze(
@@ -32,51 +39,63 @@ def _analyze(
     market: str | None,
     *,
     pattern_code: str,
+    timeframe: str = "daily",
 ) -> dict | None:
     if is_skippable_symbol(ticker):
         return None
-    data = _fetch_history(
-        ticker, market, period=HISTORY_PERIOD, interval=HISTORY_INTERVAL
-    )
-    if data is None or len(data) < MIN_BARS:
+    period, interval, min_bars = _history_cfg(timeframe)
+    data = _fetch_history(ticker, market, period=period, interval=interval)
+    if data is None or len(data) < min_bars:
         return None
     return analyze_ticker_patterns(
-        ticker, market, data, pattern_code=pattern_code
+        ticker,
+        market,
+        data,
+        pattern_code=pattern_code,
+        timeframe=safe_str(timeframe).lower() or "daily",
     )
 
 
-def analyze_cup_handle(ticker: str, market: str | None = None) -> dict | None:
-    return _analyze(ticker, market, pattern_code=PATTERN_CUP_HANDLE)
+def analyze_cup_handle(
+    ticker: str,
+    market: str | None = None,
+    *,
+    timeframe: str = "weekly",
+) -> dict | None:
+    return _analyze(
+        ticker, market, pattern_code=PATTERN_CUP_HANDLE, timeframe=timeframe
+    )
 
 
 def analyze_vcp(ticker: str, market: str | None = None) -> dict | None:
-    return _analyze(ticker, market, pattern_code=PATTERN_VCP)
+    return _analyze(ticker, market, pattern_code=PATTERN_VCP, timeframe="daily")
 
 
 def analyze_cup_vcp(ticker: str, market: str | None = None) -> dict | None:
-    """Best cup or VCP hit (legacy)."""
+    """Best cup or VCP hit (legacy daily)."""
     if is_skippable_symbol(ticker):
         return None
-    data = _fetch_history(
-        ticker, market, period=HISTORY_PERIOD, interval=HISTORY_INTERVAL
-    )
-    if data is None or len(data) < MIN_BARS:
+    period, interval, min_bars = _history_cfg("daily")
+    data = _fetch_history(ticker, market, period=period, interval=interval)
+    if data is None or len(data) < min_bars:
         return None
-    return analyze_ticker_patterns(ticker, market, data)
+    return analyze_ticker_patterns(ticker, market, data, timeframe="daily")
 
 
 def run_pattern_scan(
     universe: pd.DataFrame,
     *,
     pattern_code: str,
+    timeframe: str = "daily",
     limit: int | None = None,
     max_workers: int | None = None,
     progress_callback=None,
     should_stop: Callable[[], bool] | None = None,
 ) -> pd.DataFrame:
     code = safe_str(pattern_code).upper()
+    tf = safe_str(timeframe).lower() or "daily"
     if code == PATTERN_CUP_HANDLE:
-        worker = analyze_cup_handle
+        worker = partial(analyze_cup_handle, timeframe=tf)
     elif code == PATTERN_VCP:
         worker = analyze_vcp
     else:
@@ -123,16 +142,23 @@ def run_pattern_scan(
 
 def run_cup_handle_scan(
     universe: pd.DataFrame,
+    *,
+    timeframe: str = "weekly",
     **kwargs,
 ) -> pd.DataFrame:
-    return run_pattern_scan(universe, pattern_code=PATTERN_CUP_HANDLE, **kwargs)
+    return run_pattern_scan(
+        universe,
+        pattern_code=PATTERN_CUP_HANDLE,
+        timeframe=timeframe,
+        **kwargs,
+    )
 
 
 def run_vcp_scan(
     universe: pd.DataFrame,
     **kwargs,
 ) -> pd.DataFrame:
-    return run_pattern_scan(universe, pattern_code=PATTERN_VCP, **kwargs)
+    return run_pattern_scan(universe, pattern_code=PATTERN_VCP, timeframe="daily", **kwargs)
 
 
 def run_cup_vcp_scan(

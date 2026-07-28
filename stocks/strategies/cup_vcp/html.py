@@ -19,15 +19,15 @@ PATTERN_SCAN_JS_COLS = [
 _CUP_HANDLE_META = {
     "section_id": "cuphandle",
     "kind": "cup_handle",
-    "subtitle": "Cup & Handle — daily setups near rim (expand row for drawn shape · TV to verify)",
-    "expand_hint": "Click row — cup/handle on price + TradingView link",
+    "subtitle": "Cup & Handle — weekly/daily setups near rim (expand row for drawn shape · TV to verify)",
+    "expand_hint": "Click row — cup/handle chart · website · quarterly · TV",
 }
 
 _VCP_META = {
     "section_id": "vcp",
     "kind": "vcp",
     "subtitle": "VCP — volatility contractions into pivot (expand row for chart · TV to verify)",
-    "expand_hint": "Click row — VCP chart + TradingView link",
+    "expand_hint": "Click row — VCP chart · website · quarterly · TV",
 }
 
 
@@ -45,7 +45,7 @@ def _build_pattern_html(
         kind=meta["kind"],
         open_section=True,
         expand_hint=meta["expand_hint"],
-        fetch_news=False,
+        fetch_news=True,
     )
     return wrap_interactive_page(
         title="",

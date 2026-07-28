@@ -46,9 +46,9 @@ def strategy_timeframe_options(strategy_choice: str) -> tuple[str, ...]:
         return BB_TIMEFRAMES
     if choice in {"TQ W52 Recovery", "RSI Weekly", "Weekly Base Breakout"}:
         return ("weekly",)
-    if choice == "Above All EMAs":
-        return ("daily",)
-    if choice in {"Above All EMAs", "Cup & Handle", "VCP"}:
+    if choice == "Cup & Handle":
+        return ("weekly", "daily")
+    if choice in {"Above All EMAs", "VCP", "Low Volatility", "Momentum"}:
         return ("daily",)
     return TQ_TIMEFRAMES
 

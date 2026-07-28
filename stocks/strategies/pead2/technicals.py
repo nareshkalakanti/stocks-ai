@@ -196,6 +196,18 @@ def build_price_snapshot(
     if market_cap is not None and not pd.isna(market_cap):
         market_cap_cr = round(float(market_cap) / 1e7, 1)
 
+    roe_pct = None
+    roe_raw = info.get("returnOnEquity")
+    if roe_raw is not None and not pd.isna(roe_raw):
+        try:
+            roe_f = float(roe_raw)
+            if abs(roe_f) <= 1.5:
+                roe_f *= 100.0
+            if abs(roe_f) < 1e6:
+                roe_pct = round(roe_f, 2)
+        except (TypeError, ValueError):
+            roe_pct = None
+
     cagr = _sales_cagr_years(revenue) if revenue is not None else None
     if cagr is None:
         growth = info.get("revenueGrowth") or info.get("earningsGrowth")
@@ -243,6 +255,7 @@ def build_price_snapshot(
         "pe": pe_trailing,
         "pe_ratio": pe_trailing,
         "forward_pe": pe_forward,
+        "roe": roe_pct,
         "cagr": cagr,
         "w52_low": round(low, 2) if low is not None else None,
         "w52_high": round(high, 2) if high is not None else None,
