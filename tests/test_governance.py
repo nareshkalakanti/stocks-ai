@@ -483,8 +483,9 @@ def test_governance_map_rows(tmp_path, monkeypatch):
     assert 'data-hold="HOLD"' in html_out
     assert "govmap-sme-filter" not in html_out
     assert "govmap-cross-filter" not in html_out
-    assert "capFilter" in html_out
+    assert "capFilters" in html_out
     assert "holdFilter" in html_out
+    assert "selected.join(\"+\")" in html_out or 'selected.join("+")' in html_out
     assert "publicHolderRow" not in html_out
     assert "govmap-mode-holder" not in html_out
     assert "superstarRow" in html_out

@@ -512,19 +512,19 @@ def build_governance_map_html(
         <button type="button" class="active" id="govmap-mode-dir">By director</button>
         <button type="button" id="govmap-mode-role">By role</button>
       </div>
-      <div class="gov-cap-filter" role="group" aria-label="Cap tag filter" id="govmap-cap-filter">
+      <div class="gov-cap-filter" role="group" aria-label="Cap tag filter (multi-select)" id="govmap-cap-filter">
         <span class="gov-cap-filter-label">Cap</span>
-        <button type="button" class="active" data-cap="" title="Show all cap tags">All</button>
-        <button type="button" data-cap="NC" title="Nano Cap (&lt; 100 Cr)">NC</button>
-        <button type="button" data-cap="MIC" title="Micro Cap (100–500 Cr)">MIC</button>
-        <button type="button" data-cap="SC" title="Small Cap (500–5,000 Cr)">SC</button>
-        <button type="button" data-cap="MC" title="Mid Cap (5,000–20,000 Cr)">MC</button>
-        <button type="button" data-cap="LC" title="Large Cap (≥ 20,000 Cr)">LC</button>
+        <button type="button" class="active" data-cap="" title="All caps">All</button>
+        <button type="button" data-cap="NC" title="Nano Cap (&lt; 100 Cr) — multi-select with Holdings">NC</button>
+        <button type="button" data-cap="MIC" title="Micro Cap (100–500 Cr) — multi-select with Holdings">MIC</button>
+        <button type="button" data-cap="SC" title="Small Cap (500–5,000 Cr) — multi-select with Holdings">SC</button>
+        <button type="button" data-cap="MC" title="Mid Cap (5,000–20,000 Cr) — multi-select with Holdings">MC</button>
+        <button type="button" data-cap="LC" title="Large Cap (≥ 20,000 Cr) — multi-select with Holdings">LC</button>
       </div>
       <div class="gov-cap-filter gov-hold-filter" role="group" aria-label="Holdings filter" id="govmap-hold-filter">
         <span class="gov-cap-filter-label">Holdings</span>
         <button type="button" class="active" data-hold="" title="Show all companies">All</button>
-        <button type="button" data-hold="HOLD" title="Only directors with a Holdings company">Holding</button>
+        <button type="button" data-hold="HOLD" title="Holdings only — combine with Cap (e.g. MIC + MC)">Holding</button>
       </div>
       <span class="gov-search-meta" id="govmap-count"></span>
     </div>
@@ -547,7 +547,7 @@ def build_governance_map_html(
   let expanded = null;
   let searchQuery = {initial}.trim().toLowerCase();
   let viewMode = "director"; // director | company | role
-  let capFilter = ""; // "" | NC | MIC | SC | MC | LC
+  let capFilters = new Set(); // empty = all; else NC|MIC|SC|MC|LC (multi-select)
   let holdFilter = ""; // "" | HOLD
   let sortCol = "dir_score";
   let sortDir = -1; // -1 = high→low (top), +1 = low→high
@@ -689,8 +689,8 @@ def build_governance_map_html(
     ) || null;
   }}
   function companyMatchesCap(c) {{
-    if (!capFilter) return true;
-    return String(c.cap_code || "").toUpperCase() === capFilter;
+    if (!capFilters.size) return true;
+    return capFilters.has(String(c.cap_code || "").toUpperCase());
   }}
   function companyMatchesHold(c) {{
     if (!holdFilter) return true;
@@ -742,15 +742,19 @@ def build_governance_map_html(
     return hits.concat(rest);
   }}
   function rowHasMatchingCompany(r) {{
-    if (!capFilter && !holdFilter) return true;
+    if (!capFilters.size && !holdFilter) return true;
     return matchingCompanies(r).length > 0;
   }}
   function activeFilters() {{
-    return !!(capFilter || holdFilter);
+    return !!(capFilters.size || holdFilter);
   }}
   function filterBits() {{
     const bits = [];
-    if (capFilter) bits.push(`Cap ${{capFilter}}`);
+    if (capFilters.size) {{
+      const order = ["NC", "MIC", "SC", "MC", "LC"];
+      const selected = order.filter(c => capFilters.has(c));
+      bits.push(`Cap ${{selected.join("+")}}`);
+    }}
     if (holdFilter) bits.push("Holding");
     return bits;
   }}
@@ -826,7 +830,7 @@ def build_governance_map_html(
       rows = DATA.filter(r => rowMatches(r, searchQuery));
       rows.sort(compareRows);
     }}
-    if (capFilter || holdFilter) {{
+    if (capFilters.size || holdFilter) {{
       rows = rows.filter(rowHasMatchingCompany);
     }} else if (viewMode === "director" && !searchQuery) {{
       rows = rows.filter(r => Number(r.board_count || 0) >= MIN_BOARDS);
@@ -1239,14 +1243,27 @@ def build_governance_map_html(
   if (dirBtn) dirBtn.onclick = () => setViewMode("director");
   if (roleBtn) roleBtn.onclick = () => setViewMode("role");
   const capFilterEl = document.getElementById("govmap-cap-filter");
+  function syncCapFilterButtons() {{
+    if (!capFilterEl) return;
+    capFilterEl.querySelectorAll("button[data-cap]").forEach(b => {{
+      const code = String(b.getAttribute("data-cap") || "").toUpperCase();
+      const active = code ? capFilters.has(code) : !capFilters.size;
+      b.classList.toggle("active", active);
+    }});
+  }}
   if (capFilterEl) {{
     capFilterEl.querySelectorAll("button[data-cap]").forEach(btn => {{
       btn.onclick = (e) => {{
         e.stopPropagation();
-        capFilter = String(btn.getAttribute("data-cap") || "").toUpperCase();
-        capFilterEl.querySelectorAll("button[data-cap]").forEach(b => {{
-          b.classList.toggle("active", String(b.getAttribute("data-cap") || "").toUpperCase() === capFilter);
-        }});
+        const code = String(btn.getAttribute("data-cap") || "").toUpperCase();
+        if (!code) {{
+          capFilters.clear();
+        }} else if (capFilters.has(code)) {{
+          capFilters.delete(code);
+        }} else {{
+          capFilters.add(code);
+        }}
+        syncCapFilterButtons();
         render();
       }};
     }});

@@ -46,13 +46,17 @@ def render_governance_map(*, show_title: bool = True) -> None:
                 f"Fill missing about/web ({len(missing)})",
                 width="stretch",
                 disabled=not missing,
-                help="Pull website + about from screener.in for companies still blank (batched).",
+                help="Slow screener.in + Yahoo backfill for companies still missing website or about.",
             ):
+                batch = min(120, len(missing) or 0)
                 with st.spinner(
-                    f"Fetching profiles for up to {min(120, len(missing))} companies…"
+                    f"Slow-fetching profiles for up to {batch} companies "
+                    "(~1.5s each via screener)…"
                 ):
                     n = hydrate_missing_profiles(
-                        ticker_markets, max_fetch=min(120, len(missing) or 0)
+                        ticker_markets,
+                        max_fetch=batch,
+                        workers=1,
                     )
                 st.success(f"Filled {n} profile(s).") if n else st.info(
                     "No new profiles fetched."

@@ -3,16 +3,33 @@
 from __future__ import annotations
 
 import re
+import threading
+import time
 from html import unescape
 
 import requests
 
+from stocks.core.config import SCREENER_REQUEST_DELAY
 from stocks.core.text_utils import safe_str, sanitize_website
 from stocks.shared.links import screener_url
 
 _USER_AGENT = (
     "Mozilla/5.0 (compatible; stocks-ai/1.0; +https://github.com/)"
 )
+_LOCK = threading.Lock()
+_LAST_REQUEST_AT = 0.0
+
+
+def _throttle() -> None:
+    """Serialize and pace screener requests."""
+    global _LAST_REQUEST_AT
+    delay = max(0.0, float(SCREENER_REQUEST_DELAY))
+    with _LOCK:
+        now = time.monotonic()
+        wait = delay - (now - _LAST_REQUEST_AT)
+        if wait > 0:
+            time.sleep(wait)
+        _LAST_REQUEST_AT = time.monotonic()
 
 
 def _strip_html(text: str) -> str:
@@ -32,10 +49,11 @@ def fetch_screener_profile(ticker: str, market: str | None = None) -> dict:
     url = screener_url(ticker, market)
     if not url or url.rstrip("/").endswith("screener.in"):
         return {}
+    _throttle()
     try:
         resp = requests.get(
             url,
-            timeout=10,
+            timeout=15,
             headers={"User-Agent": _USER_AGENT},
         )
         resp.raise_for_status()

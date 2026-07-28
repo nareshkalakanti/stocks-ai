@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import yfinance as yf
+
 from stocks.core.database import load_company_profiles_from_db, save_company_profiles, save_market_cap_to_db
+from stocks.core.config import YFINANCE_REQUEST_DELAY
 from stocks.core.text_utils import safe_str, sanitize_website
+from stocks.market.price_service import to_yfinance_symbol
 from stocks.market.screener_profile import fetch_screener_profile
+from stocks.market.yfinance_limits import call_throttled
 
 PROFILE_KEYS = (
     "website",
@@ -21,6 +26,8 @@ _WEBSITE_OVERRIDES: dict[str, str] = {
     "ARTEMISMED": "https://www.artemishospitals.com/",
     "AARTECH": "https://www.aartechsolonics.com/",
     "INA": "https://www.insolationenergy.in/",
+    # Screener only links Google search; Yahoo/corporate site known.
+    "VAML": "https://www.vedantalimited.com/",
 }
 
 
@@ -79,6 +86,28 @@ def _save_profile_if_needed(
     )
 
 
+def _fetch_yfinance_profile(ticker: str, market: str | None) -> dict:
+    """Best-effort website + about from Yahoo when screener omits them."""
+    symbol = to_yfinance_symbol(ticker, market)
+    try:
+        info = call_throttled(
+            lambda: yf.Ticker(symbol).info,
+            delay=YFINANCE_REQUEST_DELAY,
+        ) or {}
+    except Exception:
+        return {}
+    if not isinstance(info, dict):
+        return {}
+    out: dict = {}
+    website = sanitize_website(info.get("website"))
+    if website:
+        out["website"] = website
+    about = safe_str(info.get("longBusinessSummary")).strip()
+    if about:
+        out["long_description"] = about
+    return out
+
+
 def merge_company_profile(
     data: dict,
     ticker: str,
@@ -86,7 +115,7 @@ def merge_company_profile(
 ) -> dict:
     """
     Use website/about from SQLite when present.
-    Only calls screener.in when the DB row is missing website or about.
+    Only calls screener.in / Yahoo when the DB row is missing website or about.
     Always saves yfinance (or merged) profile fields to SQLite.
     """
     ticker_key = safe_str(ticker).upper()
@@ -113,17 +142,12 @@ def merge_company_profile(
         )
         return out
 
+    source = "yfinance"
     scraped = fetch_screener_profile(ticker_key, market)
     if scraped:
         mcap = scraped.pop("market_cap_cr", None)
         out = _apply_stored_row(out, scraped)
-        _save_profile_if_needed(
-            out,
-            ticker=ticker_key,
-            market=market,
-            source="screener",
-            stored=stored,
-        )
+        source = "screener"
         if mcap is not None:
             try:
                 save_market_cap_to_db(
@@ -133,13 +157,23 @@ def merge_company_profile(
                 )
             except Exception:
                 pass
-        return out
+
+    # Screener often only has a Google "Company website" search — fill from Yahoo.
+    if _profile_incomplete(out):
+        yf_profile = _fetch_yfinance_profile(ticker_key, market)
+        if yf_profile:
+            out = _apply_stored_row(out, yf_profile)
+            if source != "screener":
+                source = "yfinance"
+
+    if override_web and not sanitize_website(out.get("website")):
+        out["website"] = override_web
 
     _save_profile_if_needed(
         out,
         ticker=ticker_key,
         market=market,
-        source="yfinance",
+        source=source,
         stored=stored,
     )
     return out

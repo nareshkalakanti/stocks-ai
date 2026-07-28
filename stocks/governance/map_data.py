@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 
+from stocks.core.config import SCREENER_HYDRATE_WORKERS
 from stocks.core.database import (
     load_company_profiles_from_db,
     load_market_cap_from_db,
@@ -28,10 +29,10 @@ from stocks.shared.superstars.holdings import (
     superstar_pead_map,
 )
 
-# Screener backfill per map build (cached after first success).
+# Screener backfill per map build (cached after first success). Slow by default.
 DEFAULT_PROFILE_HYDRATE = 60
 DEFAULT_MCAP_HYDRATE = 40
-PROFILE_HYDRATE_WORKERS = 4
+PROFILE_HYDRATE_WORKERS = max(1, int(SCREENER_HYDRATE_WORKERS))
 
 
 def _mcap_map(tickers: list[str]) -> dict[str, float]:
@@ -105,15 +106,24 @@ def hydrate_missing_profiles(
     def _one(item: tuple[str, str]) -> bool:
         ticker, market = item
         before = load_company_profiles_from_db([ticker]).get(ticker) or {}
-        merged = merge_company_profile({}, ticker, market)
-        after_web = safe_str(merged.get("website"))
-        after_about = safe_str(merged.get("long_description"))
-        if not after_web and not after_about:
+        if not _profile_incomplete(before):
             return False
-        return _profile_incomplete(before) and (bool(after_web) or bool(after_about))
+        merged = merge_company_profile({}, ticker, market)
+        return not _profile_incomplete(merged)
 
+    # Sequential by default — screener throttle lives in fetch_screener_profile.
     filled = 0
-    with ThreadPoolExecutor(max_workers=max(1, int(workers))) as pool:
+    worker_n = max(1, int(workers))
+    if worker_n == 1:
+        for item in pending:
+            try:
+                if _one(item):
+                    filled += 1
+            except Exception:
+                continue
+        return filled
+
+    with ThreadPoolExecutor(max_workers=worker_n) as pool:
         futures = [pool.submit(_one, item) for item in pending]
         for fut in as_completed(futures):
             try:
@@ -168,7 +178,17 @@ def hydrate_missing_mcaps(
         return True
 
     filled = 0
-    with ThreadPoolExecutor(max_workers=max(1, int(workers))) as pool:
+    worker_n = max(1, int(workers))
+    if worker_n == 1:
+        for item in pending:
+            try:
+                if _one(item):
+                    filled += 1
+            except Exception:
+                continue
+        return filled
+
+    with ThreadPoolExecutor(max_workers=worker_n) as pool:
         futures = [pool.submit(_one, item) for item in pending]
         for fut in as_completed(futures):
             try:

@@ -32,6 +32,9 @@ MARKET_CAP_CACHE_HOURS = int(
 )
 # yfinance pacing (see yfinance_limits.py and README)
 YFINANCE_REQUEST_DELAY = float(os.getenv("YFINANCE_REQUEST_DELAY", "0.45"))  # Fundamentals only
+# Pace screener.in scrapes (map profile/mcap hydrate) to avoid blocks.
+SCREENER_REQUEST_DELAY = float(os.getenv("SCREENER_REQUEST_DELAY", "1.5"))
+SCREENER_HYDRATE_WORKERS = int(os.getenv("SCREENER_HYDRATE_WORKERS", "1"))
 STRATEGY_MAX_WORKERS_CAP = int(os.getenv("STRATEGY_MAX_WORKERS_CAP", "32"))
 STRATEGY_MAX_WORKERS = int(os.getenv("STRATEGY_MAX_WORKERS", str(STRATEGY_MAX_WORKERS_CAP)))
 YFINANCE_THROTTLED_MAX_WORKERS = int(
