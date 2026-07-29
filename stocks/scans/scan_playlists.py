@@ -145,7 +145,9 @@ def market_option_count(stocks: pd.DataFrame, market: str) -> int:
 
 
 def format_market_option(stocks: pd.DataFrame, market: str) -> str:
-    if safe_str(market).upper() == "NSE":
+    from stocks.listings.stocks_data import NSE_FAMILY_LABEL
+
+    if market == NSE_FAMILY_LABEL:
         return f"NSE + SME ({market_option_count(stocks, market):,})"
     return f"{market} ({market_option_count(stocks, market):,})"
 

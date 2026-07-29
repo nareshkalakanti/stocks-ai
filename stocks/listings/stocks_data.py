@@ -323,7 +323,8 @@ def filter_stocks(
     return filtered
 
 
-# Market=NSE includes mainboard + Emerge/SME everywhere (PEAD, H&T, Governance, …).
+# Combined dropdown value (mainboard + Emerge/SME).
+NSE_FAMILY_LABEL = "NSE + SME"
 NSE_FAMILY_MARKETS = ("NSE", "NSE SME")
 
 
@@ -332,13 +333,15 @@ def market_filter_labels(market: str) -> list[str] | None:
     key = safe_str(market)
     if not key or key == "All":
         return None
-    if key.upper() == "NSE":
+    if key == NSE_FAMILY_LABEL:
         return list(NSE_FAMILY_MARKETS)
+    if key.upper() == "NSE":
+        return ["NSE"]
     return [key]
 
 
 def apply_market_column_filter(stocks: pd.DataFrame, market: str) -> pd.DataFrame:
-    """Filter listings by Market dropdown (NSE ⇒ NSE + NSE SME)."""
+    """Filter listings by Market dropdown (NSE + SME is a separate choice)."""
     if stocks is None or stocks.empty or "market" not in stocks.columns:
         return stocks if stocks is not None else pd.DataFrame()
     labels = market_filter_labels(market)
@@ -349,7 +352,13 @@ def apply_market_column_filter(stocks: pd.DataFrame, market: str) -> pd.DataFram
 
 def market_options(stocks: pd.DataFrame, *, include_scan_playlists: bool = True) -> list[str]:
     markets = sorted(stocks["market"].dropna().unique().tolist())
-    opts = ["All"] + markets
+    tail: list[str] = []
+    if "NSE" in markets or "NSE SME" in markets:
+        tail.append(NSE_FAMILY_LABEL)
+    for m in markets:
+        if m not in tail:
+            tail.append(m)
+    opts = ["All"] + tail
     if include_scan_playlists:
         return insert_scan_playlist_markets(opts)
     return opts

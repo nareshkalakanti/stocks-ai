@@ -49,6 +49,7 @@ from stocks.scans.stock_filters import (
     ensure_quant_shared_market,
     render_quant_market_selectbox,
 )
+from stocks.listings.stocks_data import NSE_FAMILY_LABEL, NSE_FAMILY_MARKETS
 from stocks.market.nse_sme_listings import NSE_SME_MARKET
 from stocks.scans.scan_toolbar import default_cap_tier_label
 
@@ -279,8 +280,10 @@ def _render_governance_scan(*, show_title: bool = True) -> None:
         st.caption(
             f"Universe **{len(universe):,}** holdings (Cap ignored for portfolio scan)"
         )
-    elif market_label == "NSE":
+    elif market_label == NSE_FAMILY_LABEL:
         st.caption(f"Universe **{len(universe):,}** NSE + NSE SME")
+    elif market_label == "NSE":
+        st.caption(f"Universe **{len(universe):,}** NSE mainboard only")
     elif market_label == "NSE SME" or market_label == NSE_SME_MARKET:
         st.caption(f"Universe **{len(universe):,}** NSE SME")
     elif market_label == "All":

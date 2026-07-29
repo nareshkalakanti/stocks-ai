@@ -44,6 +44,8 @@ _LEGACY_MARKET_KEYS = (
 
 def ensure_quant_shared_market(options: list[str]) -> None:
     """Keep one Market selection for all Quant strategy tabs."""
+    from stocks.listings.stocks_data import NSE_FAMILY_LABEL
+
     key = QUANT_SHARED_MARKET_KEY
     if key not in st.session_state:
         for legacy in _LEGACY_MARKET_KEYS:
@@ -55,6 +57,13 @@ def ensure_quant_shared_market(options: list[str]) -> None:
             st.session_state[key] = "All" if "All" in options else (options[0] if options else "All")
     elif st.session_state[key] not in options:
         st.session_state[key] = "All" if "All" in options else (options[0] if options else "All")
+    if (
+        not st.session_state.get("_market_nse_family_migrated")
+        and st.session_state.get(key) == "NSE"
+        and NSE_FAMILY_LABEL in options
+    ):
+        st.session_state[key] = NSE_FAMILY_LABEL
+        st.session_state["_market_nse_family_migrated"] = True
 
 
 def render_quant_market_selectbox(
