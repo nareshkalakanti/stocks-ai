@@ -166,12 +166,21 @@ def render_governance(*, show_title: bool = True) -> None:
     init_governance_db()
     if show_title:
         st.markdown("### Governance")
+    tab_scan, tab_map = st.tabs(["Scan & boards", "Director map"])
+    with tab_map:
+        from stocks.pages.governance_map import render_governance_map
+
+        render_governance_map(show_title=False)
+    with tab_scan:
+        _render_governance_scan(show_title=False)
+
+
+def _render_governance_scan(*, show_title: bool = True) -> None:
+    if show_title:
+        st.markdown("#### Scan & boards")
     st.markdown(
-        "**Scan & see DIN**  \n"
-        "1. **Market** (same as PEAD / H&T) + **Cap** → **Scan**. "
-        "DIN filings are NSE-only, so BSE names are skipped.  \n"
-        "2. **Governance Map** tab → Cap / Holdings filters.  \n"
-        "3. **Companies** tab → **DIN** column."
+        "**NSE + NSE SME** board scan (DIN from NSE filings). "
+        "Use **Director map** for Cap / Holdings filters and Dir Score."
     )
 
     try:

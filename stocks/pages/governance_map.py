@@ -16,10 +16,13 @@ from stocks.dashboards.iframe_helpers import embed_html_iframe
 from stocks.governance.html import build_governance_map_html, governance_map_iframe_height
 from stocks.governance.map_data import (
     build_governance_map_rows,
+    hydrate_missing_mcaps,
     hydrate_missing_profiles,
     map_company_ticker_markets,
+    missing_mcap_tickers,
     missing_profile_tickers,
 )
+from stocks.governance.profile_gaps import audit_map_profile_gaps, gap_summary
 from stocks.governance.service import governance_stats, init_governance_db
 
 
@@ -57,6 +60,9 @@ def render_governance_map(*, show_title: bool = True) -> None:
     min_boards = 2
     ticker_markets = map_company_ticker_markets(min_boards=int(min_boards))
     missing = missing_profile_tickers(ticker_markets)
+    missing_mcap = missing_mcap_tickers(ticker_markets)
+    gaps_nse = audit_map_profile_gaps(min_boards=int(min_boards), nse_only=True)
+    gap_stats = gap_summary(gaps_nse)
     stats = governance_stats()
 
     hydrate_profiles = GOVERNANCE_MAP_AUTO_HYDRATE_PROFILES
@@ -81,7 +87,7 @@ def render_governance_map(*, show_title: bool = True) -> None:
         with c4:
             st.metric("Seats", stats["seats"])
 
-        fill_cols = st.columns([1, 2])
+        fill_cols = st.columns([1, 1, 2])
         with fill_cols[0]:
             if st.button(
                 f"Fill missing about/web ({len(missing)})",
@@ -105,8 +111,33 @@ def render_governance_map(*, show_title: bool = True) -> None:
                 )
                 st.rerun()
         with fill_cols[1]:
+            if st.button(
+                f"Fill missing mcap ({len(missing_mcap)})",
+                width="stretch",
+                disabled=not missing_mcap,
+                help="Screener then Yahoo finance · batched on map load was disabled for speed.",
+            ):
+                batch = min(80, len(missing_mcap) or 0)
+                with st.spinner(f"Fetching market cap for up to {batch} names…"):
+                    n = hydrate_missing_mcaps(
+                        ticker_markets,
+                        max_fetch=batch,
+                        workers=1,
+                    )
+                _cached_governance_map_rows.clear()
+                st.success(f"Filled {n} market cap row(s).") if n else st.info(
+                    "No new market caps fetched."
+                )
+                st.rerun()
+        with fill_cols[2]:
+            st.caption(
+                f"**NSE map** ({gap_stats['tickers']:,} cos): "
+                f"mcap **{gap_stats['missing_mcap']:,}** · "
+                f"web **{gap_stats['missing_website']:,}** · "
+                f"about **{gap_stats['missing_about']:,}** missing"
+            )
             if missing:
-                st.caption(f"**{len(missing):,}** map companies still missing website or about.")
+                st.caption(f"**{len(missing):,}** still missing website or about (any market).")
             if hydrate_profiles or hydrate_mcaps:
                 st.caption(
                     "Auto screener backfill on load is **on** "
@@ -115,8 +146,15 @@ def render_governance_map(*, show_title: bool = True) -> None:
                 )
             else:
                 st.caption(
-                    "Map loads from **SQLite cache** (fast). Use **Fill missing** for screener backfill."
+                    "Map loads from **SQLite cache** (fast). Use **Fill missing** buttons above."
                 )
+            st.download_button(
+                "Download NSE gap CSV",
+                data=gaps_nse.to_csv(index=False).encode("utf-8"),
+                file_name="governance_map_profile_gaps_nse.csv",
+                mime="text/csv",
+                key="govmap_gaps_csv",
+            )
 
     spinner_msg = (
         "Building governance map (screener backfill)…"
@@ -135,8 +173,8 @@ def render_governance_map(*, show_title: bool = True) -> None:
 
     if rows.empty:
         st.info(
-            "No shared directors yet. Run **Governance** scan on overlapping "
-            "sectors, then reopen this map."
+            "No shared directors yet. Run **Scan & boards** (Governance → first tab), "
+            "then reopen **Director map**."
         )
         return
 

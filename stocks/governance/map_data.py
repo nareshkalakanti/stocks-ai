@@ -207,6 +207,14 @@ def missing_profile_tickers(ticker_markets: list[tuple[str, str]]) -> list[str]:
     return [t for t in tickers if _profile_incomplete(profiles.get(t))]
 
 
+def missing_mcap_tickers(ticker_markets: list[tuple[str, str]]) -> list[str]:
+    tickers = sorted(
+        {safe_str(t).upper() for t, _ in ticker_markets if safe_str(t)}
+    )
+    known = _mcap_map(tickers)
+    return [t for t in tickers if t not in known]
+
+
 def _superstar_change_badge(change_type: Any, change_qtr: Any) -> str:
     ct = safe_str(change_type).lower()
     if ct == "new":

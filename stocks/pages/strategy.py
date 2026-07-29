@@ -100,7 +100,6 @@ STRATEGY_SECTIONS = (
     "PEAD",
     "H&T",
     "Governance",
-    "Governance Map",
 )
 
 
@@ -171,10 +170,6 @@ def render_strategy() -> None:
         from stocks.pages.governance import render_governance
 
         render_governance(show_title=False)
-    elif section == "Governance Map":
-        from stocks.pages.governance_map import render_governance_map
-
-        render_governance_map(show_title=False)
 
 def _show_ema_daily_results(result: pd.DataFrame) -> None:
     st.caption(
