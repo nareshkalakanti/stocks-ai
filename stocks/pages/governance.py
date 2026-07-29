@@ -247,7 +247,12 @@ def _render_governance_scan(*, show_title: bool = True) -> None:
         else cap_tier_id
     )
     universe = _build_universe(stocks, market_label, cap_tier_id=effective_cap)
-    pending_n = len(pending_governance_jobs(universe, skip_scanned=True))
+    if st.session_state.get("gov_holdings_scan"):
+        universe = _build_universe(
+            stocks, HOLDINGS_PLAYLIST_LABEL, cap_tier_id="all"
+        )
+    pending_jobs = pending_governance_jobs(universe, skip_scanned=True)
+    pending_n = len(pending_jobs)
     with row[2]:
         st.metric("Pending", pending_n)
     with row[3]:
@@ -295,6 +300,44 @@ def _render_governance_scan(*, show_title: bool = True) -> None:
                 else ""
             )
         )
+
+    with st.expander(f"Pending names ({pending_n:,})", expanded=pending_n > 0 and pending_n <= 40):
+        if not pending_jobs:
+            st.caption(
+                "No pending DIN fetches in this universe — boards saved or already scanned."
+            )
+        else:
+            cap_note = (
+                "Cap ignored"
+                if market_label == HOLDINGS_PLAYLIST_LABEL
+                else "Cap applied"
+            )
+            st.caption(
+                f"**{pending_n:,}** NSE names still need a governance scan "
+                f"({market_label} · {cap_note}). Scan runs **{_BATCH_SIZE}** per batch."
+            )
+            pending_df = pd.DataFrame(
+                [
+                    {"ticker": t, "name": n, "market": m}
+                    for t, n, m in pending_jobs
+                ]
+            )
+            show_n = min(len(pending_df), 500)
+            st.dataframe(
+                pending_df.head(show_n),
+                width="stretch",
+                hide_index=True,
+                height=min(420, 36 + show_n * 35),
+            )
+            if pending_n > show_n:
+                st.caption(f"Table shows first **{show_n:,}** — download CSV for full list.")
+            st.download_button(
+                "Download pending CSV",
+                data=pending_df.to_csv(index=False).encode("utf-8"),
+                file_name="governance_pending.csv",
+                mime="text/csv",
+                key="gov_pending_csv",
+            )
 
     workers = int(
         st.session_state.get("gov_workers")
@@ -380,14 +423,6 @@ def _render_governance_scan(*, show_title: bool = True) -> None:
                     else ""
                 )
             )
-
-    # Force holdings universe while a holdings scan is running (full book, Cap ignored).
-    if st.session_state.get("gov_holdings_scan"):
-        universe = _build_universe(
-            stocks, HOLDINGS_PLAYLIST_LABEL, cap_tier_id="all"
-        )
-        pending_n = len(pending_governance_jobs(universe, skip_scanned=True))
-        market_label = HOLDINGS_PLAYLIST_LABEL
 
     if stop_clicked:
         st.session_state.pop("gov_auto_scan", None)
