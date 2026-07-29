@@ -12,6 +12,7 @@ from stocks.pages.strategy import render_strategy
 from stocks.pages.superstars import render_superstars
 from stocks.pages.valuepickr import render_valuepickr
 from stocks.pages.demerger import render_demerger
+from stocks.pages.earningsq import render_earningsq
 
 st.set_page_config(
     page_title="AI",
@@ -24,15 +25,15 @@ init_governance_db()
 
 _SIDEBAR_PAGES = [
     "Strategy",
+    "EarningsQ",
     "Sector Landscape",
     "SuperStars",
     "Holdings",
     "ValuePickr",
     "Demergers",
 ]
-# v2: Streamlit 1.58+ radios store option labels (string_value); old sessions
-# still send int_value indices and crash with TypeError on '1' / str vs int.
-_SIDEBAR_KEY = "app_sidebar_page_v2"
+# v3: added EarningsQ — bump key so stale int_value radio state is dropped
+_SIDEBAR_KEY = "app_sidebar_page_v3"
 
 normalize_radio_session_state(_SIDEBAR_KEY, _SIDEBAR_PAGES)
 
@@ -46,6 +47,8 @@ with st.sidebar:
 
 if page == "Strategy":
     render_strategy()
+elif page == "EarningsQ":
+    render_earningsq()
 elif page == "Sector Landscape":
     render_sector_landscape()
 elif page == "SuperStars":

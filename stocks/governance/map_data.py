@@ -58,11 +58,13 @@ def _apply_breakout_to_company(company: dict[str, Any], bmap: dict[str, dict]) -
         if tf:
             company["tq_timeframe"] = tf
     if bb:
-        company["has_bb"] = True
-        company["bb_signal"] = safe_str(bb.get("signal")) or "ABOVE_BAND"
-        tf = safe_str(bb.get("timeframe"))
-        if tf:
-            company["bb_timeframe"] = tf
+        sig = safe_str(bb.get("signal")).upper() or "ABOVE_BAND"
+        if sig == "NEW_BREAKOUT":
+            company["has_bb"] = True
+            company["bb_signal"] = "NEW_BREAKOUT"
+            tf = safe_str(bb.get("timeframe"))
+            if tf:
+                company["bb_timeframe"] = tf
 
 
 def _mcap_map(tickers: list[str]) -> dict[str, float]:

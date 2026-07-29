@@ -164,10 +164,12 @@ def apply_breakout_map(
             )
         bb = rec.get("bb")
         if bb and (overwrite or not bool(out.at[idx, "has_bb"])):
+            sig = str(bb.get("signal") or bb.get("bb_signal") or "").upper()
+            # Only NEW_BREAKOUT counts as BB across PEAD / reports / tags.
+            if sig != "NEW_BREAKOUT":
+                continue
             out.at[idx, "has_bb"] = True
-            out.at[idx, "bb_signal"] = str(
-                bb.get("signal") or bb.get("bb_signal") or "ABOVE_BAND"
-            )
+            out.at[idx, "bb_signal"] = "NEW_BREAKOUT"
             out.at[idx, "bb_timeframe"] = str(
                 bb.get("timeframe") or bb.get("bb_timeframe") or ""
             )

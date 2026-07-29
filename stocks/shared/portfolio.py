@@ -362,6 +362,54 @@ def enrich_holdings(
     return out
 
 
+def _persist_holdings_quarters_into_pead_cache(df: pd.DataFrame) -> int:
+    """
+    Merge expand-panel quarters onto PEAD tombstones / empty-lag cache rows.
+
+    PEAD score gates often save ``no_pead_data`` with empty lags — Holdings still
+    needs the quarterly table, so write it back when Yahoo expand filled it.
+    """
+    if df is None or df.empty or "ticker" not in df.columns or "quarters" not in df.columns:
+        return 0
+
+    from stocks.core.config import PEAD2_CALC_VERSION
+    from stocks.core.database import load_pead2_cache, save_pead2_cache
+    from stocks.strategies.pead2.service import _normalize_cache_blob
+
+    tickers = df["ticker"].astype(str).str.upper().tolist()
+    cached = load_pead2_cache(tickers, max_hours=999999)
+    updates: list[dict] = []
+    for _, row in df.iterrows():
+        ticker = safe_str(row.get("ticker")).upper()
+        quarters = row.get("quarters")
+        if not ticker or not isinstance(quarters, dict) or not quarters.get("labels"):
+            continue
+        blob = cached.get(ticker)
+        if not blob:
+            # Don't invent full PEAD rows — only patch existing cache.
+            continue
+        norm = _normalize_cache_blob(dict(blob))
+        lags = dict(norm.get("lags") or {})
+        lag0 = dict(lags.get("0") or {})
+        existing_q = lag0.get("quarters")
+        if isinstance(existing_q, dict) and existing_q.get("labels"):
+            continue
+        lag0["quarter_lag"] = lag0.get("quarter_lag", 0)
+        lag0["quarters"] = quarters
+        snap = row.get("snapshot")
+        if isinstance(snap, dict) and not isinstance(lag0.get("snapshot"), dict):
+            lag0["snapshot"] = snap
+        lags["0"] = lag0
+        out_blob = dict(norm)
+        out_blob["lags"] = lags
+        out_blob.setdefault("ticker", ticker)
+        out_blob.setdefault("calc_version", PEAD2_CALC_VERSION)
+        updates.append(out_blob)
+    if updates:
+        save_pead2_cache(updates)
+    return len(updates)
+
+
 def refresh_holdings_pead_metrics(
     priced: pd.DataFrame,
     *,
@@ -382,6 +430,7 @@ def refresh_holdings_pead_metrics(
         progress_callback=progress_callback,
         cache_hours=HOLDINGS_PEAD_CACHE_HOURS,
     )
+    _persist_holdings_quarters_into_pead_cache(out)
     out = attach_pead_scores(out, max_hours=HOLDINGS_PEAD_CACHE_HOURS)
 
     for col in ("pe_ratio", "forward_pe"):

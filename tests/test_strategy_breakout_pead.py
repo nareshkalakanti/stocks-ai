@@ -119,3 +119,17 @@ def test_attach_weekly_breakouts_to_pead(monkeypatch):
     bbb = out[out["ticker"] == "BBB"].iloc[0]
     assert not bool(bbb["has_tq"])
     assert not bool(bbb["has_bb"])
+
+
+def test_apply_breakout_map_ignores_above_band():
+    df = pd.DataFrame({"ticker": ["AAA", "BBB"], "pead_score": [50.0, 40.0]})
+    bmap = {
+        "AAA": {"bb": {"signal": "ABOVE_BAND", "timeframe": "weekly"}},
+        "BBB": {"bb": {"signal": "NEW_BREAKOUT", "timeframe": "weekly"}},
+    }
+    out = apply_breakout_map(df, bmap, overwrite=True)
+    aaa = out[out["ticker"] == "AAA"].iloc[0]
+    bbb = out[out["ticker"] == "BBB"].iloc[0]
+    assert not bool(aaa["has_bb"])
+    assert bool(bbb["has_bb"]) is True
+    assert bbb["bb_signal"] == "NEW_BREAKOUT"

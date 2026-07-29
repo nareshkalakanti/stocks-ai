@@ -1992,7 +1992,7 @@ def build_pead2_dashboard_html(
         signal_filter_btns = """
         <button type="button" class="signal-btn on" data-signal="all">All</button>
         <button type="button" class="signal-btn tq" data-signal="tq">TQ weekly</button>
-        <button type="button" class="signal-btn bb" data-signal="bb">BB weekly</button>
+        <button type="button" class="signal-btn bb" data-signal="bb">BB NEW</button>
         <button type="button" class="signal-btn both" data-signal="both">TQ + BB</button>"""
         default_signal_filter = "all"
     elif is_pead1:
@@ -2023,7 +2023,7 @@ def build_pead2_dashboard_html(
         <button type="button" class="signal-btn buy on" data-signal="buy" title="Fundamentals + gap/volume — stocks to buy">Buy</button>
         <button type="button" class="signal-btn fund" data-signal="fund" title="Fundamentals only — watchlist">FUND</button>
         <button type="button" class="signal-btn tq" data-signal="tq">TQ weekly</button>
-        <button type="button" class="signal-btn bb" data-signal="bb">BB weekly</button>
+        <button type="button" class="signal-btn bb" data-signal="bb">BB NEW</button>
         <button type="button" class="signal-btn both" data-signal="both">TQ + BB</button>"""
         default_signal_filter = "buy"
     elif is_distress:
@@ -2051,7 +2051,7 @@ def build_pead2_dashboard_html(
         signal_filter_btns = """
         <button type="button" class="signal-btn on" data-signal="all">All</button>
         <button type="button" class="signal-btn tq" data-signal="tq">TQ weekly</button>
-        <button type="button" class="signal-btn bb" data-signal="bb">BB weekly</button>
+        <button type="button" class="signal-btn bb" data-signal="bb">BB NEW</button>
         <button type="button" class="signal-btn both" data-signal="both">TQ + BB</button>"""
         default_signal_filter = "all"
     elif is_napkin:
@@ -2079,7 +2079,7 @@ def build_pead2_dashboard_html(
         signal_filter_btns = """
         <button type="button" class="signal-btn on" data-signal="all">All</button>
         <button type="button" class="signal-btn tq" data-signal="tq">TQ weekly</button>
-        <button type="button" class="signal-btn bb" data-signal="bb">BB weekly</button>
+        <button type="button" class="signal-btn bb" data-signal="bb">BB NEW</button>
         <button type="button" class="signal-btn both" data-signal="both">TQ + BB</button>"""
         default_signal_filter = "all"
     elif is_psq:
@@ -2107,7 +2107,7 @@ def build_pead2_dashboard_html(
         signal_filter_btns = """
         <button type="button" class="signal-btn on" data-signal="all">All</button>
         <button type="button" class="signal-btn tq" data-signal="tq">TQ weekly</button>
-        <button type="button" class="signal-btn bb" data-signal="bb">BB weekly</button>
+        <button type="button" class="signal-btn bb" data-signal="bb">BB NEW</button>
         <button type="button" class="signal-btn both" data-signal="both">TQ + BB</button>"""
         default_signal_filter = "all"
     elif is_peg_aware:
@@ -2141,7 +2141,7 @@ def build_pead2_dashboard_html(
         signal_filter_btns = """
         <button type="button" class="signal-btn on" data-signal="all">All</button>
         <button type="button" class="signal-btn tq" data-signal="tq">TQ weekly</button>
-        <button type="button" class="signal-btn bb" data-signal="bb">BB weekly</button>
+        <button type="button" class="signal-btn bb" data-signal="bb">BB NEW</button>
         <button type="button" class="signal-btn both" data-signal="both">TQ + BB</button>"""
         default_signal_filter = "all"
     elif is_fisher:
@@ -2172,7 +2172,7 @@ def build_pead2_dashboard_html(
         signal_filter_btns = """
         <button type="button" class="signal-btn on" data-signal="all">All</button>
         <button type="button" class="signal-btn tq" data-signal="tq">TQ weekly</button>
-        <button type="button" class="signal-btn bb" data-signal="bb">BB weekly</button>
+        <button type="button" class="signal-btn bb" data-signal="bb">BB NEW</button>
         <button type="button" class="signal-btn both" data-signal="both">TQ + BB</button>"""
         default_signal_filter = "all"
     else:
@@ -2201,7 +2201,7 @@ def build_pead2_dashboard_html(
         signal_filter_btns = """
         <button type="button" class="signal-btn on" data-signal="all">All</button>
         <button type="button" class="signal-btn tq" data-signal="tq">TQ weekly</button>
-        <button type="button" class="signal-btn bb" data-signal="bb">BB weekly</button>
+        <button type="button" class="signal-btn bb" data-signal="bb">BB NEW</button>
         <button type="button" class="signal-btn both" data-signal="both">TQ + BB</button>"""
         default_signal_filter = "all"
 
@@ -2287,7 +2287,7 @@ function rowMatchesSignal(r) {{
   if (signalFilter === "buy") return pead1Signal(r) === "buy";
   if (signalFilter === "fund") return pead1Signal(r) === "fund";
   const tq = !!r.has_tq;
-  const bb = !!r.has_bb;
+  const bb = !!r.has_bb && String(r.bb_signal || "").toUpperCase() === "NEW_BREAKOUT";
   if (signalFilter === "tq") return tq;
   if (signalFilter === "bb") return bb;
   if (signalFilter === "both") return tq && bb;
@@ -2656,8 +2656,8 @@ function render() {{
       buy: "Buy",
       fund: "FUND",
       tq: "TQ weekly",
-      bb: "BB weekly",
-      both: "TQ + BB",
+      bb: "BB NEW",
+      both: "TQ + BB NEW",
     }};
     const sigLabel = sigLabels[signalFilter] || signalFilter;
     countText += ` · ${{sigLabel}} only`;

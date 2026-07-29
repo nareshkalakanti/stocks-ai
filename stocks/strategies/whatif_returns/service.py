@@ -32,6 +32,100 @@ RETURN_HORIZONS: tuple[tuple[str, int, str], ...] = (
 HISTORY_PERIOD = "5y"
 HISTORY_INTERVAL = "1d"
 MIN_BARS = 40
+# Thin Yahoo NSE series (e.g. MIRCELECTR.NS) — still usable after BSE fallback merge.
+MIN_BARS_FALLBACK = 5
+
+
+def _normalize_ohlc(hist: pd.DataFrame | None) -> pd.DataFrame:
+    if hist is None or hist.empty or "Close" not in hist.columns:
+        return pd.DataFrame()
+    px = hist.sort_index().copy()
+    px.index = pd.to_datetime(px.index).tz_localize(None)
+    closes = pd.to_numeric(px["Close"], errors="coerce")
+    px = px.loc[closes.notna() & (closes > 0)].copy()
+    if px.empty:
+        return pd.DataFrame()
+    px["Close"] = pd.to_numeric(px["Close"], errors="coerce")
+    return px
+
+
+def _fetch_bse_code_history(ticker: str, *, period: str) -> pd.DataFrame | None:
+    """Yahoo often has full history on ``{bse_code}.BO`` when ``TICKER.NS`` is truncated."""
+    from stocks.shared.links import bse_code_by_ticker
+    from stocks.market.price_service import to_yfinance_symbol
+    import yfinance as yf
+    from stocks.market.yfinance_limits import call_fast
+    from stocks.core.log_service import METRICS_ERROR, log_error
+
+    code = bse_code_by_ticker().get(safe_str(ticker).upper())
+    if not code:
+        return None
+    symbol = to_yfinance_symbol(code, "BSE")  # → 500279.BO
+
+    def _fetch():
+        df = yf.Ticker(symbol).history(period=period, interval=HISTORY_INTERVAL, timeout=30)
+        if isinstance(df, pd.DataFrame) and not df.empty:
+            return df
+        return None
+
+    def _log(exc: Exception) -> None:
+        log_error(
+            METRICS_ERROR,
+            "Price-change BSE history fetch failed",
+            ticker=ticker,
+            symbol=symbol,
+            error=str(exc),
+        )
+
+    return call_fast(_fetch, on_error=_log)
+
+
+def _merge_price_history(*frames: pd.DataFrame) -> pd.DataFrame:
+    """Union Close series; later frames win on overlapping dates."""
+    series: list[pd.Series] = []
+    for fr in frames:
+        norm = _normalize_ohlc(fr)
+        if norm.empty:
+            continue
+        series.append(norm["Close"].astype(float))
+    if not series:
+        return pd.DataFrame()
+    merged = series[0]
+    for s in series[1:]:
+        merged = s.combine_first(merged)
+    out = pd.DataFrame({"Close": merged.sort_index()})
+    return out.dropna(subset=["Close"])
+
+
+def _fetch_returns_history(ticker: str, market: str | None) -> pd.DataFrame:
+    """
+    Daily Close history for YTD / lookbacks.
+
+    Some NSE Yahoo symbols (e.g. MIRCELECTR.NS) only return a few recent bars;
+    fall back to ``period=max`` and BSE scrip ``{code}.BO`` when needed.
+    """
+    primary = _normalize_ohlc(
+        _fetch_history(
+            ticker, market, period=HISTORY_PERIOD, interval=HISTORY_INTERVAL
+        )
+    )
+    if len(primary) >= MIN_BARS:
+        return primary
+
+    longer = _normalize_ohlc(
+        _fetch_history(ticker, market, period="max", interval=HISTORY_INTERVAL)
+    )
+    merged = _merge_price_history(primary, longer)
+    if len(merged) >= MIN_BARS:
+        return merged
+
+    bse_hist = _normalize_ohlc(
+        _fetch_bse_code_history(ticker, period=HISTORY_PERIOD)
+    )
+    if bse_hist.empty:
+        bse_hist = _normalize_ohlc(_fetch_bse_code_history(ticker, period="max"))
+    merged = _merge_price_history(merged, bse_hist, primary)
+    return merged
 
 
 def _market_matches(row_market: str, filter_market: str) -> bool:
@@ -190,14 +284,13 @@ def analyze_whatif_returns(
     """
     if is_skippable_symbol(ticker):
         return None
-    hist = _fetch_history(
-        ticker, market, period=HISTORY_PERIOD, interval=HISTORY_INTERVAL
-    )
-    if hist is None or len(hist) < MIN_BARS or "Close" not in hist.columns:
+    hist = _fetch_returns_history(ticker, market)
+    if hist is None or hist.empty or "Close" not in hist.columns:
+        return None
+    if len(hist) < MIN_BARS_FALLBACK:
         return None
 
-    px = hist.sort_index().copy()
-    px.index = pd.to_datetime(px.index).tz_localize(None)
+    px = hist
     closes = pd.to_numeric(px["Close"], errors="coerce").dropna()
     if closes.empty:
         return None

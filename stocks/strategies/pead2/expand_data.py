@@ -8,7 +8,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 import yfinance as yf
 
-from stocks.core.config import PEAD2_CACHE_HOURS, YFINANCE_REQUEST_DELAY, yfinance_worker_count
+from stocks.core.config import (
+    HOLDINGS_PEAD_CACHE_HOURS,
+    YFINANCE_REQUEST_DELAY,
+    yfinance_worker_count,
+)
 from stocks.core.database import load_pead2_cache
 from stocks.core.log_service import METRICS_ERROR, log_error
 from stocks.core.text_utils import safe_str
@@ -113,6 +117,19 @@ def expand_from_lag_row(lag_row: dict | None) -> dict:
     return out
 
 
+def _expand_cache_hours(cache_hours: int | None, *, cache_only: bool = False) -> int:
+    """
+    Expand panels (quarters / snapshot) stay useful longer than live PEAD score TTL (24h).
+    Prefer explicit hours, else holdings-length cache, else scan TTL.
+    """
+    if cache_hours is not None:
+        return int(cache_hours)
+    if cache_only:
+        return int(HOLDINGS_PEAD_CACHE_HOURS)
+    # Still prefer a long window before falling back to Yahoo.
+    return int(HOLDINGS_PEAD_CACHE_HOURS)
+
+
 def _expand_from_cache(ticker: str, *, cache_hours: int) -> dict | None:
     key = safe_str(ticker).upper()
     if not key:
@@ -140,12 +157,12 @@ def fetch_pead_expand_data(
     """
     Quarterly panel + price snapshot (SMA/EMA, 52w) for expand panels.
 
-    Uses PEAD2 cache when fresh; otherwise a lightweight Yahoo fetch (no PEAD score gates).
+    Uses PEAD2 cache when available (long TTL); otherwise a lightweight Yahoo fetch.
     """
     ticker_key = safe_str(ticker).upper()
     if not ticker_key:
         return None
-    hours = PEAD2_CACHE_HOURS if cache_hours is None else int(cache_hours)
+    hours = _expand_cache_hours(cache_hours, cache_only=False)
     cached = _expand_from_cache(ticker_key, cache_hours=hours)
     if cached:
         return apply_scan_price_to_payload(cached, price)
@@ -260,7 +277,8 @@ def attach_pead_expand(
         if col not in out.columns:
             out[col] = None
     tickers = out["ticker"].astype(str).str.upper().tolist()
-    cache_map = load_pead2_cache(tickers, max_hours=PEAD2_CACHE_HOURS if cache_hours is None else cache_hours)
+    hours = _expand_cache_hours(cache_hours, cache_only=cache_only)
+    cache_map = load_pead2_cache(tickers, max_hours=hours)
 
     jobs: list[tuple[int, str, str | None, float | None]] = []
     prefilled: dict[int, dict] = {}
@@ -310,7 +328,7 @@ def attach_pead_expand(
                     ticker,
                     market,
                     price=price,
-                    cache_hours=cache_hours,
+                    cache_hours=hours,
                 ): idx
                 for idx, ticker, market, price in jobs
             }

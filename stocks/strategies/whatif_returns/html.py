@@ -9,12 +9,7 @@ from stocks.dashboards.interactive_table import (
     build_interactive_section,
     wrap_interactive_page,
 )
-from stocks.strategies.whatif_returns.service import (
-    RETURN_HORIZONS,
-    YTD_COL,
-    YTD_LABEL,
-    top_performers,
-)
+from stocks.strategies.whatif_returns.service import YTD_COL, YTD_LABEL, top_performers
 
 PRICE_CHANGE_JS_COLS = [
     {"id": "rank", "label": "#", "fmt": "int"},
@@ -22,7 +17,7 @@ PRICE_CHANGE_JS_COLS = [
     {"id": "market", "label": "Mkt", "fmt": "text"},
     {"id": "sector", "label": "Sector", "fmt": "text"},
     {"id": "price", "label": "Price", "fmt": "num2"},
-    {"id": "ret_ytd", "label": "YTD", "fmt": "pct_signed"},
+    {"id": "ret_ytd", "label": "YTD %", "fmt": "pct_signed"},
     {"id": "ret_1m", "label": "1M", "fmt": "pct_signed"},
     {"id": "ret_2m", "label": "2M", "fmt": "pct_signed"},
     {"id": "ret_3m", "label": "3M", "fmt": "pct_signed"},
@@ -43,16 +38,11 @@ def _col_has_data(df: pd.DataFrame, col: str) -> bool:
     return pd.to_numeric(df[col], errors="coerce").notna().any()
 
 
-def _value_cols(invest_amount: float, *, include: set[str]) -> list[dict]:
+def _worth_today_col(invest_amount: float) -> dict:
+    """Single column: ₹ invested at year-start → value today."""
     amt = float(invest_amount)
     label = f"₹{amt:,.0f}" if amt == int(amt) else f"₹{amt:,.2f}"
-    out: list[dict] = []
-    if YTD_COL in include:
-        out.append({"id": f"val_{YTD_COL}", "label": f"{label}→{YTD_LABEL}", "fmt": "num0"})
-    for col, _m, lab in RETURN_HORIZONS:
-        if col in include and col in {"ret_3m", "ret_6m", "ret_12m", "ret_24m"}:
-            out.append({"id": f"val_{col}", "label": f"{label}→{lab}", "fmt": "num0"})
-    return out
+    return {"id": f"val_{YTD_COL}", "label": f"{label} today", "fmt": "num0"}
 
 
 def _normalize_price_change_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -72,47 +62,28 @@ def build_price_change_html(
     standalone: bool = True,
 ) -> str:
     """
-    One Quant-style section (like Momentum) so expand payload
-    (website · quarterly · SC/TV) is embedded once and stays complete.
-    Primary: invest at year-start → value now (YTD).
+    Quant-style table: YTD % + rolling % · one ₹ column = value today
+    if that amount was invested at year-start.
     """
     work = _normalize_price_change_df(df)
     cols = list(PRICE_CHANGE_JS_COLS)
     for opt in _OPTIONAL_RET_COLS:
         if _col_has_data(work, opt["id"]):
             cols.append(opt)
-
-    value_include = {YTD_COL, "ret_3m", "ret_6m"}
-    if _col_has_data(work, "ret_12m"):
-        value_include.add("ret_12m")
-    if _col_has_data(work, "ret_24m"):
-        value_include.add("ret_24m")
-    cols = cols + _value_cols(invest_amount, include=value_include)
+    cols.append(_worth_today_col(invest_amount))
 
     bits: list[str] = []
     if summary is not None and not summary.empty:
-        for hz, col in (
-            (YTD_LABEL, YTD_COL),
-            ("1M", "ret_1m"),
-            ("3M", "ret_3m"),
-            ("6M", "ret_6m"),
-            ("12M", "ret_12m"),
-            ("24M", "ret_24m"),
-        ):
-            if col in ("ret_12m", "ret_24m") and not _col_has_data(work, col):
-                continue
-            row = summary[summary["horizon"] == hz]
-            if row.empty:
-                continue
+        row = summary[summary["horizon"] == YTD_LABEL]
+        if not row.empty:
             ret = row.iloc[0].get("avg_return_pct")
             top = safe_str(row.iloc[0].get("top_ticker"))
             top_r = row.iloc[0].get("top_return_pct")
-            if ret is None:
-                continue
-            bit = f"{hz} avg {float(ret):+.1f}%"
-            if top and top_r is not None:
-                bit += f" · top {top} {float(top_r):+.1f}%"
-            bits.append(bit)
+            if ret is not None:
+                bit = f"YTD avg {float(ret):+.1f}%"
+                if top and top_r is not None:
+                    bit += f" · top {top} {float(top_r):+.1f}%"
+                bits.append(bit)
 
     top_n = top_performers(work, horizon_col=YTD_COL, n=10)
     if top_n.empty:
@@ -130,8 +101,8 @@ def build_price_change_html(
     amt = float(invest_amount)
     amt_s = f"₹{amt:,.0f}" if amt == int(amt) else f"₹{amt:,.2f}"
     headline = (
-        f"Price Change — {amt_s} at year-start → now (YTD) · Market · Cap"
-        + ((" · " + " · ".join(bits[:4])) if bits else "")
+        f"Price Change — {amt_s} at year-start → worth today · Market · Cap"
+        + ((" · " + " · ".join(bits[:2])) if bits else "")
         + top_note
     )
 

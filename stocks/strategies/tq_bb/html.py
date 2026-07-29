@@ -53,11 +53,16 @@ def build_strategy_dashboard_html(
             )
         )
     if include_bb:
+        bb_show = bb_df if bb_df is not None else pd.DataFrame()
+        if not bb_show.empty and "signal" in bb_show.columns:
+            bb_show = bb_show[
+                bb_show["signal"].astype(str).str.upper() == "NEW_BREAKOUT"
+            ].copy()
         sections.append(
             build_interactive_section(
                 "bb",
-                f"Bollinger Bands ({timeframe})",
-                bb_df if bb_df is not None else pd.DataFrame(),
+                f"BB NEW breakout ({timeframe})",
+                bb_show,
                 _BB_JS_COLS,
                 kind="bb",
                 open_section=not include_tq,

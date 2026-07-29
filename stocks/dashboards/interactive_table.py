@@ -346,12 +346,14 @@ def rows_for_json(
             if tf:
                 item["tq_timeframe"] = tf
         if bb:
-            item["has_bb"] = True
-            sig = safe_str(bb.get("signal")) or "ABOVE_BAND"
-            item["bb_signal"] = sig
-            tf = safe_str(bb.get("timeframe"))
-            if tf:
-                item["bb_timeframe"] = tf
+            sig = safe_str(bb.get("signal")).upper() or "ABOVE_BAND"
+            # Reports only surface BB NEW breakouts.
+            if sig == "NEW_BREAKOUT":
+                item["has_bb"] = True
+                item["bb_signal"] = "NEW_BREAKOUT"
+                tf = safe_str(bb.get("timeframe"))
+                if tf:
+                    item["bb_timeframe"] = tf
         snapshot = row.get("snapshot")
         web = sanitize_website(row.get("website"))
         if not web and isinstance(snapshot, dict):

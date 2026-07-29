@@ -2056,10 +2056,15 @@ def build_strategy_html(
             )
         )
     if include_bb:
+        bb_show = bb_df if bb_df is not None else pd.DataFrame()
+        if not bb_show.empty and "signal" in bb_show.columns:
+            bb_show = bb_show[
+                bb_show["signal"].astype(str).str.upper() == "NEW_BREAKOUT"
+            ].copy()
         sections.append(
             _strategy_section(
-                f"Bollinger Bands ({bb_timeframe})",
-                bb_df if bb_df is not None else pd.DataFrame(),
+                f"BB NEW breakout ({bb_timeframe})",
+                bb_show,
                 _BB_COLS,
                 kind="bb",
                 open_section=not include_tq,

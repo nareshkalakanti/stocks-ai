@@ -132,8 +132,8 @@ QUANT_HTML_CACHE_KEYS = {
     "base_breakout": "strat_base_breakout_html_v3",
     "low_vol": "strat_low_vol_html_v2",
     "factor": "strat_factor_html_v8",
-    "price_chg": "strat_price_chg_html_v4",
-    "tq_bb": "strat_tq_bb_html_v4",
+    "price_chg": "strat_price_chg_html_v6",
+    "tq_bb": "strat_tq_bb_html_v5",
     "cup_handle": "strat_cup_handle_html_v5",
     "vcp": "strat_vcp_html_v4",
 }
@@ -238,7 +238,7 @@ def _show_whatif_returns_results(
         bits.append(f"3M avg **{float(avg3):+.1f}%**")
     if top3:
         bits.append(f"top **{top3}**")
-    bits.append(f"₹{amount:,.0f} columns · expand · website · quarterly · **TV**")
+    bits.append(f"₹{amount:,.0f} → worth today · expand · website · quarterly · **TV**")
     st.caption(" · ".join(bits))
 
     embed_html = build_price_change_html(
@@ -502,8 +502,8 @@ def _render_quant_cached_results(strategy_choice: str) -> None:
         ):
             n = len(cached)
             st.caption(
-                f"**{n:,}** names · Market · Cap · ₹ at year-start → now (YTD) · "
-                f"₹{amount:,.0f} columns · expand · website · quarterly · **TV**"
+                f"**{n:,}** names · Market · Cap · ₹ at year-start → worth today · "
+                f"₹{amount:,.0f} today · expand · website · quarterly · **TV**"
             )
             _embed_cached_quant_html(
                 QUANT_HTML_CACHE_KEYS["price_chg"],
@@ -1052,9 +1052,8 @@ def render_strategy_scan() -> None:
             )
         with w2:
             st.caption(
-                "Uses **Market + Cap**. **YTD** = invested Jan 1 → value today · "
-                "also 1M–24M %. Tip: narrow **Market / Cap** — All (~5k) Yahoo history is slow. "
-                "Expand uses PEAD cache (no live Yahoo fill)."
+                "Uses **Market + Cap**. One column: **₹ invested Jan 1 → worth today**. "
+                "Also shows YTD / 1M–24M %. Narrow Market/Cap for speed."
             )
 
     cap_tier_id = resolve_cap_tier_id(filters.market, cap_tier_id_from_label(cap_tier_label_ui))
@@ -1184,17 +1183,22 @@ def render_strategy_scan() -> None:
 
     tq_result = tq_df if tq_df is not None else pd.DataFrame()
     bb_result = bb_df if bb_df is not None else pd.DataFrame()
+    # Quant BB report: NEW_BREAKOUT only (drop ABOVE_BAND / legacy rows).
+    if not bb_result.empty and "signal" in bb_result.columns:
+        bb_result = bb_result[
+            bb_result["signal"].astype(str).str.upper() == "NEW_BREAKOUT"
+        ].copy()
     has_tq = run_tq and tq_df is not None
     has_bb = run_bb and bb_df is not None
 
     if has_tq and has_bb and tq_result.empty and bb_result.empty:
-        st.warning("No TQ or Bollinger Bands signals in the current selection.")
+        st.warning("No TQ or BB NEW breakout signals in the current selection.")
         return
     if has_tq and not has_bb and tq_result.empty:
         st.warning(f"No TQ ({scan_timeframe}) signals in the current selection.")
         return
     if has_bb and not has_tq and bb_result.empty:
-        st.warning(f"No Bollinger Bands ({scan_timeframe}) signals in the current selection.")
+        st.warning(f"No BB NEW breakouts ({scan_timeframe}) in the current selection.")
         return
 
     if has_tq and not tq_result.empty:
@@ -1204,7 +1208,7 @@ def render_strategy_scan() -> None:
     else:
         saved_tq = 0
     if has_bb and not bb_result.empty:
-        with st.spinner("Loading website, quarterly data & links for BB signals..."):
+        with st.spinner("Loading website, quarterly data & links for BB NEW signals..."):
             bb_result = _prepare_quant_report(bb_result)
         saved_bb = save_strategy_bb_signals(bb_result, timeframe=scan_timeframe)
     else:
@@ -1215,7 +1219,7 @@ def render_strategy_scan() -> None:
         if saved_tq:
             parts.append(f"**{saved_tq}** TQ ({scan_timeframe})")
         if saved_bb:
-            parts.append(f"**{saved_bb}** BB ({scan_timeframe})")
+            parts.append(f"**{saved_bb}** BB NEW ({scan_timeframe})")
         st.success(f"Saved {' + '.join(parts)} signals to SQLite — available on the **PEAD** tab.")
     embed_html = build_strategy_dashboard_html(
         tq_df=tq_result,
@@ -1249,7 +1253,7 @@ def render_strategy_scan() -> None:
         )
     if has_bb and not bb_result.empty:
         st.download_button(
-            f"Download BB ({scan_timeframe}) CSV",
+            f"Download BB NEW ({scan_timeframe}) CSV",
             data=_export_scan_csv(bb_result),
             file_name=f"strategy_bb_{scan_timeframe}.csv",
             mime="text/csv",

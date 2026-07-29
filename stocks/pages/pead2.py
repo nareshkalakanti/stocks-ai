@@ -284,16 +284,16 @@ def render_pead2(*, show_title: bool = True) -> None:
             f"TQ **{tq_n}** · BB **{bb_n}** · "
             f"{cache_hits:,} loaded from DB · "
             f"**search** in the results table · "
-            f"filter **TQ / BB weekly** in the toolbar · "
+            f"filter **TQ / BB NEW** in the toolbar · "
             f"**click a row** to expand the detail panel."
         )
     else:
         st.caption(
             f"{len(candidates)} stocks · {cache_hits:,} from DB · "
-            f"TQ weekly **{tq_n}** · BB weekly **{bb_n}** · "
+            f"TQ weekly **{tq_n}** · BB NEW **{bb_n}** · "
             f"sorted by **latest result date** · "
             f"**search** in the results table · "
-            f"filter **TQ / BB weekly** in the toolbar · "
+            f"filter **TQ / BB NEW** in the toolbar · "
             f"**click a row** to expand the detail panel."
         )
     embed_html_iframe(

@@ -762,12 +762,10 @@ def build_governance_map_html(
         `<span class="gov-tag gov-tag-tq" title="${{esc(bits.join(" · "))}}">TQ</span>`
       );
     }}
-    if (c.has_bb) {{
-      const sig = String(c.bb_signal || "ABOVE_BAND");
-      const label = sig === "NEW_BREAKOUT" ? "BB NEW" : "BB";
+    if (c.has_bb && String(c.bb_signal || "").toUpperCase() === "NEW_BREAKOUT") {{
       const tf = String(c.bb_timeframe || "weekly");
       tags.push(
-        `<span class="gov-tag gov-tag-bb" title="${{esc("BB · " + tf + " · " + sig)}}">${{esc(label)}}</span>`
+        `<span class="gov-tag gov-tag-bb" title="${{esc("BB · " + tf + " · NEW_BREAKOUT")}}">BB NEW</span>`
       );
     }}
     return tags;

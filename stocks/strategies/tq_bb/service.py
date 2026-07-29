@@ -139,7 +139,8 @@ def analyze_stock_bb(
     else:
         signal = "NEUTRAL"
 
-    if signal not in {"NEW_BREAKOUT", "ABOVE_BAND"}:
+    if signal != "NEW_BREAKOUT":
+        # Reports / tags / PEAD filters only show fresh breakouts (not ABOVE_BAND).
         return None
 
     return {
@@ -432,9 +433,14 @@ def run_bb_strategy(
     if df.empty:
         return df
 
-    df["_signal_priority"] = df["signal"].map(lambda x: 0 if x == "NEW_BREAKOUT" else 1)
-    df = df.sort_values(["_signal_priority", "price"], ascending=[True, False])
-    return df.drop(columns=["_signal_priority"]).reset_index(drop=True)
+    # Keep NEW_BREAKOUT only (ignore legacy ABOVE_BAND rows if any).
+    if "signal" in df.columns:
+        df = df[df["signal"].astype(str).str.upper() == "NEW_BREAKOUT"].copy()
+    if df.empty:
+        return df
+
+    df = df.sort_values(["price"], ascending=[False])
+    return df.reset_index(drop=True)
 
 
 def run_bb_worker_count(job_count: int) -> int:

@@ -3179,9 +3179,8 @@ def load_strategy_breakout_map(tickers: list[str]) -> dict[str, dict]:
                    signal_date, fetched_at
             FROM strategy_bb_signals
             WHERE ticker IN ({placeholders})
-            ORDER BY
-                CASE signal WHEN 'NEW_BREAKOUT' THEN 0 ELSE 1 END,
-                timeframe
+              AND signal = 'NEW_BREAKOUT'
+            ORDER BY timeframe
             """,
             uniq,
         ).fetchall()

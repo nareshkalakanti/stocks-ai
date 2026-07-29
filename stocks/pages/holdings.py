@@ -22,11 +22,12 @@ from stocks.listings.stocks_data import load_india_stocks
 from stocks.strategies.pead2.cache_lookup import count_pead_backfill_pending
 from stocks.strategies.pead2.html import build_pead2_dashboard_html, pead2_iframe_height
 
-_CACHE_KEY = "holdings_priced_v9"
+_CACHE_KEY = "holdings_priced_v10"
 
 
 def _clear_holdings_view_cache() -> None:
     st.session_state.pop(_CACHE_KEY, None)
+    st.session_state.pop("holdings_priced_v9", None)
     st.session_state.pop("holdings_priced_v8", None)
     st.session_state.pop("holdings_priced_v7", None)
 
@@ -287,6 +288,12 @@ def render_holdings() -> None:
         st.metric("With quarterly", qtr_count)
     with m5:
         st.metric("With MAs", ma_count)
+
+    if qtr_count < len(view):
+        st.caption(
+            f"Quarterly panels on **{qtr_count}/{len(view)}** names. "
+            "Missing ones are usually Yahoo gaps — click **Refresh prices** to re-fetch expand data."
+        )
 
     if view.empty:
         st.caption("No holdings to show.")

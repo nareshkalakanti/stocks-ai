@@ -103,14 +103,57 @@ def _pead2_other_income_series(income: pd.DataFrame) -> pd.Series | None:
 
 
 def _pead2_passes_earnings_quality(net_profit: pd.Series, eps: pd.Series) -> bool:
+    ok, _reason = _pead2_earnings_quality_gate(net_profit, eps)
+    return ok
+
+
+def _pead2_earnings_quality_gate(
+    net_profit: pd.Series, eps: pd.Series
+) -> tuple[bool, str]:
     """PEAD2 earnings gate — allow shorter EPS history when YoY base check cannot run."""
     ok, reason = passes_earnings_quality(net_profit, eps)
     if ok:
-        return True
+        return True, ""
     ep = eps.dropna()
     if reason.startswith("Need 5+") and len(ep) >= 3:
-        return True
-    return False
+        return True, ""
+    return False, reason
+
+
+def _pead2_expand_only_tombstone(
+    *,
+    ticker: str,
+    market: str | None,
+    market_cap_cr: float | None,
+    reason: str,
+    revenue: pd.Series,
+    ebidt: pd.Series,
+    net_profit: pd.Series,
+    eps: pd.Series,
+    other_income: pd.Series | None,
+) -> dict:
+    """
+    Not PEAD-scorable, but keep a quarterly panel for Holdings / expand UI.
+    """
+    quarters = sanitize_quarter_panel(
+        build_quarter_panel(
+            revenue, ebidt, net_profit, eps, other_income=other_income
+        )
+    )
+    lags: dict = {}
+    if quarters:
+        lags["0"] = {"quarter_lag": 0, "quarters": quarters}
+    return {
+        "ticker": safe_str(ticker).upper(),
+        "market": safe_str(market) or None,
+        "market_cap_cr": market_cap_cr,
+        "calc_version": PEAD2_CALC_VERSION,
+        "no_pead_data": True,
+        "no_pead_data_reason": reason,
+        "unavailable": True,
+        "unavailable_reason": reason,
+        "lags": lags,
+    }
 
 
 def _cache_market_cap(
@@ -425,8 +468,11 @@ def _breakout_map_from_frames(
             ticker = safe_str(row.get("ticker")).upper()
             if not ticker:
                 continue
+            sig = safe_str(row.get("signal")).upper()
+            if sig != "NEW_BREAKOUT":
+                continue
             out.setdefault(ticker, {})["bb"] = {
-                "signal": row.get("signal") or "ABOVE_BAND",
+                "signal": "NEW_BREAKOUT",
                 "timeframe": row.get("timeframe") or "weekly",
             }
     return out
@@ -887,8 +933,19 @@ def analyze_pead2_ticker(
         if len(revenue) < PEAD2_MIN_QUARTERS:
             return None
 
-        if not _pead2_passes_earnings_quality(net_profit, eps):
-            return None
+        ok, quality_reason = _pead2_earnings_quality_gate(net_profit, eps)
+        if not ok:
+            return _pead2_expand_only_tombstone(
+                ticker=ticker,
+                market=market,
+                market_cap_cr=market_cap_cr,
+                reason=quality_reason or "Earnings quality gate",
+                revenue=revenue,
+                ebidt=ebidt,
+                net_profit=net_profit,
+                eps=eps,
+                other_income=other_income,
+            )
 
         hist = yt.history(period="6y", interval="1d", auto_adjust=True)
         price_val = _info_price(info, hist)
