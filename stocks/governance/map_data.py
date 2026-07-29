@@ -17,7 +17,7 @@ from stocks.core.text_utils import safe_str, sanitize_website
 from stocks.governance.db import get_governance_connection, init_governance_db
 from stocks.governance.score import mcap_cap_code, mcap_cap_label, score_director_seats
 from stocks.market.company_profile import _WEBSITE_OVERRIDES, merge_company_profile
-from stocks.market.screener_profile import fetch_screener_market_cap_cr
+from stocks.market.screener_profile import fetch_market_cap_cr
 from stocks.shared.corp_tags import (
     clear_corp_tags_cache,
     holdings_ticker_set,
@@ -166,7 +166,7 @@ def hydrate_missing_mcaps(
     def _one(item: tuple[str, str]) -> bool:
         ticker, market = item
         try:
-            mcap = fetch_screener_market_cap_cr(ticker, market)
+            mcap = fetch_market_cap_cr(ticker, market)
         except Exception:
             return False
         if mcap is None or mcap <= 0:

@@ -115,3 +115,38 @@ def fetch_screener_market_cap_cr(ticker: str, market: str | None = None) -> floa
     except (TypeError, ValueError):
         return None
     return val if val > 0 else None
+
+
+def _yahoo_market_cap_cr(ticker: str, market: str | None) -> float | None:
+    import yfinance as yf
+
+    from stocks.market.price_service import to_yfinance_symbol
+    from stocks.market.yfinance_limits import call_fast
+
+    ticker_key = safe_str(ticker).upper()
+    if not ticker_key:
+        return None
+    symbol = to_yfinance_symbol(ticker_key, market)
+
+    def _load() -> float | None:
+        info = yf.Ticker(symbol).info or {}
+        raw = info.get("marketCap")
+        if raw is None:
+            return None
+        val = float(raw)
+        if val <= 0:
+            return None
+        return round(val / 1e7, 1)
+
+    try:
+        return call_fast(_load)
+    except Exception:
+        return None
+
+
+def fetch_market_cap_cr(ticker: str, market: str | None = None) -> float | None:
+    """Market cap in ₹ Cr — screener.in, then Yahoo finance."""
+    mcap = fetch_screener_market_cap_cr(ticker, market)
+    if mcap is not None and mcap > 0:
+        return mcap
+    return _yahoo_market_cap_cr(ticker, market)

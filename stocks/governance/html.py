@@ -547,17 +547,17 @@ def build_governance_map_html(
       </div>
       <div class="gov-cap-filter" role="group" aria-label="Cap tag filter (multi-select)" id="govmap-cap-filter">
         <span class="gov-cap-filter-label">Cap</span>
-        <button type="button" class="active" data-cap="" title="All caps">All</button>
-        <button type="button" data-cap="NC" title="Nano Cap (&lt; 100 Cr) — multi-select with Holdings">NC</button>
-        <button type="button" data-cap="MIC" title="Micro Cap (100–500 Cr) — multi-select with Holdings">MIC</button>
-        <button type="button" data-cap="SC" title="Small Cap (500–5,000 Cr) — multi-select with Holdings">SC</button>
-        <button type="button" data-cap="MC" title="Mid Cap (5,000–20,000 Cr) — multi-select with Holdings">MC</button>
-        <button type="button" data-cap="LC" title="Large Cap (≥ 20,000 Cr) — multi-select with Holdings">LC</button>
+        <button type="button" class="active" data-cap="" title="All cap bands — with Holding, highlight holdings only">All</button>
+        <button type="button" data-cap="NC" title="With Holding: highlights NC seats on the board (rows stay all holdings)">NC</button>
+        <button type="button" data-cap="MIC" title="With Holding: highlights MIC seats on the board">MIC</button>
+        <button type="button" data-cap="SC" title="With Holding: keeps Holding highlight + highlights SC seats (e.g. UFLEX)">SC</button>
+        <button type="button" data-cap="MC" title="With Holding: highlights MC seats on the board">MC</button>
+        <button type="button" data-cap="LC" title="With Holding: highlights LC seats on the board">LC</button>
       </div>
       <div class="gov-hold-filter" role="group" aria-label="Holdings filter" id="govmap-hold-filter">
         <span class="gov-cap-filter-label">Holdings</span>
         <button type="button" class="active" data-hold="" title="Show all companies">All</button>
-        <button type="button" data-hold="HOLD" title="Holdings only — combine with Cap (e.g. MIC + MC)">Holding</button>
+        <button type="button" data-hold="HOLD" title="Directors on your holdings; Cap then highlights matching seats (full board still shown)">Holding</button>
       </div>
       <span class="gov-search-meta" id="govmap-count"></span>
     </div>
@@ -721,8 +721,16 @@ def build_governance_map_html(
       f.keys.some(k => q === k.trim() || q.includes(k.trim()))
     ) || null;
   }}
-  function companyMatchesCap(c) {{
+  const CAP_BANDS = ["NC", "MIC", "SC", "MC", "LC"];
+  function capFilterIsAll() {{
     if (!capFilters.size) return true;
+    return CAP_BANDS.every(b => capFilters.has(b));
+  }}
+  function capHighlightActive() {{
+    return capFilters.size > 0 && !capFilterIsAll();
+  }}
+  function companyMatchesCap(c) {{
+    if (capFilterIsAll()) return true;
     return capFilters.has(String(c.cap_code || "").toUpperCase());
   }}
   function companyMatchesHold(c) {{
@@ -756,11 +764,21 @@ def build_governance_map_html(
       `</div>`
     );
   }}
-  function companyMatchesFilters(c) {{
+  function companyRowFilter(c) {{
     return companyMatchesCap(c) && companyMatchesHold(c);
   }}
+  /** Blue outline: holdings stay highlighted; Cap adds highlight on matching cap tags too. */
+  function companyHighlightFilter(c) {{
+    if (holdFilter === "HOLD") {{
+      if (capHighlightActive()) {{
+        return !!c.is_holding || companyMatchesCap(c);
+      }}
+      return !!c.is_holding;
+    }}
+    return companyRowFilter(c);
+  }}
   function matchingCompanies(r) {{
-    return (r.companies || []).filter(companyMatchesFilters);
+    return (r.companies || []).filter(companyHighlightFilter);
   }}
   /** Cap/Hold filter which directors appear; always show full board in the row. */
   function displayCompanies(r) {{
@@ -769,26 +787,32 @@ def build_governance_map_html(
     const hits = [];
     const rest = [];
     all.forEach(c => {{
-      if (companyMatchesFilters(c)) hits.push(c);
+      if (companyHighlightFilter(c)) hits.push(c);
       else rest.push(c);
     }});
     return hits.concat(rest);
   }}
   function rowHasMatchingCompany(r) {{
-    if (!capFilters.size && !holdFilter) return true;
-    return matchingCompanies(r).length > 0;
+    if (!capHighlightActive() && !holdFilter) return true;
+    if (holdFilter === "HOLD") {{
+      return (r.companies || []).some(c => c.is_holding);
+    }}
+    return (r.companies || []).some(companyRowFilter);
   }}
   function activeFilters() {{
-    return !!(capFilters.size || holdFilter);
+    return !!(capHighlightActive() || holdFilter);
   }}
   function filterBits() {{
     const bits = [];
-    if (capFilters.size) {{
-      const order = ["NC", "MIC", "SC", "MC", "LC"];
-      const selected = order.filter(c => capFilters.has(c));
-      bits.push(`Cap ${{selected.join("+")}}`);
-    }}
     if (holdFilter) bits.push("Holding");
+    if (capHighlightActive()) {{
+      const selected = CAP_BANDS.filter(c => capFilters.has(c));
+      if (holdFilter === "HOLD") {{
+        bits.push(`+ highlight ${{selected.join("+")}}`);
+      }} else {{
+        bits.push(`Cap ${{selected.join("+")}}`);
+      }}
+    }}
     return bits;
   }}
   function designationMatchesRole(desig, needle, family) {{
@@ -975,7 +999,13 @@ def build_governance_map_html(
     const cosList = displayCompanies(r);
     const matchN = matchingCompanies(r).length;
     const filterNote = filterBits().length
-      ? ` · filter <strong>${{esc(filterBits().join(" · "))}}</strong> hit ${{matchN}}/${{cosList.length}} (all boards shown)`
+      ? ` · filter <strong>${{esc(filterBits().join(" · "))}}</strong>` +
+        (holdFilter === "HOLD" && capHighlightActive()
+          ? ` · ${{matchN}} highlighted`
+          : holdFilter === "HOLD"
+            ? ""
+            : ` hit ${{matchN}}/${{cosList.length}}`) +
+        ` (all boards shown)`
       : "";
     const breakdown =
       `<div class="gov-breakdown">` +
@@ -1007,8 +1037,8 @@ def build_governance_map_html(
         : `<div class="gov-about muted">No about text yet</div>`;
       const isHub = hubT && String(c.ticker || "").toUpperCase() === hubT;
       const isRole = viewMode === "role" && seatMatchesRole(c);
-      const isFilterHit = activeFilters() && companyMatchesFilters(c);
-      const isFilterMiss = activeFilters() && !companyMatchesFilters(c);
+      const isFilterHit = activeFilters() && companyHighlightFilter(c);
+      const isFilterMiss = activeFilters() && !companyHighlightFilter(c);
       const highlight = isHub || isRole || isFilterHit || (searchQuery && viewMode !== "role" && (
         String(c.ticker || "").toLowerCase().includes(searchQuery) ||
         String(c.name || "").toLowerCase().includes(searchQuery) ||
@@ -1085,8 +1115,8 @@ def build_governance_map_html(
         const tagHtml = tags.length
           ? `<div class="gov-ticker-tags">${{tags.join("")}}</div>`
           : "";
-        const hit = activeFilters() && companyMatchesFilters(c);
-        const miss = activeFilters() && !companyMatchesFilters(c);
+        const hit = activeFilters() && companyHighlightFilter(c);
+        const miss = activeFilters() && !companyHighlightFilter(c);
         const stackCls = [
           "gov-ticker-stack",
           hit ? "filter-hit" : "",
@@ -1294,7 +1324,7 @@ def build_governance_map_html(
     if (!capFilterEl) return;
     capFilterEl.querySelectorAll("button[data-cap]").forEach(b => {{
       const code = String(b.getAttribute("data-cap") || "").toUpperCase();
-      const active = code ? capFilters.has(code) : !capFilters.size;
+      const active = code ? capFilters.has(code) : capFilterIsAll();
       b.classList.toggle("active", active);
       b.setAttribute("aria-pressed", active ? "true" : "false");
     }});
@@ -1310,6 +1340,9 @@ def build_governance_map_html(
           capFilters.delete(code);
         }} else {{
           capFilters.add(code);
+        }}
+        if (CAP_BANDS.every(b => capFilters.has(b))) {{
+          capFilters.clear();
         }}
         syncCapFilterButtons();
         render();
