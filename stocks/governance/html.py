@@ -86,6 +86,14 @@ GOVERNANCE_MAP_CSS = """
     color: #6d28d9;
     background: #ede9fe;
   }
+  .gov-tag-tq {
+    color: #065f46;
+    background: #d1fae5;
+  }
+  .gov-tag-bb {
+    color: #1e3a8a;
+    background: #dbeafe;
+  }
   .gov-tickers {
     display: flex;
     flex-wrap: wrap;
@@ -743,6 +751,27 @@ def build_governance_map_html(
     if (s.length <= n) return s;
     return s.slice(0, Math.max(1, n - 1)).trimEnd() + "…";
   }}
+  function breakoutTagPills(c) {{
+    const tags = [];
+    if (!c) return tags;
+    if (c.has_tq) {{
+      const bits = ["TQ", String(c.tq_timeframe || "weekly")];
+      const xo = String(c.tq_crossover || "").trim();
+      if (xo) bits.push(xo);
+      tags.push(
+        `<span class="gov-tag gov-tag-tq" title="${{esc(bits.join(" · "))}}">TQ</span>`
+      );
+    }}
+    if (c.has_bb) {{
+      const sig = String(c.bb_signal || "ABOVE_BAND");
+      const label = sig === "NEW_BREAKOUT" ? "BB NEW" : "BB";
+      const tf = String(c.bb_timeframe || "weekly");
+      tags.push(
+        `<span class="gov-tag gov-tag-bb" title="${{esc("BB · " + tf + " · " + sig)}}">${{esc(label)}}</span>`
+      );
+    }}
+    return tags;
+  }}
   function superstarRow(c) {{
     const list = Array.isArray(c && c.superstars) ? c.superstars : [];
     if (!list.length) return "";
@@ -969,6 +998,10 @@ def build_governance_map_html(
     const smeTag = hub.is_sme
       ? `<span class="gov-co-tags"><span class="gov-tag gov-tag-sme" title="NSE Emerge / SME listing">SME</span></span>`
       : "";
+    const hubBrk = breakoutTagPills(hub);
+    const breakoutTag = hubBrk.length
+      ? `<span class="gov-co-tags">${{hubBrk.join("")}}</span>`
+      : "";
     const web = webHref(hub.website);
     const webLink = web
       ? `<a href="${{esc(web)}}" target="_blank" rel="noopener noreferrer">Web</a>`
@@ -978,7 +1011,7 @@ def build_governance_map_html(
       : "—";
     el.innerHTML =
       `<div class="govhub-hero"><div class="govhub-hero-top"><div>` +
-      `<div class="govhub-name">${{esc(hub.name || hub.ticker)}}${{holdTag}}${{smeTag}}</div>` +
+      `<div class="govhub-name">${{esc(hub.name || hub.ticker)}}${{holdTag}}${{smeTag}}${{breakoutTag}}</div>` +
       `<p class="govhub-sub">${{esc(hub.ticker)}} · ${{esc(hub.market || "")}} · board hub</p>` +
       `<div class="gov-co-links" style="margin-top:8px">` +
       `<a href="${{esc(hub.sc || "#")}}" target="_blank" rel="noopener noreferrer">SC</a>` +
@@ -1047,6 +1080,8 @@ def build_governance_map_html(
       const holdTag = c.is_holding
         ? `<span class="gov-co-tags"><span class="gov-tag gov-tag-hold" title="In your Holdings portfolio">Holding</span></span>`
         : "";
+      const brk = breakoutTagPills(c);
+      const brkTag = brk.length ? `<span class="gov-co-tags">${{brk.join("")}}</span>` : "";
       const smeTag = c.is_sme
         ? `<span class="gov-co-tags"><span class="gov-tag gov-tag-sme" title="NSE Emerge / SME listing">SME</span></span>`
         : "";
@@ -1067,7 +1102,7 @@ def build_governance_map_html(
         `<div class="${{coCls}}"${{coStyle}}>` +
         `<div class="gov-co-top">` +
         `<div>` +
-        `<div class="gov-co-name">${{esc(c.name || c.ticker)}}${{capTag}}${{smeTag}}${{holdTag}}</div>` +
+        `<div class="gov-co-name">${{esc(c.name || c.ticker)}}${{capTag}}${{smeTag}}${{brkTag}}${{holdTag}}</div>` +
         `<div class="gov-co-sub">${{esc(c.ticker)}} · ${{esc(c.market || "")}} · ${{esc(c.designation || "Director")}}</div>` +
         `</div>` +
         `<div class="gov-co-mcap">${{fmtMcap(c.market_cap_cr)}}</div>` +
@@ -1112,6 +1147,7 @@ def build_governance_map_html(
         if (c.is_holding) {{
           tags.push(`<span class="gov-tag gov-tag-hold" title="In your Holdings">Holding</span>`);
         }}
+        tags.push(...breakoutTagPills(c));
         const tagHtml = tags.length
           ? `<div class="gov-ticker-tags">${{tags.join("")}}</div>`
           : "";

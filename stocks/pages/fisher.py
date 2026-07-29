@@ -90,7 +90,7 @@ def render_fisher(*, show_title: bool = True) -> None:
             run_clicked = st.button(
                 "Scan",
                 type="primary",
-                width="stretch",
+                use_container_width=True,
                 key="fisher_scan",
                 help=(
                     f"Load quarterly fundamentals (cache ≤ {PEAD2_CACHE_HOURS}h), "

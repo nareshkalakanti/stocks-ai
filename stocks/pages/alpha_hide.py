@@ -96,7 +96,7 @@ def render_alpha_hide(*, show_title: bool = True) -> None:
             run_clicked = st.button(
                 "Scan",
                 type="primary",
-                width="stretch",
+                use_container_width=True,
                 key="alphahide_scan",
                 help=(
                     "SARVADA-style Phase I/II screen with 5 ingredient gates "

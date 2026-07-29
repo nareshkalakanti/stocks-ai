@@ -11,6 +11,7 @@ from stocks.core.config import SCREENER_HYDRATE_WORKERS
 from stocks.core.database import (
     load_company_profiles_from_db,
     load_market_cap_from_db,
+    load_strategy_breakout_map,
     save_market_cap_to_db,
 )
 from stocks.core.text_utils import safe_str, sanitize_website
@@ -33,6 +34,35 @@ from stocks.shared.superstars.holdings import (
 DEFAULT_PROFILE_HYDRATE = 60
 DEFAULT_MCAP_HYDRATE = 40
 PROFILE_HYDRATE_WORKERS = max(1, int(SCREENER_HYDRATE_WORKERS))
+
+
+def _apply_breakout_to_company(company: dict[str, Any], bmap: dict[str, dict]) -> None:
+    """Attach Strategy TQ/BB cache fields (same as PEAD company cells)."""
+    ticker = safe_str(company.get("ticker")).upper()
+    if not ticker:
+        return
+    br = bmap.get(ticker) or {}
+    tq = br.get("tq") if isinstance(br.get("tq"), dict) else None
+    bb = br.get("bb") if isinstance(br.get("bb"), dict) else None
+    if tq:
+        company["has_tq"] = True
+        if tq.get("score") is not None:
+            try:
+                company["tq_score"] = float(tq["score"])
+            except (TypeError, ValueError):
+                pass
+        xo = safe_str(tq.get("crossover_type"))
+        if xo:
+            company["tq_crossover"] = xo
+        tf = safe_str(tq.get("timeframe"))
+        if tf:
+            company["tq_timeframe"] = tf
+    if bb:
+        company["has_bb"] = True
+        company["bb_signal"] = safe_str(bb.get("signal")) or "ABOVE_BAND"
+        tf = safe_str(bb.get("timeframe"))
+        if tf:
+            company["bb_timeframe"] = tf
 
 
 def _mcap_map(tickers: list[str]) -> dict[str, float]:
@@ -387,6 +417,7 @@ def build_governance_map_rows(
         {safe_str(t).upper() for t in seats_df["ticker"].tolist() if safe_str(t)}
     )
     mcaps = _mcap_map(tickers)
+    breakout_map = load_strategy_breakout_map(tickers)
     profiles = _apply_profile_overrides(load_company_profiles_from_db(tickers))
     clear_corp_tags_cache()
     holding_tickers = holdings_ticker_set()
@@ -436,6 +467,7 @@ def build_governance_map_rows(
                     "tv": tv_url,
                 }
             )
+            _apply_breakout_to_company(companies[-1], breakout_map)
 
         if len({c["ticker"] for c in companies}) < min_boards:
             continue

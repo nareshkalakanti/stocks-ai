@@ -3198,6 +3198,32 @@ def load_strategy_breakout_map(tickers: list[str]) -> dict[str, dict]:
     return {k: v for k, v in out.items() if v}
 
 
+def pead2_cache_summary() -> dict[str, object]:
+    """Counts for Governance Map / Strategy captions (PEAD2 SQLite cache)."""
+    init_db()
+    with get_connection() as conn:
+        total = int(conn.execute("SELECT COUNT(*) FROM pead2_cache").fetchone()[0])
+        # Scorable-ish: has lag metrics blob (not empty tombstone).
+        scoredish = int(
+            conn.execute(
+                """
+                SELECT COUNT(*) FROM pead2_cache
+                WHERE payload_json LIKE '%"lags"%'
+                  AND payload_json NOT LIKE '%"no_pead_data": true%'
+                  AND payload_json NOT LIKE '%"no_pead_data":true%'
+                  AND payload_json NOT LIKE '%"unavailable": true%'
+                  AND payload_json NOT LIKE '%"unavailable":true%'
+                """
+            ).fetchone()[0]
+        )
+        ts = conn.execute("SELECT MAX(fetched_at) FROM pead2_cache").fetchone()[0]
+    return {
+        "pead_count": total,
+        "pead_scorable": scoredish,
+        "pead_fetched_at": ts,
+    }
+
+
 def strategy_signals_db_stats() -> dict[str, int]:
     init_db()
     with get_connection() as conn:

@@ -8,7 +8,9 @@ from stocks.core.config import (
     STRATEGY_MAX_WORKERS_CAP,
     cap_tier_id_from_label,
 )
+from stocks.core.streamlit_compat import normalize_radio_session_state
 from stocks.core.database import save_strategy_bb_signals, save_strategy_tq_signals
+from stocks.core.text_utils import safe_str
 from stocks.scans.scan_toolbar import (
     BB_TIMEFRAME_COL_WIDTH,
     SCAN_BTN_COL_WIDTH,
@@ -46,6 +48,10 @@ from stocks.strategies.rsi_weekly.service import (
     run_rsi_weekly_scan,
 )
 from stocks.strategies.factor.html import build_factor_html, factor_iframe_height
+from stocks.strategies.whatif_returns.html import (
+    build_price_change_html,
+    price_change_iframe_height,
+)
 from stocks.strategies.factor.service import (
     prepare_factor_universe,
     run_factor_scan,
@@ -84,6 +90,7 @@ STRATEGY_OPTIONS = (
     "Both",
     "TQ",
     "Bollinger Bands",
+    "Price Change",
     "TQ W52 Recovery",
     "RSI Weekly",
     "Above All EMAs",
@@ -125,6 +132,7 @@ QUANT_HTML_CACHE_KEYS = {
     "base_breakout": "strat_base_breakout_html_v3",
     "low_vol": "strat_low_vol_html_v2",
     "factor": "strat_factor_html_v8",
+    "price_chg": "strat_price_chg_html_v4",
     "tq_bb": "strat_tq_bb_html_v4",
     "cup_handle": "strat_cup_handle_html_v5",
     "vcp": "strat_vcp_html_v4",
@@ -145,15 +153,17 @@ def _export_scan_csv(df: pd.DataFrame) -> bytes:
 
 
 def render_strategy() -> None:
-    if "strategy_section" not in st.session_state:
-        st.session_state.strategy_section = STRATEGY_SECTIONS[0]
+    _section_key = "strategy_section_v2"
+    if _section_key not in st.session_state:
+        st.session_state[_section_key] = STRATEGY_SECTIONS[0]
+    normalize_radio_session_state(_section_key, list(STRATEGY_SECTIONS))
 
     section = st.radio(
         "Section",
         STRATEGY_SECTIONS,
         horizontal=True,
         label_visibility="collapsed",
-        key="strategy_section",
+        key=_section_key,
     )
 
     if section == "Quant Tab":
@@ -170,6 +180,156 @@ def render_strategy() -> None:
         from stocks.pages.governance import render_governance
 
         render_governance(show_title=False)
+
+def _price_change_has_expand(df: pd.DataFrame) -> bool:
+    if df is None or df.empty:
+        return False
+    if "quarters" in df.columns:
+        for q in df["quarters"].head(20):
+            if isinstance(q, dict) and q.get("rows"):
+                return True
+    if "website" in df.columns and df["website"].fillna("").astype(str).str.strip().any():
+        return True
+    return False
+
+
+def _ensure_price_change_expand(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Attach SC/TV + PEAD-cache quarters/website when available.
+
+    Cache-only: full Yahoo expand on 5k Market·Cap names is too slow.
+    Missing expand fields stay empty until a PEAD scan has cached them.
+    """
+    if df is None or df.empty:
+        return df if df is not None else pd.DataFrame()
+    out = df
+    if not _price_change_has_expand(out):
+        out = prepare_interactive_report_df(
+            out, max_workers=8, expand_cache_only=True
+        )
+    if "price" not in out.columns and "price_now" in out.columns:
+        out = out.copy()
+        out["price"] = out["price_now"]
+    return out
+
+
+def _show_whatif_returns_results(
+    result: pd.DataFrame,
+    *,
+    invest_amount: float,
+    summary: pd.DataFrame | None = None,
+) -> None:
+    from stocks.strategies.whatif_returns.service import portfolio_whatif_summary
+
+    amount = float(invest_amount)
+    prepared = _ensure_price_change_expand(result)
+    summ = summary if summary is not None else portfolio_whatif_summary(
+        prepared, invest_amount=amount
+    )
+    avg3 = None
+    top3 = None
+    if summ is not None and not summ.empty:
+        row3 = summ[summ["horizon"] == "3M"]
+        if not row3.empty:
+            avg3 = row3.iloc[0].get("avg_return_pct")
+            top3 = safe_str(row3.iloc[0].get("top_ticker"))
+    bits = [f"**{len(prepared):,}** names · Market · Cap · year-start → now (YTD)"]
+    if avg3 is not None:
+        bits.append(f"3M avg **{float(avg3):+.1f}%**")
+    if top3:
+        bits.append(f"top **{top3}**")
+    bits.append(f"₹{amount:,.0f} columns · expand · website · quarterly · **TV**")
+    st.caption(" · ".join(bits))
+
+    embed_html = build_price_change_html(
+        prepared,
+        invest_amount=amount,
+        summary=summ,
+        standalone=False,
+    )
+    st.session_state.strat_whatif_result = prepared
+    _embed_cached_quant_html(
+        QUANT_HTML_CACHE_KEYS["price_chg"],
+        embed_html,
+        height=price_change_iframe_height(len(prepared)),
+    )
+    st.download_button(
+        "Download CSV",
+        data=_export_scan_csv(prepared),
+        file_name="price_change.csv",
+        mime="text/csv",
+        key="strat_price_chg_csv",
+    )
+
+
+def _run_whatif_returns_scan(
+    filtered: pd.DataFrame,
+    *,
+    cap_tier_id: str,
+    invest_amount: float,
+) -> None:
+    from stocks.strategies.whatif_returns.service import (
+        portfolio_whatif_summary,
+        run_whatif_returns_scan,
+    )
+
+    with st.spinner("Building Market · Cap universe…"):
+        universe, cap_excluded, _mcap_ex = prepare_strategy_universe(
+            filtered,
+            cap_tier_id=cap_tier_id,
+        )
+    if universe.empty:
+        st.warning("No stocks match Market / Cap.")
+        return
+    if cap_excluded:
+        st.caption(f"Cap filter dropped **{cap_excluded:,}** names without matching mcap.")
+
+    work = universe.copy()
+    if "source_tag" not in work.columns:
+        work["source_tag"] = ""
+
+    progress = st.progress(0, text="Fetching price change…")
+    workers = int(st.session_state.get("strategy_max_workers") or STRATEGY_MAX_WORKERS)
+
+    def _progress(done: int, total: int, ticker: str) -> None:
+        if total <= 0:
+            return
+        progress.progress(
+            min(done / total, 1.0),
+            text=f"{done:,}/{total:,} · {ticker}",
+        )
+
+    try:
+        result = run_whatif_returns_scan(
+            work,
+            invest_amount=float(invest_amount),
+            max_workers=workers,
+            progress_callback=_progress,
+            should_stop=lambda: bool(st.session_state.get("strategy_scan_stop")),
+        )
+    except Exception as exc:
+        progress.empty()
+        st.error(f"Price change scan failed: {exc}")
+        return
+
+    progress.empty()
+    if result.empty:
+        st.warning("No price history for these tickers.")
+        return
+
+    with st.spinner("Attaching links & cached expand data…"):
+        result = _ensure_price_change_expand(result)
+
+    summary = portfolio_whatif_summary(result, invest_amount=float(invest_amount))
+    st.session_state.strat_whatif_result = result
+    st.session_state.strat_whatif_summary = summary
+    st.session_state.strat_whatif_amount = float(invest_amount)
+    # Drop stale HTML so expand payload is rebuilt from prepared rows.
+    st.session_state.pop(QUANT_HTML_CACHE_KEYS["price_chg"], None)
+    _show_whatif_returns_results(
+        result, invest_amount=float(invest_amount), summary=summary
+    )
+
 
 def _show_ema_daily_results(result: pd.DataFrame) -> None:
     st.caption(
@@ -327,6 +487,43 @@ def _show_tq_recovery_results(result: pd.DataFrame) -> None:
 
 
 def _render_quant_cached_results(strategy_choice: str) -> None:
+    if strategy_choice == "Price Change":
+        cached = st.session_state.get("strat_whatif_result")
+        amount = float(st.session_state.get("strat_whatif_amount") or 5000)
+        summary = st.session_state.get("strat_whatif_summary")
+        cached_html = st.session_state.get(QUANT_HTML_CACHE_KEYS["price_chg"])
+        # Prefer HTML only when expand payload (website/quarters) is already on the frame.
+        if (
+            cached_html
+            and cached is not None
+            and hasattr(cached, "empty")
+            and not cached.empty
+            and _price_change_has_expand(cached)
+        ):
+            n = len(cached)
+            st.caption(
+                f"**{n:,}** names · Market · Cap · ₹ at year-start → now (YTD) · "
+                f"₹{amount:,.0f} columns · expand · website · quarterly · **TV**"
+            )
+            _embed_cached_quant_html(
+                QUANT_HTML_CACHE_KEYS["price_chg"],
+                cached_html,
+                height=price_change_iframe_height(n),
+            )
+            st.download_button(
+                "Download CSV",
+                data=_export_scan_csv(cached),
+                file_name="price_change.csv",
+                mime="text/csv",
+                key="strat_price_chg_csv",
+            )
+            return
+        if cached is not None and hasattr(cached, "empty") and not cached.empty:
+            with st.spinner("Attaching links & cached expand data…"):
+                _show_whatif_returns_results(
+                    cached, invest_amount=amount, summary=summary
+                )
+        return
     if strategy_choice == "Above All EMAs":
         cached_html = st.session_state.get(QUANT_HTML_CACHE_KEYS["ema"])
         cached = st.session_state.get("strat_ema_result")
@@ -793,12 +990,15 @@ def render_strategy_scan() -> None:
             cap_tier_key="strat_cap_tier",
         )
         with row[4]:
+            if st.session_state.get("strat_choice") == "What-if Returns":
+                st.session_state["strat_choice"] = "Price Change"
             strategy_choice = st.selectbox(
                 "Strategy",
                 STRATEGY_OPTIONS,
                 key="strat_choice",
                 help=(
                     "TQ = trend quality · BB = Bollinger breakout · "
+                    "Price Change = Market·Cap · invest at year-start → value now (YTD) · "
                     "Momentum = all names by 12–1 return · "
                     "Low Volatility = bottom 20% short+long realized vol · "
                     "Weekly Base Breakout = long consolidation near breakout · "
@@ -831,9 +1031,31 @@ def render_strategy_scan() -> None:
                 help="Parallel workers for **TQ** and throttled scans (PEAD, Earnings, Turtle). Max 32.",
             )
         with row[7]:
-            run_clicked = st.button("Scan", type="primary", width="stretch", key="strat_scan")
+            run_clicked = st.button("Scan", type="primary", use_container_width=True, key="strat_scan")
         with row[8]:
-            stop_clicked = st.button("Stop", width="stretch", key="strat_stop")
+            stop_clicked = st.button("Stop", use_container_width=True, key="strat_stop")
+
+    whatif_amount = float(st.session_state.get("strat_whatif_invest") or 5000)
+    if strategy_choice == "Price Change":
+        w1, w2 = st.columns([1, 3])
+        with w1:
+            whatif_amount = float(
+                st.number_input(
+                    "Invest ₹",
+                    min_value=100.0,
+                    max_value=10_000_000.0,
+                    value=float(st.session_state.get("strat_whatif_invest") or 5000),
+                    step=500.0,
+                    key="strat_whatif_invest",
+                    help="If you put this amount in at the start of the year, what is it worth now?",
+                )
+            )
+        with w2:
+            st.caption(
+                "Uses **Market + Cap**. **YTD** = invested Jan 1 → value today · "
+                "also 1M–24M %. Tip: narrow **Market / Cap** — All (~5k) Yahoo history is slow. "
+                "Expand uses PEAD cache (no live Yahoo fill)."
+            )
 
     cap_tier_id = resolve_cap_tier_id(filters.market, cap_tier_id_from_label(cap_tier_label_ui))
     filtered = apply_stock_filters(stocks, filters)
@@ -849,6 +1071,13 @@ def render_strategy_scan() -> None:
 
     st.session_state.strategy_scan_stop = False
 
+    if strategy_choice == "Price Change":
+        _run_whatif_returns_scan(
+            filtered,
+            cap_tier_id=cap_tier_id,
+            invest_amount=whatif_amount,
+        )
+        return
     if strategy_choice == "Above All EMAs":
         _run_ema_daily_scan(filtered, cap_tier_id=cap_tier_id)
         return

@@ -307,6 +307,10 @@ def rows_for_json(
         "momentum_pct", "factor_rank", "f_momentum", "f_low_vol", "roe", "div_yield",
         "avg_volume", "dollar_volume", "factors_used", "price_1y", "price_1m",
         "sub_sector",
+        "ret_ytd", "ret_1m", "ret_2m", "ret_3m", "ret_6m", "ret_9m", "ret_12m", "ret_24m",
+        "val_ret_ytd", "val_ret_1m", "val_ret_2m", "val_ret_3m", "val_ret_6m", "val_ret_9m",
+        "val_ret_12m", "val_ret_24m",
+        "price_now",
     ) + extra_cols
     for _, row in work.iterrows():
         ticker = safe_str(row.get("ticker"))
@@ -523,10 +527,20 @@ def build_interactive_section(
         return `<span class="badge-score">${{Number(v).toFixed(0)}}</span>`;
       case "num1": return v != null && !isNaN(v) ? Number(v).toFixed(1) : "—";
       case "num2": return v != null && !isNaN(v) ? Number(v).toFixed(2) : "—";
+      case "num0":
+        if (v == null || isNaN(v)) return "—";
+        return Number(v).toLocaleString("en-IN", {{ maximumFractionDigits: 0 }});
       case "num4": return v != null && !isNaN(v) ? Number(v).toFixed(4) : "—";
       case "pct2":
         if (v == null || isNaN(v)) return "—";
         return Number(v).toFixed(2) + "%";
+      case "pct_signed": {{
+        if (v == null || isNaN(v)) return "—";
+        const n = Number(v);
+        const sign = n > 0 ? "+" : "";
+        const cls = n > 0.05 ? "px-up" : (n < -0.05 ? "px-down" : "px-flat");
+        return `<span class="${{cls}}">${{sign}}${{n.toFixed(1)}}%</span>`;
+      }}
       default: return v != null ? esc(v) : "—";
     }}
   }}

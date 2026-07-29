@@ -96,7 +96,7 @@ def render_distress(*, show_title: bool = True) -> None:
             run_clicked = st.button(
                 "Scan",
                 type="primary",
-                width="stretch",
+                use_container_width=True,
                 key="distress_scan",
                 help=(
                     f"Surveillance ∪ seed monitors · PEAD fundamentals "

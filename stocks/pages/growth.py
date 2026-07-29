@@ -83,7 +83,7 @@ def render_growth(*, show_title: bool = True) -> None:
             run_clicked = st.button(
                 "Scan",
                 type="primary",
-                width="stretch",
+                use_container_width=True,
                 key="growth_scan",
                 help=(
                     "Fetch annual statements via yfinance and apply growth "

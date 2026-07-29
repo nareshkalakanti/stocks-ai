@@ -45,9 +45,11 @@ def embed_html_iframe(
 
     import streamlit as st
 
+    from stocks.core.streamlit_compat import iframe_width_kw
+
     # Streamlit 1.58+: st.iframe replaces components.v1.html.
     if hasattr(st, "iframe"):
-        st.iframe(html_content, width="stretch", height=h)
+        st.iframe(html_content, height=h, **iframe_width_kw())
         return
 
     import streamlit.components.v1 as components

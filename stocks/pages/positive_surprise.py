@@ -92,7 +92,7 @@ def render_positive_surprise(*, show_title: bool = True) -> None:
             run_clicked = st.button(
                 "Scan",
                 type="primary",
-                width="stretch",
+                use_container_width=True,
                 key="psq_scan",
                 help=(
                     f"Load PEAD fundamentals (cache ≤ {PEAD2_CACHE_HOURS}h), keep "

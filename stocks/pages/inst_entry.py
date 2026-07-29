@@ -98,7 +98,7 @@ def render_inst_entry(*, show_title: bool = True) -> None:
             run_clicked = st.button(
                 "Scan",
                 type="primary",
-                width="stretch",
+                use_container_width=True,
                 key="instentry_scan",
                 help=(
                     "Quant gates then DII/FII shareholding trigger "

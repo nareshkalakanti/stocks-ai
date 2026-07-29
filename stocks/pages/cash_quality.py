@@ -92,7 +92,7 @@ def render_cash_quality(*, show_title: bool = True) -> None:
             run_clicked = st.button(
                 "Scan",
                 type="primary",
-                width="stretch",
+                use_container_width=True,
                 key="cashq_scan",
                 help=(
                     "Fetch annual statements via yfinance and apply Cash Quality "

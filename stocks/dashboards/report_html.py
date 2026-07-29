@@ -284,6 +284,21 @@ _REPORT_CSS = """
     font-weight: 700;
     text-align: right;
   }
+  .px-up {
+    color: #047857;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .px-down {
+    color: #b91c1c;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .px-flat {
+    color: #6b7280;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
   .badge-rank {
     display: inline-block;
     min-width: 2.2em;

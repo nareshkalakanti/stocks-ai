@@ -113,7 +113,7 @@ def render_small_cheap(*, show_title: bool = True) -> None:
             run_clicked = st.button(
                 "Scan",
                 type="primary",
-                width="stretch",
+                use_container_width=True,
                 key="smallcheap_scan",
                 help=(
                     "Scan ₹20–200 Cr names with Mcap/Sales < 1 via yfinance "

@@ -5,6 +5,7 @@ from __future__ import annotations
 import streamlit as st
 
 from stocks.core.config import (
+    DB_PATH,
     GOVERNANCE_DB_PATH,
     GOVERNANCE_MAP_AUTO_HYDRATE_MCAP_MAX,
     GOVERNANCE_MAP_AUTO_HYDRATE_MCAPS,
@@ -12,6 +13,7 @@ from stocks.core.config import (
     GOVERNANCE_MAP_AUTO_HYDRATE_PROFILES,
     GOVERNANCE_MAP_CACHE_SECONDS,
 )
+from stocks.core.database import strategy_signals_summary
 from stocks.dashboards.iframe_helpers import embed_html_iframe
 from stocks.governance.html import build_governance_map_html, governance_map_iframe_height
 from stocks.governance.map_data import (
@@ -33,10 +35,19 @@ def _governance_db_mtime() -> float:
         return 0.0
 
 
+def _signals_db_mtime() -> float:
+    """Invalidate map cache when Strategy TQ/BB scan updates stocks_ai.db."""
+    try:
+        return DB_PATH.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
 @st.cache_data(ttl=GOVERNANCE_MAP_CACHE_SECONDS, show_spinner=False)
 def _cached_governance_map_rows(
     min_boards: int,
     db_mtime: float,
+    signals_db_mtime: float,
     *,
     hydrate_profiles: bool,
     hydrate_profile_max: int,
@@ -91,7 +102,7 @@ def render_governance_map(*, show_title: bool = True) -> None:
         with fill_cols[0]:
             if st.button(
                 f"Fill missing about/web ({len(missing)})",
-                width="stretch",
+                use_container_width=True,
                 disabled=not missing,
                 help="Slow screener.in + Yahoo backfill for companies still missing website or about.",
             ):
@@ -113,7 +124,7 @@ def render_governance_map(*, show_title: bool = True) -> None:
         with fill_cols[1]:
             if st.button(
                 f"Fill missing mcap ({len(missing_mcap)})",
-                width="stretch",
+                use_container_width=True,
                 disabled=not missing_mcap,
                 help="Screener then Yahoo finance · batched on map load was disabled for speed.",
             ):
@@ -165,6 +176,7 @@ def render_governance_map(*, show_title: bool = True) -> None:
         rows = _cached_governance_map_rows(
             int(min_boards),
             _governance_db_mtime(),
+            _signals_db_mtime(),
             hydrate_profiles=hydrate_profiles,
             hydrate_profile_max=hydrate_profile_max,
             hydrate_mcaps=hydrate_mcaps,
@@ -191,9 +203,11 @@ def render_governance_map(*, show_title: bool = True) -> None:
         if "bridge" in rows.columns
         else 0
     )
+    sig = strategy_signals_summary()
     st.caption(
         f"**{len(rows):,}** directors · **{bridge_n:,}** big↔small bridge · "
-        "DIN only · min **2** shared boards · Cap · Holdings · Superstar tags"
+        "DIN only · min **2** shared boards · Cap · Holdings · Superstar · "
+        f"**TQ** ({sig.get('tq_count', 0):,} cached) · **BB** ({sig.get('bb_count', 0):,} cached) tags"
     )
 
     embed_html = build_governance_map_html(

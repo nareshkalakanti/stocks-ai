@@ -1,5 +1,6 @@
 import streamlit as st
 
+from stocks.core.streamlit_compat import normalize_radio_session_state
 from stocks.market.yfinance_utils import install_yfinance_noise_filters
 
 install_yfinance_noise_filters()
@@ -21,18 +22,26 @@ st.set_page_config(
 ensure_db()
 init_governance_db()
 
+_SIDEBAR_PAGES = [
+    "Strategy",
+    "Sector Landscape",
+    "SuperStars",
+    "Holdings",
+    "ValuePickr",
+    "Demergers",
+]
+# v2: Streamlit 1.58+ radios store option labels (string_value); old sessions
+# still send int_value indices and crash with TypeError on '1' / str vs int.
+_SIDEBAR_KEY = "app_sidebar_page_v2"
+
+normalize_radio_session_state(_SIDEBAR_KEY, _SIDEBAR_PAGES)
+
 with st.sidebar:
     page = st.radio(
         "Menu",
-        [
-            "Strategy",
-            "Sector Landscape",
-            "SuperStars",
-            "Holdings",
-            "ValuePickr",
-            "Demergers",
-        ],
+        _SIDEBAR_PAGES,
         label_visibility="collapsed",
+        key=_SIDEBAR_KEY,
     )
 
 if page == "Strategy":
