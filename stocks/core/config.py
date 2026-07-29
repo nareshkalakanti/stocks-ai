@@ -340,4 +340,18 @@ def cap_tier_id_from_label(label: str) -> str:
     return "all"
 STOCKS_CACHE_HOURS = int(os.getenv("STOCKS_CACHE_HOURS", "24"))
 REPORTS_CACHE_HOURS = int(os.getenv("REPORTS_CACHE_HOURS", "12"))
+# Governance Map: avoid slow screener backfill on every Streamlit rerun (use Fill button).
+GOVERNANCE_MAP_CACHE_SECONDS = int(os.getenv("GOVERNANCE_MAP_CACHE_SECONDS", "300"))
+GOVERNANCE_MAP_AUTO_HYDRATE_PROFILES = os.getenv(
+    "GOVERNANCE_MAP_AUTO_HYDRATE_PROFILES", "false"
+).lower() in ("1", "true", "yes")
+GOVERNANCE_MAP_AUTO_HYDRATE_MCAPS = os.getenv(
+    "GOVERNANCE_MAP_AUTO_HYDRATE_MCAPS", "false"
+).lower() in ("1", "true", "yes")
+GOVERNANCE_MAP_AUTO_HYDRATE_PROFILE_MAX = int(
+    os.getenv("GOVERNANCE_MAP_AUTO_HYDRATE_PROFILE_MAX", "15")
+)
+GOVERNANCE_MAP_AUTO_HYDRATE_MCAP_MAX = int(
+    os.getenv("GOVERNANCE_MAP_AUTO_HYDRATE_MCAP_MAX", "10")
+)
 
