@@ -402,6 +402,38 @@ GOVERNANCE_MAP_CSS = """
   .gov-cap-filter button[data-cap="SC"].active { background: #fef9c3; color: #a16207; }
   .gov-cap-filter button[data-cap="MC"].active { background: #dbeafe; color: #1d4ed8; }
   .gov-cap-filter button[data-cap="LC"].active { background: #d1fae5; color: #047857; }
+  .gov-hold-filter {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+    padding: 2px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fff;
+  }
+  .gov-hold-filter.gov-hold-filter-on {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
+  }
+  .gov-hold-filter .gov-cap-filter-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #6b7280;
+    padding: 0 6px 0 8px;
+  }
+  .gov-hold-filter button {
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 5px 8px;
+    border-radius: 6px;
+    color: #6b7280;
+    cursor: pointer;
+    letter-spacing: 0.02em;
+  }
   .gov-ticker-stack.filter-miss {
     opacity: 0.42;
   }
@@ -418,10 +450,11 @@ GOVERNANCE_MAP_CSS = """
     border-color: #93c5fd;
     background: #f8fbff;
   }
-  .gov-hold-filter button[data-hold=""].active { background: #f3f4f6; }
+  .gov-hold-filter button[data-hold=""].active { background: #f3f4f6; color: #6b7280; }
   .gov-hold-filter button[data-hold="HOLD"].active {
-    background: #dbeafe;
-    color: #1d4ed8;
+    background: #1d4ed8;
+    color: #fff;
+    box-shadow: 0 1px 2px rgba(29, 78, 216, 0.35);
   }
   .gov-role-tag {
     display: inline-block;
@@ -521,7 +554,7 @@ def build_governance_map_html(
         <button type="button" data-cap="MC" title="Mid Cap (5,000–20,000 Cr) — multi-select with Holdings">MC</button>
         <button type="button" data-cap="LC" title="Large Cap (≥ 20,000 Cr) — multi-select with Holdings">LC</button>
       </div>
-      <div class="gov-cap-filter gov-hold-filter" role="group" aria-label="Holdings filter" id="govmap-hold-filter">
+      <div class="gov-hold-filter" role="group" aria-label="Holdings filter" id="govmap-hold-filter">
         <span class="gov-cap-filter-label">Holdings</span>
         <button type="button" class="active" data-hold="" title="Show all companies">All</button>
         <button type="button" data-hold="HOLD" title="Holdings only — combine with Cap (e.g. MIC + MC)">Holding</button>
@@ -1101,12 +1134,26 @@ def build_governance_map_html(
       th.appendChild(cell);
     }});
   }}
+  function syncHoldFilterButtons() {{
+    const holdFilterEl = document.getElementById("govmap-hold-filter");
+    if (!holdFilterEl) return;
+    const on = holdFilter === "HOLD";
+    holdFilterEl.classList.toggle("gov-hold-filter-on", on);
+    holdFilterEl.querySelectorAll("button[data-hold]").forEach(b => {{
+      const code = String(b.getAttribute("data-hold") || "").toUpperCase();
+      const active = code ? on : !on;
+      b.classList.toggle("active", active);
+      b.setAttribute("aria-pressed", active ? "true" : "false");
+    }});
+  }}
   function render() {{
     const tb = document.getElementById("govmap-body");
     const countEl = document.getElementById("govmap-count");
     const metaEl = document.getElementById("govmap-meta");
     const titleEl = document.querySelector("#govmap-wrap > summary > span:first-child");
     if (!tb) return;
+    syncCapFilterButtons();
+    syncHoldFilterButtons();
     renderHead();
     const rows = filteredRows();
     const hub = viewMode === "company" ? resolveHub() : null;
@@ -1249,6 +1296,7 @@ def build_governance_map_html(
       const code = String(b.getAttribute("data-cap") || "").toUpperCase();
       const active = code ? capFilters.has(code) : !capFilters.size;
       b.classList.toggle("active", active);
+      b.setAttribute("aria-pressed", active ? "true" : "false");
     }});
   }}
   if (capFilterEl) {{
@@ -1273,13 +1321,9 @@ def build_governance_map_html(
     holdFilterEl.querySelectorAll("button[data-hold]").forEach(btn => {{
       btn.onclick = (e) => {{
         e.stopPropagation();
-        holdFilter = String(btn.getAttribute("data-hold") || "").toUpperCase();
-        holdFilterEl.querySelectorAll("button[data-hold]").forEach(b => {{
-          b.classList.toggle(
-            "active",
-            String(b.getAttribute("data-hold") || "").toUpperCase() === holdFilter
-          );
-        }});
+        const code = String(btn.getAttribute("data-hold") || "").toUpperCase();
+        holdFilter = code === "HOLD" ? "HOLD" : "";
+        syncHoldFilterButtons();
         render();
       }};
     }});
