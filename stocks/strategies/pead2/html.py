@@ -22,11 +22,21 @@ from stocks.core.database import load_market_cap_from_db
 from stocks.core.text_utils import safe_str
 
 
-_PEAD2_UI_BUILD = "2026-07-30c"
+_PEAD2_UI_BUILD = "2026-07-30e"
 
 _EXPAND_PAYLOAD_KEYS = frozenset(
-    {"quarters", "snapshot", "long_description", "google_news", "stock_note"}
+    {
+        "quarters",
+        "snapshot",
+        "long_description",
+        "google_news",
+        "news",
+        "stock_note",
+    }
 )
+# Full NSE reports: keep expand usable without embedding multi-MB news/bios.
+_LARGE_REPORT_ROWS = 120
+_EXPAND_KEYS_LARGE = frozenset({"quarters", "snapshot"})
 _SNAPSHOT_SLIM_KEYS = frozenset(
     {
         "price",
@@ -303,8 +313,20 @@ _PEAD2_DASHBOARD_CSS = """
     border-color: rgba(34, 197, 94, 0.45);
     background: linear-gradient(180deg, rgba(34, 197, 94, 0.08), var(--panel));
   }
-  [data-theme="dark"] .pead-pick.high {
+  .pead-pick.strong {
+    border-color: rgba(34, 197, 94, 0.55);
+    background: linear-gradient(180deg, rgba(34, 197, 94, 0.1), var(--panel));
+  }
+  .pead-pick.caution {
+    border-color: rgba(245, 158, 11, 0.55);
+    background: linear-gradient(180deg, rgba(245, 158, 11, 0.08), var(--panel));
+  }
+  [data-theme="dark"] .pead-pick.high,
+  [data-theme="dark"] .pead-pick.strong {
     background: linear-gradient(180deg, rgba(34, 197, 94, 0.12), var(--panel));
+  }
+  [data-theme="dark"] .pead-pick.caution {
+    background: linear-gradient(180deg, rgba(245, 158, 11, 0.12), var(--panel));
   }
   .pead-pick-top {
     display: flex;
@@ -345,6 +367,27 @@ _PEAD2_DASHBOARD_CSS = """
   }
   .pead-pick-chip.tq { background: rgba(29, 78, 216, 0.12); color: #1d4ed8; }
   .pead-pick-chip.bb { background: rgba(180, 83, 9, 0.12); color: #b45309; }
+  .pead-pick-chip.pe-good { background: rgba(22, 163, 74, 0.12); color: #15803d; }
+  .pead-pick-chip.pe-bad { background: rgba(220, 38, 38, 0.12); color: #b91c1c; }
+  .pead-pick-scoreblk { text-align: right; min-width: 64px; }
+  .pead-pick-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 999px;
+    margin-bottom: 4px;
+  }
+  .pead-pick-badge.strong { background: #dcfce7; color: #166534; }
+  .pead-pick-badge.soft { background: #e0e7ff; color: #3730a3; }
+  .pead-pick-badge.caution { background: #fef3c7; color: #92400e; }
+  .pead-pick-badge.watch { background: #f1f5f9; color: #475569; }
+  [data-theme="dark"] .pead-pick-badge.strong { background: rgba(22,163,74,0.25); color: #86efac; }
+  [data-theme="dark"] .pead-pick-badge.soft { background: rgba(99,102,241,0.25); color: #c7d2fe; }
+  [data-theme="dark"] .pead-pick-badge.caution { background: rgba(245,158,11,0.25); color: #fcd34d; }
+  [data-theme="dark"] .pead-pick-badge.watch { background: rgba(148,163,184,0.2); color: #cbd5e1; }
   .pead-pick-score {
     font-size: 22px;
     font-weight: 800;
@@ -383,6 +426,10 @@ _PEAD2_DASHBOARD_CSS = """
     margin-top: 2px;
     font-variant-numeric: tabular-nums;
   }
+  .pead-fpe.good { color: var(--green); }
+  .pead-fpe.mid { color: #ca8a04; }
+  .pead-fpe.bad { color: var(--red); }
+  .pead-fpe.missing { color: var(--muted); }
   .pead-pick-links {
     display: flex;
     gap: 8px;
@@ -1981,6 +2028,132 @@ def _pead_score_tier(score, high_min: float) -> str:
     return "mid"
 
 
+def _pead_fnum(val) -> float | None:
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return None
+    try:
+        n = float(val)
+    except (TypeError, ValueError):
+        return None
+    if pd.isna(n):
+        return None
+    return n
+
+
+def _pead_fwd_pe_quality(pe: float | None) -> str:
+    """good / mid / bad / missing — aligned with PEAD table Fwd PE coloring."""
+    n = _pead_fnum(pe)
+    if n is None or n <= 0 or n >= 500:
+        return "missing"
+    if n > 40:
+        return "bad"
+    if n > 20:
+        return "mid"
+    return "good"
+
+
+def _pead_pick_quality(
+    row: pd.Series,
+    *,
+    high_min: float,
+    is_psq: bool = False,
+) -> str:
+    """
+    Strong / soft / caution / watch — EarningsQ-style badge for top cards.
+
+    Strong prefers high score + sensible Fwd PE + cooperating returns.
+    Caution = high score but rich Fwd PE or fading price.
+    """
+    score = _pead_fnum(row.get("pead_score"))
+    fpe = _pead_fnum(row.get("forward_pe"))
+    returns = _pead_fnum(row.get("returns_pct"))
+    daily = _pead_fnum(row.get("daily_ret_pct"))
+    sales = _pead_fnum(row.get("sales_yoy"))
+    np_y = _pead_fnum(row.get("np_yoy"))
+    pe_q = _pead_fwd_pe_quality(fpe)
+
+    if score is None:
+        return "watch"
+    if score > high_min and (
+        pe_q == "bad"
+        or (returns is not None and returns < -5 and (daily is None or daily < 0))
+    ):
+        return "caution"
+    if is_psq:
+        surprise = _pead_fnum(row.get("surprise_growth"))
+        peg = _pead_fnum(row.get("peg"))
+        if (
+            score > high_min
+            and surprise is not None
+            and surprise > 0
+            and (peg is None or 0 < peg <= 2.0)
+            and (returns is None or returns >= -2)
+        ):
+            return "strong"
+        if score > high_min * 0.7:
+            return "soft"
+        return "watch"
+
+    growth_ok = (sales is None or sales > -10) and (np_y is None or np_y > -5)
+    pe_ok = pe_q in {"good", "mid"}
+    price_ok = (returns is None or returns >= -2) and (daily is None or daily >= -3)
+    if score > high_min and pe_ok and growth_ok and price_ok:
+        return "strong"
+    if score > high_min:
+        return "soft"
+    return "watch"
+
+
+def _pead_pick_rank(
+    row: pd.Series,
+    *,
+    high_min: float,
+    is_psq: bool = False,
+) -> float:
+    """Blend rank so Top picks prefer quality Fwd PE, not score alone."""
+    score = _pead_fnum(row.get("pead_score")) or 0.0
+    fpe = _pead_fnum(row.get("forward_pe"))
+    returns = _pead_fnum(row.get("returns_pct")) or 0.0
+    daily = _pead_fnum(row.get("daily_ret_pct")) or 0.0
+    pe_q = _pead_fwd_pe_quality(fpe)
+
+    # Fwd PE: prefer good (≤20) and mid (≤40); penalize rich / missing.
+    if pe_q == "good":
+        pe_bonus = 12.0
+    elif pe_q == "mid":
+        pe_bonus = 10.0
+    elif pe_q == "bad":
+        pe_bonus = -12.0
+    else:
+        pe_bonus = -6.0
+
+    price_bonus = max(-8.0, min(8.0, returns * 0.15 + daily * 0.2))
+    tech_bonus = 0.0
+    if bool(row.get("has_tq")):
+        tech_bonus += 3.0
+    if bool(row.get("has_bb")) and safe_str(row.get("bb_signal")).upper() == "NEW_BREAKOUT":
+        tech_bonus += 3.0
+
+    quality = _pead_pick_quality(row, high_min=high_min, is_psq=is_psq)
+    tag_bonus = {"strong": 8.0, "soft": 2.0, "caution": -6.0, "watch": 0.0}.get(quality, 0.0)
+
+    if is_psq:
+        surprise = _pead_fnum(row.get("surprise_growth")) or 0.0
+        peg = _pead_fnum(row.get("peg"))
+        peg_bonus = 4.0 if peg is not None and 0 < peg <= 1.5 else (0.0 if peg is None else -4.0)
+        return round(score + surprise * 0.15 + peg_bonus + price_bonus + tech_bonus + tag_bonus, 3)
+
+    return round(score + pe_bonus + price_bonus + tech_bonus + tag_bonus, 3)
+
+
+def _pead_fmt_fpe_html(val) -> str:
+    txt = _pead_fmt_num1(val)
+    if txt == "—":
+        return '<span class="pead-fpe missing">—</span>'
+    q = _pead_fwd_pe_quality(_pead_fnum(val))
+    return f'<span class="pead-fpe {q}">{html.escape(txt)}</span>'
+
+
 def _pead_pick_card(row: pd.Series, *, variant: str, high_min: float) -> str:
     ticker = safe_str(row.get("ticker")).upper()
     market = safe_str(row.get("market")) or "NSE"
@@ -1999,35 +2172,51 @@ def _pead_pick_card(row: pd.Series, *, variant: str, high_min: float) -> str:
         "positive_surprise_quant",
     )
     score_lbl = "PSQ" if is_psq else "PEAD"
+    quality = _pead_pick_quality(row, high_min=high_min, is_psq=is_psq)
+    badge_labels = {
+        "strong": "Strong",
+        "soft": "Soft",
+        "caution": "Caution",
+        "watch": "Watch",
+    }
+    badge = (
+        f'<span class="pead-pick-badge {quality}">'
+        f'{badge_labels.get(quality, "Watch")}</span>'
+    )
     if is_psq:
         stats = (
-            ("Surprise", _pead_fmt_pct(row.get("surprise_growth"))),
-            ("PEG", _pead_fmt_num1(row.get("peg"))),
-            ("EPS YoY", _pead_fmt_pct(row.get("eps_yoy"))),
-            ("Returns", _pead_fmt_pct(row.get("returns_pct"))),
+            ("Surprise", html.escape(_pead_fmt_pct(row.get("surprise_growth")))),
+            ("PEG", html.escape(_pead_fmt_num1(row.get("peg")))),
+            ("Fwd PE", _pead_fmt_fpe_html(row.get("forward_pe"))),
+            ("Returns", html.escape(_pead_fmt_pct(row.get("returns_pct")))),
         )
     else:
         stats = (
-            ("Returns", _pead_fmt_pct(row.get("returns_pct"))),
-            ("Fwd PE", _pead_fmt_num1(row.get("forward_pe"))),
-            ("Sales YoY", _pead_fmt_pct(row.get("sales_yoy"))),
-            ("Daily", _pead_fmt_pct(row.get("daily_ret_pct"))),
+            ("Fwd PE", _pead_fmt_fpe_html(row.get("forward_pe"))),
+            ("Returns", html.escape(_pead_fmt_pct(row.get("returns_pct")))),
+            ("Sales YoY", html.escape(_pead_fmt_pct(row.get("sales_yoy")))),
+            ("Daily", html.escape(_pead_fmt_pct(row.get("daily_ret_pct")))),
         )
     chips: list[str] = []
     if bool(row.get("has_tq")):
         chips.append('<span class="pead-pick-chip tq">TQ</span>')
     if bool(row.get("has_bb")) and safe_str(row.get("bb_signal")).upper() == "NEW_BREAKOUT":
         chips.append('<span class="pead-pick-chip bb">BB NEW</span>')
+    pe_q = _pead_fwd_pe_quality(_pead_fnum(row.get("forward_pe")))
+    if pe_q == "good":
+        chips.append('<span class="pead-pick-chip pe-good">PE ok</span>')
+    elif pe_q == "bad":
+        chips.append('<span class="pead-pick-chip pe-bad">Rich PE</span>')
     chips_html = (
         f'<div class="pead-pick-chips">{"".join(chips)}</div>' if chips else ""
     )
     stats_html = "".join(
         f'<div class="pead-pick-stat"><span>{html.escape(lbl)}</span>'
-        f"<b>{html.escape(val)}</b></div>"
+        f"<b>{val}</b></div>"
         for lbl, val in stats
     )
     return f"""
-    <div class="pead-pick {tier}" data-ticker="{html.escape(ticker)}" title="Click to expand row">
+    <div class="pead-pick {tier} {quality}" data-ticker="{html.escape(ticker)}" title="Click to expand row">
       <div class="pead-pick-top">
         <div>
           <a class="pead-pick-ticker" href="{html.escape(tv_url)}" target="_blank" rel="noopener noreferrer"
@@ -2035,7 +2224,8 @@ def _pead_pick_card(row: pd.Series, *, variant: str, high_min: float) -> str:
           <div class="pead-pick-name">{name}</div>
           {chips_html}
         </div>
-        <div>
+        <div class="pead-pick-scoreblk">
+          {badge}
           <div class="pead-pick-score {tier}">{html.escape(score_txt)}</div>
           <div class="pead-pick-score-lbl">{score_lbl}</div>
         </div>
@@ -2061,21 +2251,60 @@ def _build_top_picks_html(
         return ""
     work = df.copy()
     work["_score"] = pd.to_numeric(work["pead_score"], errors="coerce")
-    work = work[work["_score"].notna()].sort_values("_score", ascending=False)
+    work = work[work["_score"].notna()].copy()
     if work.empty:
         return ""
-    high = work[work["_score"] > float(high_min)]
-    picks = high.head(top_n) if len(high) else work.head(min(top_n, 5))
     is_psq = str(variant).lower() in (
         "psq",
         "positive_surprise",
         "positive_surprise_quant",
     )
+    work["_pick_rank"] = work.apply(
+        lambda r: _pead_pick_rank(r, high_min=high_min, is_psq=is_psq),
+        axis=1,
+    )
+    work["_quality"] = work.apply(
+        lambda r: _pead_pick_quality(r, high_min=high_min, is_psq=is_psq),
+        axis=1,
+    )
+    work["_pe_q"] = work.apply(
+        lambda r: _pead_fwd_pe_quality(_pead_fnum(r.get("forward_pe"))),
+        axis=1,
+    )
+    # Prefer score > threshold + Fwd PE good/mid (≤ 40); rich PE only as filler.
+    high = work[work["_score"] > float(high_min)].copy()
+    pe_ok = high["_pe_q"].isin(["good", "mid"])
+    strong = high[(high["_quality"] == "strong") & pe_ok].sort_values(
+        "_pick_rank", ascending=False
+    )
+    soft_ok = high[(high["_quality"] != "strong") & pe_ok].sort_values(
+        "_pick_rank", ascending=False
+    )
+    rich = high[~pe_ok].sort_values("_pick_rank", ascending=False)
+    pool = pd.concat([strong, soft_ok, rich], ignore_index=True)
+    if pool.empty:
+        pool = work.sort_values("_pick_rank", ascending=False)
+    picks = pool.head(top_n)
     label = "Top surprises" if is_psq else "Top picks"
-    if len(high):
-        meta = f"{len(picks)} names · score &gt; {high_min:.0f}"
+    strong_n = int((picks["_quality"] == "strong").sum()) if len(picks) else 0
+    pe_ok_n = int(picks["_pe_q"].isin(["good", "mid"]).sum()) if len(picks) else 0
+    if strong_n:
+        meta = (
+            f"{len(picks)} names · {strong_n} strong · "
+            f"score &gt; {high_min:.0f} · Fwd PE good/mid (≤ 40)"
+        )
+    elif pe_ok_n:
+        meta = (
+            f"{len(picks)} names · score &gt; {high_min:.0f} · "
+            f"Fwd PE good/mid preferred"
+        )
+    elif len(high):
+        meta = (
+            f"{len(picks)} names · score &gt; {high_min:.0f} · "
+            f"ranked by score + Fwd PE + returns"
+        )
     else:
-        meta = f"{len(picks)} names"
+        meta = f"{len(picks)} names · ranked by score + Fwd PE"
     cards = "".join(
         _pead_pick_card(r, variant=variant, high_min=high_min)
         for _, r in picks.iterrows()
@@ -2124,14 +2353,22 @@ def _slim_snapshot(snapshot: dict | None) -> dict:
     return {k: snapshot[k] for k in _SNAPSHOT_SLIM_KEYS if k in snapshot}
 
 
-def _split_row_payload(row_data: dict) -> tuple[dict, dict]:
+def _split_row_payload(
+    row_data: dict,
+    *,
+    expand_keys: frozenset[str] | None = None,
+) -> tuple[dict, dict]:
     """Table row vs heavy expand-panel fields (keeps iframe payload small)."""
+    keys = expand_keys or _EXPAND_PAYLOAD_KEYS
     table = dict(row_data)
     expand: dict = {}
+    # Always strip heavy fields from the table row — even if not embedded in expand.
     for key in _EXPAND_PAYLOAD_KEYS:
         if key not in table:
             continue
         val = table.pop(key)
+        if key not in keys:
+            continue
         if key == "snapshot":
             val = _slim_snapshot(val if isinstance(val, dict) else None)
         if val:
@@ -2139,12 +2376,18 @@ def _split_row_payload(row_data: dict) -> tuple[dict, dict]:
     return table, expand
 
 
-def _table_and_expand_rows(df: pd.DataFrame) -> tuple[list[dict], dict[str, dict]]:
-    full = _rows_for_json(df)
+def _table_and_expand_rows(
+    df: pd.DataFrame,
+    *,
+    include_news: bool = True,
+    slim_expand: bool = False,
+) -> tuple[list[dict], dict[str, dict]]:
+    full = _rows_for_json(df, include_news=include_news)
+    expand_keys = _EXPAND_KEYS_LARGE if slim_expand else _EXPAND_PAYLOAD_KEYS
     table_rows: list[dict] = []
     expand_by_ticker: dict[str, dict] = {}
     for row in full:
-        table, expand = _split_row_payload(row)
+        table, expand = _split_row_payload(row, expand_keys=expand_keys)
         table_rows.append(table)
         ticker = safe_str(table.get("ticker")).upper()
         if ticker and expand:
@@ -2152,7 +2395,7 @@ def _table_and_expand_rows(df: pd.DataFrame) -> tuple[list[dict], dict[str, dict
     return table_rows, expand_by_ticker
 
 
-def _rows_for_json(df: pd.DataFrame) -> list[dict]:
+def _rows_for_json(df: pd.DataFrame, *, include_news: bool = True) -> list[dict]:
     sync_stock_notes_from_file()
     work = attach_stock_notes(df, sync_file=False)
     ss_map = superstar_pead_map(
@@ -2305,8 +2548,11 @@ def _rows_for_json(df: pd.DataFrame) -> list[dict]:
                 "moving_averages": [],
             }
         rows.append(json_safe_obj(row_data))
-    fetch_news = len(rows) <= 150
-    return attach_google_news_to_rows(rows, fetch_missing=fetch_news)
+    if include_news and rows:
+        # Only hydrate news for small boards — full NSE embeds blow the iframe.
+        fetch_news = len(rows) <= 80
+        return attach_google_news_to_rows(rows, fetch_missing=fetch_news)
+    return rows
 
 
 def build_pead2_dashboard_html(
@@ -2350,12 +2596,22 @@ def build_pead2_dashboard_html(
     list_label_js = json_dumps(list_label)
     show_scored_split_js = "true" if show_scored_split else "false"
     updated = _scan_generated_ist(df)
-    table_current, expand_current = _table_and_expand_rows(df)
+    large_report = len(df) >= _LARGE_REPORT_ROWS
+    table_current, expand_current = _table_and_expand_rows(
+        df,
+        include_news=not large_report,
+        slim_expand=large_report,
+    )
     prev_df = df_previous if df_previous is not None else pd.DataFrame()
-    if is_pead1 or is_holdings:
+    if is_pead1 or is_holdings or large_report:
+        # Previous quarter doubles payload; skip on large NSE boards.
         prev_df = pd.DataFrame()
     prev_df, _ = limit_pead_report_df(prev_df, max_rows)
-    table_previous, expand_previous = _table_and_expand_rows(prev_df)
+    table_previous, expand_previous = _table_and_expand_rows(
+        prev_df,
+        include_news=not large_report,
+        slim_expand=large_report,
+    )
     expand_by_ticker = {**expand_previous, **expand_current}
     data_current_tag = _json_script_tag("pead-data-current", table_current)
     data_previous_tag = _json_script_tag("pead-data-previous", table_previous)
@@ -2630,16 +2886,25 @@ def build_pead2_dashboard_html(
     elif is_holdings:
         legend_html = (
             '<div class="pead-legend">'
-            "<span>Start with <b>high-score</b> cards in your holdings — PEAD + TQ/BB.</span>"
+            "<span><b>Strong</b> = high PEAD + sensible Fwd PE (≤40) + price not fading.</span>"
+            "<span><b>Caution</b> = high score but rich PE / weak returns — dig deeper.</span>"
             "</div>"
         )
     elif is_pead2_default:
-        legend_html = (
-            '<div class="pead-legend">'
-            "<span>Start with <b>high-score</b> cards — post-earnings drift + growth.</span>"
-            "<span>Use <b>TQ / BB NEW</b> chips to confirm breakout.</span>"
-            "</div>"
-        )
+        if large_report:
+            legend_html = (
+                '<div class="pead-legend">'
+                "<span><b>Strong</b> = high PEAD + sensible Fwd PE (≤40) + cooperating returns.</span>"
+                "<span>Large NSE board — showing top rows; use search / Download CSV for the rest.</span>"
+                "</div>"
+            )
+        else:
+            legend_html = (
+                '<div class="pead-legend">'
+                "<span><b>Strong</b> = high PEAD + sensible Fwd PE (≤40) + cooperating returns.</span>"
+                "<span><b>Caution</b> = rich PE or fading price — dig deeper before acting.</span>"
+                "</div>"
+            )
     else:
         legend_html = ""
 

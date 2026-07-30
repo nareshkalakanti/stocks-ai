@@ -69,9 +69,10 @@ def _apply_breakout_to_company(company: dict[str, Any], bmap: dict[str, dict]) -
 
 
 def _mcap_map(tickers: list[str]) -> dict[str, float]:
+    """Latest market_cap_cr from SQLite — keep aged rows so Fill results persist."""
     if not tickers:
         return {}
-    df = load_market_cap_from_db(tickers)
+    df = load_market_cap_from_db(tickers, allow_stale=True)
     if df.empty or "ticker" not in df.columns:
         return {}
     out: dict[str, float] = {}

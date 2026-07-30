@@ -43,21 +43,8 @@ def embed_html_iframe(
         )
         return
 
-    import streamlit as st
-
-    from stocks.core.streamlit_compat import iframe_width_kw
-
-    # components.v1.html is more reliable than st.iframe for large srcdoc payloads.
-    if len(html_content) >= 2_000_000:
-        import streamlit.components.v1 as components
-
-        components.html(html_content, height=h, scrolling=True)
-        return
-
-    if hasattr(st, "iframe"):
-        st.iframe(html_content, height=h, **iframe_width_kw())
-        return
-
+    # Prefer components.html for dashboard HTML. ``st.iframe`` has blanked mid-size
+    # PEAD reports in practice after filter changes; components is reliable.
     import streamlit.components.v1 as components
 
     components.html(html_content, height=h, scrolling=True)

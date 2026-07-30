@@ -15,6 +15,13 @@ def test_default_cap_tier_is_all():
     assert DEFAULT_CAP_TIER == "all"
 
 
+def test_inst_entry_label_accepts_hyphen_or_en_dash():
+    from stocks.core.config import cap_tier_id_from_label
+
+    assert cap_tier_id_from_label("Inst Entry (20–100 Cr)") == "inst_entry"
+    assert cap_tier_id_from_label("Inst Entry (20-100 Cr)") == "inst_entry"
+
+
 def test_holdings_respects_cap_tier_ds_uses_all_caps():
     assert resolve_cap_tier_id(HOLDINGS_PLAYLIST_LABEL, "micro") == "micro"
     assert resolve_cap_tier_id(DS_PLAYLIST_LABEL, "small") == "all"

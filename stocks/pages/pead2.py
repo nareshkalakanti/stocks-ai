@@ -187,7 +187,7 @@ def _run_scan(
 
 
 def _hydrate_candidates_from_cache(universe: pd.DataFrame) -> dict | None:
-    """Score from SQLite only (no Yahoo). Used when Market changes and Scan wasn't clicked yet."""
+    """Score from SQLite only (no Yahoo). Used when Market/Cap changes and Scan wasn't clicked yet."""
     if universe is None or universe.empty:
         return None
     try:
@@ -196,9 +196,10 @@ def _hydrate_candidates_from_cache(universe: pd.DataFrame) -> dict | None:
             only_pending=True,
             max_fetch=0,
             check_breakouts=False,
-            refresh_returns_all=False,
+            skip_returns_refresh=True,
         )
-    except Exception:
+    except Exception as exc:
+        st.warning(f"Could not load PEAD from cache: {exc}")
         return None
 
 
@@ -229,9 +230,11 @@ def render_pead2(*, show_title: bool = True) -> None:
             filters,
             cap_tier_id=cap_tier_id,
         )
-        if st.session_state.get("pead2_filter_key") != filter_key:
+        filter_changed = st.session_state.get("pead2_filter_key") != filter_key
+        if filter_changed:
             st.session_state.pead2_filter_key = filter_key
-            st.session_state.pop("pead2_candidates", None)
+            # Do NOT clear candidates here — hydrate below replaces them so the
+            # board never flashes empty when Cap / Market changes.
             st.session_state.pop("pead2_universe_key", None)
             _invalidate_pead_display_cache()
 
@@ -245,7 +248,7 @@ def render_pead2(*, show_title: bool = True) -> None:
             run_clicked = st.button(
                 "Scan",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
                 key="pead2_scan",
                 help=(
                     f"Fetch missing or cache older than {PEAD2_CACHE_HOURS}h from Yahoo, "
@@ -310,13 +313,20 @@ def render_pead2(*, show_title: bool = True) -> None:
     candidates = st.session_state.get("pead2_candidates")
     candidates_previous = st.session_state.get("pead2_candidates_previous")
 
-    # Switching Market/filters clears candidates — reload from PEAD cache so Holdings
-    # (and other playlists) don't look empty until the user clicks Scan again.
-    if candidates is None and not universe.empty:
+    # Cap/Market change (or empty session): load this filter from SQLite only.
+    # Replace in place so the UI never goes blank while cache has scores.
+    need_hydrate = filter_changed or candidates is None or (
+        isinstance(candidates, pd.DataFrame) and candidates.empty
+    )
+    if need_hydrate and not universe.empty:
         cov = coverage if isinstance(coverage, Pead2ScanCoverage) else pead2_scan_coverage(universe)
+        st.caption(
+            f"**{cov.universe_total:,}** in filter · **{cov.scorable:,}** scored in cache · "
+            f"**{cov.missing:,}** never fetched · **{cov.stale:,}** stale"
+        )
         if cov.scorable > 0:
             with st.spinner(
-                f"Loading PEAD from cache ({cov.scorable:,} of {cov.universe_total:,} scored)…"
+                f"Loading PEAD from cache ({cov.scorable:,} of {cov.universe_total:,})…"
             ):
                 cached_result = _hydrate_candidates_from_cache(universe)
             if cached_result is not None:
@@ -329,8 +339,18 @@ def render_pead2(*, show_title: bool = True) -> None:
                     st.session_state.pead2_coverage = cov2
                 st.caption(
                     f"Loaded **{int(cached_result.get('cache_hits') or 0):,}** from PEAD cache · "
-                    f"click **Scan** to refresh Yahoo / fill gaps."
+                    f"click **Scan** only to refresh Yahoo / fill gaps."
                 )
+            else:
+                st.session_state.pop("pead2_candidates", None)
+                st.session_state.pop("pead2_candidates_previous", None)
+                candidates = None
+                candidates_previous = None
+        else:
+            st.session_state.pop("pead2_candidates", None)
+            st.session_state.pop("pead2_candidates_previous", None)
+            candidates = None
+            candidates_previous = None
 
     if candidates is None:
         cov = coverage if isinstance(coverage, Pead2ScanCoverage) else None
@@ -349,8 +369,8 @@ def render_pead2(*, show_title: bool = True) -> None:
     if candidates.empty:
         if int(st.session_state.get("pead2_results_gen") or 0) > 0:
             st.warning(
-                "Scan finished but no PEAD-scorable rows matched this filter. "
-                "Try widening **Cap** / **Sector**, or run **Scan** again after cache fills."
+                "No PEAD-scorable rows matched this filter. "
+                "Try widening **Cap** / **Sector**, or click **Scan** after cache fills."
             )
         else:
             st.caption("Set filters, then click **Scan**.")
@@ -384,16 +404,14 @@ def render_pead2(*, show_title: bool = True) -> None:
         if "pead_score" in candidates.columns
         else len(candidates)
     )
-    tq_n = (
-        int(candidates["has_tq"].fillna(False).astype(bool).sum())
-        if "has_tq" in candidates.columns
-        else 0
-    )
-    bb_n = (
-        int(candidates["has_bb"].fillna(False).astype(bool).sum())
-        if "has_bb" in candidates.columns
-        else 0
-    )
+    def _flag_count(col: str) -> int:
+        if col not in candidates.columns:
+            return 0
+        s = candidates[col]
+        return int(sum(bool(v) for v in s.tolist() if v is not None and v == v))
+
+    tq_n = _flag_count("has_tq")
+    bb_n = _flag_count("has_bb")
 
     html_cache_key = (
         display_key,

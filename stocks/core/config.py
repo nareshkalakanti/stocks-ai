@@ -348,8 +348,14 @@ def cap_tier_labels() -> list[str]:
 
 
 def cap_tier_id_from_label(label: str) -> str:
+    raw = str(label or "").strip()
+    if not raw:
+        return "all"
+    # Normalize en/em dashes so "20-100" still matches "20–100".
+    norm = raw.replace("–", "-").replace("—", "-")
     for t in CAP_TIERS:
-        if t["label"] == label:
+        tier_label = str(t["label"])
+        if tier_label == raw or tier_label.replace("–", "-").replace("—", "-") == norm:
             return str(t["id"])
     return "all"
 STOCKS_CACHE_HOURS = int(os.getenv("STOCKS_CACHE_HOURS", "24"))

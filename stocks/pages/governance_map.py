@@ -105,7 +105,10 @@ def render_governance_map(*, show_title: bool = True) -> None:
                 f"Fill missing about/web ({len(missing)})",
                 use_container_width=True,
                 disabled=not missing,
-                help="Slow screener.in + Yahoo backfill for companies still missing website or about.",
+                help=(
+                    "Slow screener.in + Yahoo backfill for companies still missing website "
+                    "or about. Saved to SQLite for next visit."
+                ),
             ):
                 batch = min(120, len(missing) or 0)
                 with st.spinner(
@@ -128,8 +131,8 @@ def render_governance_map(*, show_title: bool = True) -> None:
                 use_container_width=True,
                 disabled=not missing_mcap,
                 help=(
-                    "Fetch all missing caps (screener.in → Yahoo) in one go. "
-                    "~1–2s per name; unlisted names may stay blank."
+                    "Fetch all missing caps (screener.in → Yahoo) and save to SQLite. "
+                    "Saved values stay on the map next time — no need to re-run Fill."
                 ),
             ):
                 start_n = len(missing_mcap)
@@ -178,7 +181,8 @@ def render_governance_map(*, show_title: bool = True) -> None:
                 )
             else:
                 st.caption(
-                    "Map loads from **SQLite cache** (fast). Use **Fill missing** buttons above."
+                    "Map loads from **SQLite** (mcap + website/about). "
+                    "Use **Fill missing** once — values stay for next visits."
                 )
             st.download_button(
                 "Download NSE gap CSV",

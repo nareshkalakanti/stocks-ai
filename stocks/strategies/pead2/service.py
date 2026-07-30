@@ -1357,6 +1357,7 @@ def run_pead2_scan(
     max_fetch: int | None = None,
     check_breakouts: bool | None = None,
     refresh_returns_all: bool | None = None,
+    skip_returns_refresh: bool = False,
 ) -> dict:
     """
     Load PEAD rows from SQLite, then fetch Yahoo for tickers not cached at the
@@ -1366,6 +1367,8 @@ def run_pead2_scan(
     ``PEAD2_RECENT_MAX_FETCH``) so Remaining runs proceed in batches.
     When ``check_breakouts`` is true (default on real scans), also run BB weekly +
     TQ weekly on scored candidates and attach breakout signals.
+    Set ``skip_returns_refresh`` for pure DB hydrates (filter changes) so aged
+    cache rows do not block the UI on Yahoo.
     """
     from stocks.core.config import PEAD2_RECENT_MAX_FETCH
 
@@ -1442,16 +1445,17 @@ def run_pead2_scan(
             cache_hits = len(rows)
 
     fresh_keys = {safe_str(r.get("ticker")).upper() for r in fresh_rows}
-    cached, _ = _apply_pead2_returns_refresh(
-        universe,
-        cached,
-        skip_tickers=fresh_keys,
-        max_workers=workers,
-        progress_callback=progress_callback,
-        refresh_all=refresh_returns_all,
-    )
-    rows = _scorable_cached_rows(cached, universe_keys)
-    cache_hits = len(rows)
+    if not skip_returns_refresh:
+        cached, _ = _apply_pead2_returns_refresh(
+            universe,
+            cached,
+            skip_tickers=fresh_keys,
+            max_workers=workers,
+            progress_callback=progress_callback,
+            refresh_all=refresh_returns_all,
+        )
+        rows = _scorable_cached_rows(cached, universe_keys)
+        cache_hits = len(rows)
 
     if not rows:
         return _pead2_scan_result_shell(

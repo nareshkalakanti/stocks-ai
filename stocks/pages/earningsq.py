@@ -109,11 +109,13 @@ def render_earningsq(*, show_title: bool = True) -> None:
             )
 
         try:
+            # Never silently fall back to demo fixtures on Refresh — that made
+            # counts jump from ~3 → 100+ and looked random.
             df = run_earningsq_scan(
                 lookback_days=lookback,
                 min_surprise=-5.0,  # filter in UI so sort/settings stay interactive
                 with_returns=with_returns,
-                use_fixtures_if_empty=True,
+                use_fixtures_if_empty=False,
                 progress_callback=_progress,
             )
         except Exception as exc:

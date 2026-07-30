@@ -38,7 +38,7 @@ def audit_map_profile_gaps(
 
     tickers = sorted(tickers)
     profiles = _apply_profile_overrides(load_company_profiles_from_db(tickers))
-    mcap_df = load_market_cap_from_db(tickers)
+    mcap_df = load_market_cap_from_db(tickers, allow_stale=True)
     mcap_map: dict[str, float] = {}
     if not mcap_df.empty:
         for _, row in mcap_df.iterrows():
