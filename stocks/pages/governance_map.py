@@ -12,13 +12,14 @@ from stocks.core.config import (
     GOVERNANCE_MAP_AUTO_HYDRATE_PROFILE_MAX,
     GOVERNANCE_MAP_AUTO_HYDRATE_PROFILES,
     GOVERNANCE_MAP_CACHE_SECONDS,
+    GOVERNANCE_MAP_MCAP_FILL_BATCH,
 )
 from stocks.core.database import strategy_signals_summary
 from stocks.dashboards.iframe_helpers import embed_html_iframe
 from stocks.governance.html import build_governance_map_html, governance_map_iframe_height
 from stocks.governance.map_data import (
     build_governance_map_rows,
-    hydrate_missing_mcaps,
+    hydrate_all_missing_mcaps,
     hydrate_missing_profiles,
     map_company_ticker_markets,
     missing_mcap_tickers,
@@ -126,19 +127,39 @@ def render_governance_map(*, show_title: bool = True) -> None:
                 f"Fill missing mcap ({len(missing_mcap)})",
                 use_container_width=True,
                 disabled=not missing_mcap,
-                help="Screener then Yahoo finance · batched on map load was disabled for speed.",
+                help=(
+                    "Fetch all missing caps (screener.in → Yahoo) in one go. "
+                    "~1–2s per name; unlisted names may stay blank."
+                ),
             ):
-                batch = min(80, len(missing_mcap) or 0)
-                with st.spinner(f"Fetching market cap for up to {batch} names…"):
-                    n = hydrate_missing_mcaps(
-                        ticker_markets,
-                        max_fetch=batch,
-                        workers=1,
+                start_n = len(missing_mcap)
+                progress = st.progress(0.0, text=f"Market cap 0/{start_n}…")
+                batch = max(1, GOVERNANCE_MAP_MCAP_FILL_BATCH)
+
+                def _mcap_progress(filled: int, still: int) -> None:
+                    done = max(0, start_n - still)
+                    pct = min(done / start_n, 1.0) if start_n else 1.0
+                    progress.progress(
+                        pct,
+                        text=f"Market cap {done}/{start_n} · {still} left…",
                     )
-                _cached_governance_map_rows.clear()
-                st.success(f"Filled {n} market cap row(s).") if n else st.info(
-                    "No new market caps fetched."
+
+                n = hydrate_all_missing_mcaps(
+                    ticker_markets,
+                    batch_size=batch,
+                    workers=1,
+                    progress_callback=_mcap_progress,
                 )
+                progress.empty()
+                _cached_governance_map_rows.clear()
+                still = len(missing_mcap_tickers(ticker_markets))
+                if n:
+                    msg = f"Filled **{n}** market cap(s)."
+                    if still:
+                        msg += f" **{still}** still missing (screener/Yahoo had no data)."
+                    st.success(msg)
+                else:
+                    st.info("No new market caps fetched.")
                 st.rerun()
         with fill_cols[2]:
             st.caption(

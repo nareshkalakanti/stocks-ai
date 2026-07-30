@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
@@ -229,6 +230,35 @@ def hydrate_missing_mcaps(
             except Exception:
                 continue
     return filled
+
+
+def hydrate_all_missing_mcaps(
+    ticker_markets: list[tuple[str, str]],
+    *,
+    batch_size: int = DEFAULT_MCAP_HYDRATE,
+    workers: int = PROFILE_HYDRATE_WORKERS,
+    progress_callback: Callable[[int, int], None] | None = None,
+) -> int:
+    """Fetch all missing market caps in batches until none left or a batch fails."""
+    if batch_size <= 0 or not ticker_markets:
+        return 0
+    total = 0
+    start_missing = len(missing_mcap_tickers(ticker_markets))
+    if start_missing <= 0:
+        return 0
+    while True:
+        n = hydrate_missing_mcaps(
+            ticker_markets,
+            max_fetch=batch_size,
+            workers=workers,
+        )
+        total += n
+        still = len(missing_mcap_tickers(ticker_markets))
+        if progress_callback:
+            progress_callback(total, still)
+        if n == 0 or still == 0:
+            break
+    return total
 
 
 def missing_profile_tickers(ticker_markets: list[tuple[str, str]]) -> list[str]:

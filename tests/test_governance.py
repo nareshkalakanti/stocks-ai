@@ -597,3 +597,72 @@ def test_governance_map_excludes_single_board_directors(tmp_path, monkeypatch):
         min_boards=2, hydrate_profiles=False, hydrate_mcaps=False
     )
     assert rows.empty
+
+
+def test_hydrate_all_missing_mcaps_batches(tmp_path, monkeypatch):
+    from stocks.governance.map_data import (
+        hydrate_all_missing_mcaps,
+        map_company_ticker_markets,
+    )
+
+    db_path = tmp_path / "governance_hydrate.db"
+    monkeypatch.setattr("stocks.governance.db.GOVERNANCE_DB_PATH", db_path)
+    save_company_board(
+        ticker="ALPH",
+        name="Alpha Ltd",
+        market="NSE",
+        seats=[
+            {
+                "din": "00001111",
+                "name": "Director One",
+                "designation": "Director",
+                "source": "test",
+            }
+        ],
+        protect_din_board=False,
+    )
+    save_company_board(
+        ticker="BETA",
+        name="Beta Ltd",
+        market="NSE",
+        seats=[
+            {
+                "din": "00001111",
+                "name": "Director One",
+                "designation": "Director",
+                "source": "test",
+            }
+        ],
+        protect_din_board=False,
+    )
+
+    calls: list[str] = []
+    saved: list[tuple[str, float]] = []
+
+    def _load_mcap(tickers):
+        rows = [{"ticker": t, "market_cap_cr": v} for t, v in saved if t in tickers]
+        return pd.DataFrame(rows)
+
+    def _fetch(ticker, market=None):
+        calls.append(ticker)
+        return {"ALPH": 500.0, "BETA": 800.0}.get(ticker)
+
+    def _save(ticker, mcap, *, market=None, **kwargs):
+        saved.append((ticker.upper(), float(mcap)))
+
+    monkeypatch.setattr("stocks.governance.map_data.load_market_cap_from_db", _load_mcap)
+    monkeypatch.setattr("stocks.governance.map_data.fetch_market_cap_cr", _fetch)
+    monkeypatch.setattr("stocks.governance.map_data.save_market_cap_to_db", _save)
+
+    tm = map_company_ticker_markets(min_boards=2)
+    progress: list[tuple[int, int]] = []
+
+    n = hydrate_all_missing_mcaps(
+        tm,
+        batch_size=1,
+        workers=1,
+        progress_callback=lambda filled, still: progress.append((filled, still)),
+    )
+    assert n == 2
+    assert set(calls) == {"ALPH", "BETA"}
+    assert progress[-1] == (2, 0)
