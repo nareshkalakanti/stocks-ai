@@ -2615,7 +2615,7 @@ def build_pead2_dashboard_html(
             is_distress,
         )
     )
-    show_top_picks = is_pead2_default or is_psq
+    show_top_picks = is_pead2_default or is_psq or is_holdings
     picks_html = (
         _build_top_picks_html(df, variant=variant, high_min=high_min)
         if show_top_picks
@@ -2625,6 +2625,12 @@ def build_pead2_dashboard_html(
         legend_html = (
             '<div class="pead-legend">'
             "<span>Start with <b>high-score</b> cards — NSE XBRL surprise + growth.</span>"
+            "</div>"
+        )
+    elif is_holdings:
+        legend_html = (
+            '<div class="pead-legend">'
+            "<span>Start with <b>high-score</b> cards in your holdings — PEAD + TQ/BB.</span>"
             "</div>"
         )
     elif is_pead2_default:
