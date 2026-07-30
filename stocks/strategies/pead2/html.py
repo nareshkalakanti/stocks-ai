@@ -236,6 +236,156 @@ _PEAD2_DASHBOARD_CSS = """
     margin-bottom: 8px;
     flex-wrap: wrap;
   }
+  .pead-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    align-items: center;
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .pead-legend strong { color: var(--text); }
+  .pead-section-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin: 0 0 10px;
+  }
+  .pead-picks {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px;
+    margin: 0 0 14px;
+  }
+  .pead-pick {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--panel);
+    padding: 12px 12px 10px;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .pead-pick:hover {
+    border-color: var(--accent);
+    box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
+  }
+  .pead-pick.high {
+    border-color: rgba(34, 197, 94, 0.45);
+    background: linear-gradient(180deg, rgba(34, 197, 94, 0.08), var(--panel));
+  }
+  [data-theme="dark"] .pead-pick.high {
+    background: linear-gradient(180deg, rgba(34, 197, 94, 0.12), var(--panel));
+  }
+  .pead-pick-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .pead-pick-ticker {
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--accent);
+    text-decoration: none;
+    letter-spacing: -0.02em;
+  }
+  .pead-pick-ticker:hover { text-decoration: underline; }
+  .pead-pick-name {
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 3px;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .pead-pick-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+  }
+  .pead-pick-chip {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.02em;
+  }
+  .pead-pick-chip.tq { background: rgba(29, 78, 216, 0.12); color: #1d4ed8; }
+  .pead-pick-chip.bb { background: rgba(180, 83, 9, 0.12); color: #b45309; }
+  .pead-pick-score {
+    font-size: 22px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .pead-pick-score.high { color: var(--green); }
+  .pead-pick-score.mid { color: var(--text); }
+  .pead-pick-score.low { color: var(--muted); }
+  .pead-pick-score-lbl {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .pead-pick-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 12px;
+    font-size: 12px;
+  }
+  .pead-pick-stat span {
+    display: block;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .pead-pick-stat b {
+    display: block;
+    color: var(--text);
+    font-size: 15px;
+    margin-top: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .pead-pick-links {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .pead-pick-links a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .pead-pick-links a:hover { text-decoration: underline; }
+  .pead-pick-date {
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .pead-picks-empty {
+    padding: 12px;
+    color: var(--muted);
+    font-size: 12px;
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    margin-bottom: 14px;
+  }
   .signal-filter {
     display: inline-flex;
     align-items: center;
@@ -1764,6 +1914,157 @@ def _scan_generated_ist(df: pd.DataFrame) -> str:
     return format_generated_ist(str(series.iloc[0]))
 
 
+def _pead_fmt_pct(val) -> str:
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return "—"
+    try:
+        n = float(val)
+    except (TypeError, ValueError):
+        return "—"
+    sign = "+" if n > 0 else ""
+    return f"{sign}{n:.1f}%"
+
+
+def _pead_fmt_num1(val) -> str:
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return "—"
+    try:
+        return f"{float(val):.1f}"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _pead_fmt_date_short(val) -> str:
+    s = safe_str(val)
+    if not s:
+        return "—"
+    try:
+        return pd.Timestamp(s).strftime("%d %b")
+    except Exception:
+        return s[:10]
+
+
+def _pead_score_tier(score, high_min: float) -> str:
+    if score is None or (isinstance(score, float) and pd.isna(score)):
+        return "mid"
+    try:
+        n = float(score)
+    except (TypeError, ValueError):
+        return "mid"
+    if n > high_min:
+        return "high"
+    if n < 0 or n <= high_min * 0.35:
+        return "low"
+    return "mid"
+
+
+def _pead_pick_card(row: pd.Series, *, variant: str, high_min: float) -> str:
+    ticker = safe_str(row.get("ticker")).upper()
+    market = safe_str(row.get("market")) or "NSE"
+    sc_url, tv_url = research_links(ticker, market)
+    name = html.escape(safe_str(row.get("name")) or ticker)
+    score = row.get("pead_score")
+    tier = _pead_score_tier(score, high_min)
+    score_txt = (
+        f"{float(score):.1f}"
+        if score is not None and not (isinstance(score, float) and pd.isna(score))
+        else "—"
+    )
+    is_psq = str(variant).lower() in (
+        "psq",
+        "positive_surprise",
+        "positive_surprise_quant",
+    )
+    score_lbl = "PSQ" if is_psq else "PEAD"
+    if is_psq:
+        stats = (
+            ("Surprise", _pead_fmt_pct(row.get("surprise_growth"))),
+            ("PEG", _pead_fmt_num1(row.get("peg"))),
+            ("EPS YoY", _pead_fmt_pct(row.get("eps_yoy"))),
+            ("Returns", _pead_fmt_pct(row.get("returns_pct"))),
+        )
+    else:
+        stats = (
+            ("Returns", _pead_fmt_pct(row.get("returns_pct"))),
+            ("Fwd PE", _pead_fmt_num1(row.get("forward_pe"))),
+            ("Sales YoY", _pead_fmt_pct(row.get("sales_yoy"))),
+            ("Daily", _pead_fmt_pct(row.get("daily_ret_pct"))),
+        )
+    chips: list[str] = []
+    if bool(row.get("has_tq")):
+        chips.append('<span class="pead-pick-chip tq">TQ</span>')
+    if bool(row.get("has_bb")) and safe_str(row.get("bb_signal")).upper() == "NEW_BREAKOUT":
+        chips.append('<span class="pead-pick-chip bb">BB NEW</span>')
+    chips_html = (
+        f'<div class="pead-pick-chips">{"".join(chips)}</div>' if chips else ""
+    )
+    stats_html = "".join(
+        f'<div class="pead-pick-stat"><span>{html.escape(lbl)}</span>'
+        f"<b>{html.escape(val)}</b></div>"
+        for lbl, val in stats
+    )
+    return f"""
+    <div class="pead-pick {tier}" data-ticker="{html.escape(ticker)}" title="Click to expand row">
+      <div class="pead-pick-top">
+        <div>
+          <a class="pead-pick-ticker" href="{html.escape(tv_url)}" target="_blank" rel="noopener noreferrer"
+             onclick="event.stopPropagation()">{html.escape(ticker)}</a>
+          <div class="pead-pick-name">{name}</div>
+          {chips_html}
+        </div>
+        <div>
+          <div class="pead-pick-score {tier}">{html.escape(score_txt)}</div>
+          <div class="pead-pick-score-lbl">{score_lbl}</div>
+        </div>
+      </div>
+      <div class="pead-pick-stats">{stats_html}</div>
+      <div class="pead-pick-links">
+        <a href="{html.escape(sc_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">SC</a>
+        <a href="{html.escape(tv_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">TV</a>
+        <span class="pead-pick-date">{html.escape(_pead_fmt_date_short(row.get("result_date")))}</span>
+      </div>
+    </div>
+    """
+
+
+def _build_top_picks_html(
+    df: pd.DataFrame,
+    *,
+    variant: str = "pead2",
+    high_min: float = 40.0,
+    top_n: int = 8,
+) -> str:
+    if df is None or df.empty or "pead_score" not in df.columns:
+        return ""
+    work = df.copy()
+    work["_score"] = pd.to_numeric(work["pead_score"], errors="coerce")
+    work = work[work["_score"].notna()].sort_values("_score", ascending=False)
+    if work.empty:
+        return ""
+    high = work[work["_score"] > float(high_min)]
+    picks = high.head(top_n) if len(high) else work.head(min(top_n, 5))
+    is_psq = str(variant).lower() in (
+        "psq",
+        "positive_surprise",
+        "positive_surprise_quant",
+    )
+    label = "Top surprises" if is_psq else "Top picks"
+    if len(high):
+        meta = f"{len(picks)} names · score &gt; {high_min:.0f}"
+    else:
+        meta = f"{len(picks)} names"
+    cards = "".join(
+        _pead_pick_card(r, variant=variant, high_min=high_min)
+        for _, r in picks.iterrows()
+    )
+    if not cards:
+        return '<div class="pead-picks-empty">No scored names in this scan.</div>'
+    return (
+        f'<div class="pead-section-label">{html.escape(label)} · {meta}</div>'
+        f'<div class="pead-picks">{cards}</div>'
+    )
+
+
 from stocks.core.json_utils import json_dumps, json_safe_obj, json_safe_scalar
 from stocks.market.google_news import attach_google_news_to_rows
 
@@ -2205,6 +2506,38 @@ def build_pead2_dashboard_html(
         <button type="button" class="signal-btn both" data-signal="both">TQ + BB</button>"""
         default_signal_filter = "all"
 
+    is_pead2_default = not any(
+        (
+            is_pead1,
+            is_holdings,
+            is_peg_aware,
+            is_fisher,
+            is_napkin,
+            is_distress,
+        )
+    )
+    show_top_picks = is_pead2_default or is_psq
+    picks_html = (
+        _build_top_picks_html(df, variant=variant, high_min=high_min)
+        if show_top_picks
+        else ""
+    )
+    if is_psq:
+        legend_html = (
+            '<div class="pead-legend">'
+            "<span>Start with <b>high-score</b> cards — NSE XBRL surprise + growth.</span>"
+            "</div>"
+        )
+    elif is_pead2_default:
+        legend_html = (
+            '<div class="pead-legend">'
+            "<span>Start with <b>high-score</b> cards — post-earnings drift + growth.</span>"
+            "<span>Use <b>TQ / BB NEW</b> chips to confirm breakout.</span>"
+            "</div>"
+        )
+    else:
+        legend_html = ""
+
     body = f"""
 <div class="dash" id="dash">
   <main class="main">
@@ -2221,6 +2554,8 @@ def build_pead2_dashboard_html(
         <button class="icon-btn" id="btn-fs" type="button" title="Fullscreen">Fullscreen</button>
       </div>
     </div>
+    {legend_html}
+    {picks_html}
     <div class="toolbar">
       <input class="pead-search" id="pead-search" type="search" placeholder="Search ticker or name…" autocomplete="off" />
       <div class="signal-filter" id="signal-filter">
@@ -2703,7 +3038,18 @@ document.getElementById("pead-search").oninput = (e) => {{
   render();
 }};
 
+function bindPickCards() {{
+  document.querySelectorAll(".pead-pick[data-ticker]").forEach(el => {{
+    el.onclick = (e) => {{
+      if (e.target.closest("a")) return;
+      const t = el.getAttribute("data-ticker");
+      if (t) toggleExpand(t);
+    }};
+  }});
+}}
+
 render();
+bindPickCards();
 window.addEventListener("resize", () => syncExpandPanelWidth());
 </script>
 """
@@ -2720,7 +3066,9 @@ window.addEventListener("resize", () => syncExpandPanelWidth());
     return f"{_PEAD2_FONT_LINKS}{_PEAD2_DASHBOARD_CSS}{body}"
 
 
-def pead2_iframe_height(row_count: int, *, expanded: bool = False) -> int:
+def pead2_iframe_height(row_count: int, *, expanded: bool = False, with_top_picks: bool = True) -> int:
     """Tall embed so dashboard fills the page; internal scroll in table."""
     base = min(1500, max(960, 920 + min(row_count, 40) * 2))
+    if with_top_picks and row_count > 0:
+        base += 240
     return base + (480 if expanded else 0)
