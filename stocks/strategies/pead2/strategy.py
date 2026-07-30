@@ -123,6 +123,18 @@ def enrich_pead_candidates(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _flag_true(val) -> bool:
+    """True only for real True-ish flags; ``NaN`` / ``pd.NA`` are False (``bool(nan)`` is True)."""
+    if val is None or val is pd.NA:
+        return False
+    try:
+        if pd.isna(val):
+            return False
+    except (TypeError, ValueError):
+        pass
+    return bool(val)
+
+
 def apply_breakout_map(
     df: pd.DataFrame,
     bmap: dict[str, dict],
@@ -145,6 +157,8 @@ def apply_breakout_map(
     ):
         if col not in out.columns:
             out[col] = default
+    out["has_tq"] = out["has_tq"].map(_flag_true)
+    out["has_bb"] = out["has_bb"].map(_flag_true)
 
     for idx, row in out.iterrows():
         ticker = str(row.get("ticker") or "").strip().upper()
@@ -152,7 +166,7 @@ def apply_breakout_map(
         if not rec:
             continue
         tq = rec.get("tq")
-        if tq and (overwrite or not bool(out.at[idx, "has_tq"])):
+        if tq and (overwrite or not _flag_true(out.at[idx, "has_tq"])):
             out.at[idx, "has_tq"] = True
             if tq.get("score") is not None:
                 out.at[idx, "tq_score"] = float(tq["score"])
@@ -163,7 +177,7 @@ def apply_breakout_map(
                 tq.get("timeframe") or tq.get("tq_timeframe") or ""
             )
         bb = rec.get("bb")
-        if bb and (overwrite or not bool(out.at[idx, "has_bb"])):
+        if bb and (overwrite or not _flag_true(out.at[idx, "has_bb"])):
             sig = str(bb.get("signal") or bb.get("bb_signal") or "").upper()
             # Only NEW_BREAKOUT counts as BB across PEAD / reports / tags.
             if sig != "NEW_BREAKOUT":
@@ -196,6 +210,9 @@ def attach_strategy_breakout_signals(df: pd.DataFrame) -> pd.DataFrame:
     ):
         if col not in out.columns:
             out[col] = default
+    # Holdings expand left-joins leave NaN flags; treat as False before merge.
+    out["has_tq"] = out["has_tq"].map(_flag_true)
+    out["has_bb"] = out["has_bb"].map(_flag_true)
 
     tickers = out["ticker"].astype(str).str.strip().str.upper().unique().tolist()
     bmap = load_strategy_breakout_map(tickers)

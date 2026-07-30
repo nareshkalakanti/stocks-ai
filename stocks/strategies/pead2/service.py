@@ -57,7 +57,7 @@ from stocks.strategies.pead2.quarters import (
 )
 from stocks.strategies.pead2.technicals import build_price_snapshot
 from stocks.strategies.pead.service import estimate_result_date, prepare_pead_universe
-from stocks.market.company_profile import hydrate_blob_profile, merge_company_profile
+from stocks.market.company_profile import merge_company_profile
 from stocks.market.price_service import to_yfinance_symbol
 from stocks.shared.links import attach_research_links
 from stocks.core.text_utils import safe_str
@@ -431,9 +431,7 @@ def _partition_pead2_universe_cache(
         if raw.get("calc_version") != PEAD2_CALC_VERSION:
             stale += 1
             continue
-        cached[ticker] = hydrate_blob_profile(
-            _backfill_blob_from_legacy(raw, legacy_by_ticker.get(ticker))
-        )
+        cached[ticker] = _backfill_blob_from_legacy(raw, legacy_by_ticker.get(ticker))
         if _is_pead2_cache_aged(fetched_at.get(ticker)):
             aged += 1
 

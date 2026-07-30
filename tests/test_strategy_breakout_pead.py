@@ -42,6 +42,26 @@ def test_attach_strategy_breakout_signals(monkeypatch):
     assert not bool(tcs["has_bb"])
 
 
+def test_attach_clears_nan_breakout_flags(monkeypatch):
+    """Left-join holdings expand leaves NaN flags; must not stay True-ish."""
+    monkeypatch.setattr(
+        "stocks.core.database.load_strategy_breakout_map",
+        lambda tickers: {},
+    )
+    df = pd.DataFrame(
+        {
+            "ticker": ["ALPHAGEO", "RAMRAT"],
+            "pead_score": [pd.NA, 50.0],
+            "has_tq": [float("nan"), False],
+            "has_bb": [float("nan"), False],
+        }
+    )
+    out = attach_strategy_breakout_signals(df)
+    blank = out[out["ticker"] == "ALPHAGEO"].iloc[0]
+    assert blank["has_tq"] is False or blank["has_tq"] == False
+    assert blank["has_bb"] is False or blank["has_bb"] == False
+
+
 def test_apply_breakout_map_does_not_overwrite_existing():
     df = pd.DataFrame(
         {

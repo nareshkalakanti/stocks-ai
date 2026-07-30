@@ -41,7 +41,7 @@ from stocks.shared.superstars.investors import (
 )
 from stocks.dashboards.report_html import embed_html_iframe
 
-_CACHE_VERSION = 19  # NSE SME tickers (strip -SM) for Negen / Niveshaay
+_CACHE_VERSION = 20  # Basava Sankara Rao Kolli
 _DISPLAY_READY_KEY = "superstar_display_ready_v22"
 _SS_SECTOR_KEY = "ss_sector_filter"
 _SS_CAP_KEY = "ss_cap_tier"

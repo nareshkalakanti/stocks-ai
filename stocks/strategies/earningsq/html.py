@@ -195,6 +195,14 @@ _EQ_CSS = """
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
   .eq-chip-meta.eq-mcap-chip { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }
+  .eq-chip-meta.eq-sme-chip {
+    background:#ffedd5; border-color:#fdba74; color:#9a3412; font-weight:700;
+  }
+  .eq-sme-inline {
+    display:inline-block; margin-left:6px; padding:1px 6px; border-radius:999px;
+    background:#ffedd5; color:#9a3412; border:1px solid #fdba74;
+    font-size:10px; font-weight:700; vertical-align:middle;
+  }
   .eq-price {
     font-weight:700; color:#0f172a; font-variant-numeric: tabular-nums;
   }
@@ -305,6 +313,7 @@ _EQ_JS = """
       if (filter === 'strong') ok = tag === 'strong';
       else if (filter === 'fade') ok = tag === 'fade';
       else if (filter === 'soft') ok = tag === 'soft' || tag === 'strong';
+      else if (filter === 'sme') ok = (tr.getAttribute('data-sme') || '') === 'sme';
       if (q && hay.indexOf(q) < 0) ok = false;
       tr.classList.toggle('is-hidden', !ok);
       if (ok) shown += 1;
@@ -353,6 +362,27 @@ def _links_html(r: pd.Series, *, compact: bool = False) -> str:
     )
 
 
+def _is_sme_row(r: pd.Series) -> bool:
+    if bool(r.get("is_sme")):
+        return True
+    market = safe_str(r.get("market")).upper()
+    return market == "NSE SME" or "SME" in market
+
+
+def _sme_chip_html(r: pd.Series) -> str:
+    if not _is_sme_row(r):
+        return ""
+    return (
+        '<span class="eq-chip-meta eq-sme-chip" title="NSE Emerge / SME listing">SME</span>'
+    )
+
+
+def _sme_inline_html(r: pd.Series) -> str:
+    if not _is_sme_row(r):
+        return ""
+    return '<span class="eq-sme-inline" title="NSE Emerge / SME listing">SME</span>'
+
+
 def _pick_card(r: pd.Series) -> str:
     ticker = safe_str(r.get("ticker")).upper()
     _sc, tv = research_links(ticker, safe_str(r.get("market")) or "NSE")
@@ -368,6 +398,9 @@ def _pick_card(r: pd.Series) -> str:
     sector = safe_str(r.get("sector")) or safe_str(r.get("industry"))
     mcap_txt = _fmt_mcap(r.get("market_cap_cr"))
     meta_bits = []
+    sme_chip = _sme_chip_html(r)
+    if sme_chip:
+        meta_bits.append(sme_chip)
     if sector:
         meta_bits.append(
             f'<span class="eq-chip-meta" title="{html.escape(sector)}">{html.escape(sector)}</span>'
@@ -435,11 +468,13 @@ def build_earningsq_html(
         _sc, tv = research_links(ticker, safe_str(r.get("market")) or "NSE")
         name = html.escape(safe_str(r.get("name")) or ticker)
         tag = safe_str(r.get("quality_tag")).lower() or "watch"
-        q = f"{ticker} {safe_str(r.get('name'))} {tag}".lower()
+        sme_flag = "sme" if _is_sme_row(r) else ""
+        q = f"{ticker} {safe_str(r.get('name'))} {tag} {sme_flag}".lower()
         rows_html.append(
-            f'<tr data-tag="{html.escape(tag)}" data-q="{html.escape(q)}">'
+            f'<tr data-tag="{html.escape(tag)}" data-q="{html.escape(q)}" data-sme="{sme_flag}">'
             f"{_badge_cell(tag)}"
             f'<td class="eq-ticker"><a href="{html.escape(tv)}" target="_blank" rel="noopener noreferrer">{html.escape(ticker)}</a>'
+            f"{_sme_inline_html(r)}"
             f'<div class="eq-meta">{name}</div>{_links_html(r, compact=True)}</td>'
             f"{_sector_cell(r.get('sector') or r.get('industry'))}"
             f"{_mcap_cell(r.get('market_cap_cr'))}"
@@ -495,6 +530,7 @@ def build_earningsq_html(
     <button type="button" class="eq-chip" data-filter="strong">Strong only</button>
     <button type="button" class="eq-chip" data-filter="soft">Positive</button>
     <button type="button" class="eq-chip" data-filter="fade">Caution</button>
+    <button type="button" class="eq-chip" data-filter="sme">SME</button>
     <span class="eq-count"></span>
   </div>
   <div class="eq-table-wrap">

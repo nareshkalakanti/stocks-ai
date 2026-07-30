@@ -21,6 +21,26 @@ def is_nullish(val: Any) -> bool:
         return False
 
 
+def json_safe_bool(val: Any, *, default: bool = False) -> bool:
+    """Coerce flags for JSON. ``NaN`` / ``pd.NA`` must not become ``True`` (``bool(nan)`` is True)."""
+    if is_nullish(val):
+        return default
+    if isinstance(val, (np.bool_, bool)):
+        return bool(val)
+    if isinstance(val, (np.floating, float, np.integer, int)) and not isinstance(val, bool):
+        return bool(val) and val == val  # reject NaN; 0 → False
+    if isinstance(val, str):
+        s = val.strip().lower()
+        if not s:
+            return default
+        if s in {"1", "true", "yes", "y", "t"}:
+            return True
+        if s in {"0", "false", "no", "n", "f"}:
+            return False
+        return default
+    return bool(val)
+
+
 def json_safe_scalar(val: Any) -> Any:
     """Convert a scalar to a JSON-friendly value (``None`` for missing)."""
     if is_nullish(val):

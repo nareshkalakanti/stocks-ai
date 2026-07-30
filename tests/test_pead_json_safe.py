@@ -15,6 +15,40 @@ def test_json_safe_scalar_handles_pd_na():
     assert json_safe_scalar(float("nan")) is None
 
 
+def test_rows_for_json_nan_breakout_flags_are_false():
+    """Holdings expand leaves NaN has_tq/has_bb; bool(nan) is True — must not fake TQ/BB."""
+    df = pd.DataFrame(
+        [
+            {
+                "ticker": "ALPHAGEO",
+                "name": "Alphageo",
+                "market": "NSE",
+                "pead_score": pd.NA,
+                "pead_status": "Prior-year EPS distorted",
+                "has_tq": float("nan"),
+                "has_bb": float("nan"),
+                "calculation_date": None,
+            }
+        ]
+    )
+    payload = _rows_for_json(df)
+    assert payload[0]["has_tq"] is False
+    assert payload[0]["has_bb"] is False
+    assert payload[0]["pead_note"] == "Prior-year EPS distorted"
+    json.dumps(payload)
+
+
+def test_json_safe_bool_rejects_nan():
+    from stocks.core.json_utils import json_safe_bool
+
+    assert json_safe_bool(float("nan")) is False
+    assert json_safe_bool(pd.NA) is False
+    assert json_safe_bool(None) is False
+    assert json_safe_bool(True) is True
+    assert json_safe_bool(1) is True
+    assert json_safe_bool(0) is False
+
+
 def test_rows_for_json_serializes_tq_na():
     df = pd.DataFrame(
         [

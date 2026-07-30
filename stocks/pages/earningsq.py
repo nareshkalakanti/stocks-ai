@@ -9,10 +9,11 @@ from stocks.dashboards.report_html import embed_html_iframe
 from stocks.strategies.earningsq.html import build_earningsq_html, earningsq_iframe_height
 from stocks.strategies.earningsq.scores import annotate_quality
 from stocks.strategies.earningsq.service import attach_sector_mcap, run_earningsq_scan
+from stocks.shared.corp_tags import attach_corp_tags
 
-_CACHE_KEY = "earningsq_df_v3"
-_STATS_KEY = "earningsq_scan_stats_v1"
-_HTML_KEY = "earningsq_html_v7"
+_CACHE_KEY = "earningsq_df_v5"
+_STATS_KEY = "earningsq_scan_stats_v2"
+_HTML_KEY = "earningsq_html_v9"
 
 
 def _apply_view(df: pd.DataFrame, *, min_surprise: float, sort_by: str) -> pd.DataFrame:
@@ -20,6 +21,15 @@ def _apply_view(df: pd.DataFrame, *, min_surprise: float, sort_by: str) -> pd.Da
         return df
     stats = dict(getattr(df, "attrs", {}) or {}).get("scan_stats") or {}
     view = attach_sector_mcap(df)
+    view = attach_corp_tags(view)
+    # Announcement feed market wins when ticker also on mainboard listings cache.
+    if "market" in view.columns:
+        m = view["market"].astype(str).str.upper()
+        from_feed = m.eq("NSE SME") | m.str.contains("SME", na=False)
+        if "is_sme" in view.columns:
+            view["is_sme"] = view["is_sme"].fillna(False).astype(bool) | from_feed
+        else:
+            view["is_sme"] = from_feed
     view = annotate_quality(view)
     if "surprise_score" in view.columns:
         s = pd.to_numeric(view["surprise_score"], errors="coerce")
@@ -44,7 +54,7 @@ def render_earningsq(*, show_title: bool = True) -> None:
     if show_title:
         st.markdown("### EarningsQ")
     st.caption(
-        "Live NSE result announcements — not a full-universe scan; "
+        "Live NSE result announcements (mainboard + SME/Emerge) — not a full-universe scan; "
         "only stocks that filed results in the lookback."
     )
 
@@ -55,7 +65,7 @@ def render_earningsq(*, show_title: bool = True) -> None:
 2. **Strong** badge = prefer these first.
 3. **Caution** = big surprise but stock fell — dig deeper before acting.
 4. Use search / chips in the report to filter; raise **Surprise >** to cut noise.
-5. Coverage: NSE equity announcements in lookback → result prints → unique tickers scored.
+5. Coverage: NSE equity + SME announcements in lookback → result prints → unique tickers scored.
             """.strip()
         )
 
@@ -162,7 +172,10 @@ def render_earningsq(*, show_title: bool = True) -> None:
         green_1d = int((r1 > 0).sum())
 
     raw_n = int(stats.get("nse_announcements_raw") or 0)
+    eq_raw = int(stats.get("nse_equities_raw") or 0)
+    sme_raw = int(stats.get("nse_sme_raw") or 0)
     result_n = int(stats.get("result_prints") or stats.get("unique_tickers") or 0)
+    sme_prints = int(stats.get("sme_result_prints") or 0)
     uniq_n = int(stats.get("unique_tickers") or 0)
     uni_n = int(stats.get("nse_equity_universe") or 0)
     scored_n = int(stats.get("scored") or (len(df) if df is not None else 0))
@@ -170,17 +183,25 @@ def render_earningsq(*, show_title: bool = True) -> None:
     cover_bits = [f"{len(view):,} in view", f"{strong_n:,} strong"]
     if uniq_n:
         cover_bits.append(f"{uniq_n:,} scored")
+    if sme_prints:
+        cover_bits.append(f"{sme_prints:,} SME prints")
     with st.expander("Coverage · " + " · ".join(cover_bits), expanded=False):
         s1, s2, s3, s4 = st.columns(4)
         s1.metric(
             "NSE announcements",
             f"{raw_n:,}" if raw_n else "—",
-            help=f"All equity corporate announcements in last {lookback}d (before result filter).",
+            help=(
+                f"Mainboard {eq_raw:,} + SME {sme_raw:,} corporate announcements "
+                f"in last {lookback}d (before result filter)."
+            ),
         )
         s2.metric(
             "Result prints",
             f"{result_n:,}" if result_n else f"{uniq_n:,}",
-            help="Announcements classified as financial results (pre-dedupe).",
+            help=(
+                "Announcements classified as financial results (pre-dedupe). "
+                f"SME result prints: {sme_prints:,}."
+            ),
         )
         s3.metric(
             "Stocks scored",

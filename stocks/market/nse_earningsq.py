@@ -92,7 +92,11 @@ def _parse_broadcast_full(item: dict) -> pd.Timestamp | None:
     )
 
 
-def normalize_earningsq_announcement(item: dict) -> dict | None:
+def normalize_earningsq_announcement(
+    item: dict,
+    *,
+    market: str = "NSE",
+) -> dict | None:
     if not isinstance(item, dict) or not is_earningsq_result_announcement(item):
         return None
     symbol = safe_str(item.get("symbol")).upper()
@@ -108,7 +112,7 @@ def normalize_earningsq_announcement(item: dict) -> dict | None:
     return {
         "ticker": symbol,
         "name": safe_str(item.get("sm_name")) or symbol,
-        "market": "NSE",
+        "market": market,
         "broadcast_at": broadcast.strftime("%Y-%m-%d %H:%M:%S"),
         "broadcast_date": broadcast.strftime("%Y-%m-%d"),
         "period_end": period_end.strftime("%Y-%m-%d") if period_end is not None else None,
@@ -120,56 +124,94 @@ def normalize_earningsq_announcement(item: dict) -> dict | None:
     }
 
 
-def fetch_nse_earnings_announcements(
+def _fetch_announcement_index(
+    session,
     *,
-    lookback_days: int = 7,
-) -> tuple[list[dict], dict[str, int]]:
-    """
-    NSE equities corporate announcements in ``lookback_days``, filtered to
-    financial-result prints. Newest first. Deduped per ticker (latest wins).
-
-    Returns ``(rows, stats)`` where stats covers raw feed size vs result prints.
-    """
-    end = datetime.now()
-    start = end - timedelta(days=max(1, int(lookback_days)))
-    stats: dict[str, int] = {
-        "lookback_days": int(lookback_days),
-        "nse_announcements_raw": 0,
-        "result_prints": 0,
-        "unique_tickers": 0,
-    }
-    session = _session_for_thread()
+    index: str,
+    from_date: str,
+    to_date: str,
+) -> list:
     try:
         resp = session.get(
             _ANNOUNCE_URL,
             params={
-                "index": "equities",
-                "from_date": start.strftime("%d-%m-%Y"),
-                "to_date": end.strftime("%d-%m-%Y"),
+                "index": index,
+                "from_date": from_date,
+                "to_date": to_date,
             },
             timeout=_TIMEOUT_SEC,
         )
         resp.raise_for_status()
         items = resp.json()
     except Exception:
-        return [], stats
+        return []
+    return items if isinstance(items, list) else []
 
-    if not isinstance(items, list):
-        return [], stats
 
-    stats["nse_announcements_raw"] = len(items)
+def fetch_nse_earnings_announcements(
+    *,
+    lookback_days: int = 7,
+    include_sme: bool = True,
+) -> tuple[list[dict], dict[str, int]]:
+    """
+    NSE mainboard (+ optional SME/Emerge) corporate announcements in
+    ``lookback_days``, filtered to financial-result prints. Newest first.
+    Deduped per ticker (latest wins; mainboard preferred over SME on ties).
+
+    Returns ``(rows, stats)`` where stats covers raw feed size vs result prints.
+    """
+    end = datetime.now()
+    start = end - timedelta(days=max(1, int(lookback_days)))
+    from_date = start.strftime("%d-%m-%Y")
+    to_date = end.strftime("%d-%m-%Y")
+    stats: dict[str, int] = {
+        "lookback_days": int(lookback_days),
+        "nse_announcements_raw": 0,
+        "nse_equities_raw": 0,
+        "nse_sme_raw": 0,
+        "result_prints": 0,
+        "unique_tickers": 0,
+        "sme_result_prints": 0,
+    }
+    session = _session_for_thread()
+    feeds: list[tuple[str, str]] = [("equities", "NSE")]
+    if include_sme:
+        feeds.append(("sme", "NSE SME"))
+
     rows: list[dict] = []
-    for item in items:
-        row = normalize_earningsq_announcement(item)
-        if row:
-            rows.append(row)
+    for index, market in feeds:
+        items = _fetch_announcement_index(
+            session, index=index, from_date=from_date, to_date=to_date
+        )
+        if index == "equities":
+            stats["nse_equities_raw"] = len(items)
+        else:
+            stats["nse_sme_raw"] = len(items)
+        stats["nse_announcements_raw"] += len(items)
+        for item in items:
+            row = normalize_earningsq_announcement(item, market=market)
+            if row:
+                rows.append(row)
+                if market == "NSE SME":
+                    stats["sme_result_prints"] += 1
 
     stats["result_prints"] = len(rows)
     rows.sort(key=lambda r: r["broadcast_at"], reverse=True)
+    # Prefer mainboard over SME when the same symbol appears on both feeds.
     latest: dict[str, dict] = {}
     for row in rows:
         t = row["ticker"]
-        if t not in latest:
+        prev = latest.get(t)
+        if prev is None:
+            latest[t] = row
+            continue
+        if row["broadcast_at"] > prev["broadcast_at"]:
+            latest[t] = row
+        elif (
+            row["broadcast_at"] == prev["broadcast_at"]
+            and prev.get("market") == "NSE SME"
+            and row.get("market") == "NSE"
+        ):
             latest[t] = row
     out = sorted(latest.values(), key=lambda r: r["broadcast_at"], reverse=True)
     stats["unique_tickers"] = len(out)

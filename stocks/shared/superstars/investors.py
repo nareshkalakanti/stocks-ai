@@ -211,6 +211,11 @@ SUPERSTAR_INVESTORS = [
         "funds": [],
     },
     {
+        "name": 'Basava Sankara Rao Kolli',
+        "query": 'BASAVA SANKARA RAO KOLLI',
+        "funds": [],
+    },
+    {
         "name": 'Negen Capital / Negen Undiscovered Value Fund',
         "query": 'NEGEN',
         "funds": [

@@ -20,9 +20,10 @@ from stocks.shared.links import research_links, resolve_listing_market
 from stocks.core.text_utils import sanitize_website
 from stocks.core.database import load_market_cap_from_db
 from stocks.core.text_utils import safe_str
+from stocks.core.json_utils import json_safe_bool
 
 
-_PEAD2_UI_BUILD = "2026-07-30e"
+_PEAD2_UI_BUILD = "2026-07-30i"
 
 _EXPAND_PAYLOAD_KEYS = frozenset(
     {
@@ -34,7 +35,8 @@ _EXPAND_PAYLOAD_KEYS = frozenset(
         "stock_note",
     }
 )
-# Full NSE reports: keep expand usable without embedding multi-MB news/bios.
+# Large boards: keep quarters+slim snapshot; news/bios stay stripped.
+# Served via /app/static so this payload no longer blanks the iframe.
 _LARGE_REPORT_ROWS = 120
 _EXPAND_KEYS_LARGE = frozenset({"quarters", "snapshot"})
 _SNAPSHOT_SLIM_KEYS = frozenset(
@@ -2129,9 +2131,9 @@ def _pead_pick_rank(
 
     price_bonus = max(-8.0, min(8.0, returns * 0.15 + daily * 0.2))
     tech_bonus = 0.0
-    if bool(row.get("has_tq")):
+    if json_safe_bool(row.get("has_tq")):
         tech_bonus += 3.0
-    if bool(row.get("has_bb")) and safe_str(row.get("bb_signal")).upper() == "NEW_BREAKOUT":
+    if json_safe_bool(row.get("has_bb")) and safe_str(row.get("bb_signal")).upper() == "NEW_BREAKOUT":
         tech_bonus += 3.0
 
     quality = _pead_pick_quality(row, high_min=high_min, is_psq=is_psq)
@@ -2198,9 +2200,9 @@ def _pead_pick_card(row: pd.Series, *, variant: str, high_min: float) -> str:
             ("Daily", html.escape(_pead_fmt_pct(row.get("daily_ret_pct")))),
         )
     chips: list[str] = []
-    if bool(row.get("has_tq")):
+    if json_safe_bool(row.get("has_tq")):
         chips.append('<span class="pead-pick-chip tq">TQ</span>')
-    if bool(row.get("has_bb")) and safe_str(row.get("bb_signal")).upper() == "NEW_BREAKOUT":
+    if json_safe_bool(row.get("has_bb")) and safe_str(row.get("bb_signal")).upper() == "NEW_BREAKOUT":
         chips.append('<span class="pead-pick-chip bb">BB NEW</span>')
     pe_q = _pead_fwd_pe_quality(_pead_fnum(row.get("forward_pe")))
     if pe_q == "good":
@@ -2314,10 +2316,13 @@ def _build_top_picks_html(
     return (
         f'<div class="pead-section-label">{html.escape(label)} · {meta}</div>'
         f'<div class="pead-picks">{cards}</div>'
+        '<div class="pead-picks-empty pead-picks-empty-filter" style="display:none">'
+        "No top picks match this filter."
+        "</div>"
     )
 
 
-from stocks.core.json_utils import json_dumps, json_safe_obj, json_safe_scalar
+from stocks.core.json_utils import json_dumps, json_safe_bool, json_safe_obj, json_safe_scalar
 from stocks.market.google_news import attach_google_news_to_rows
 
 
@@ -2435,7 +2440,11 @@ def _rows_for_json(df: pd.DataFrame, *, include_news: bool = True) -> list[dict]
                 ),
                 "pe_ratio": json_safe_scalar(row.get("pe_ratio")),
                 "pead_score": json_safe_scalar(row.get("pead_score")),
-                "pead_note": safe_str(row.get("pead_note")) or None,
+                "pead_note": (
+                    safe_str(row.get("pead_note"))
+                    or safe_str(row.get("pead_status"))
+                    or None
+                ),
                 "comfortable_buy_price": json_safe_scalar(row.get("comfortable_buy_price")),
                 "buy_headroom_pct": json_safe_scalar(row.get("buy_headroom_pct")),
                 "valuation_pass": json_safe_scalar(row.get("valuation_pass")),
@@ -2482,10 +2491,10 @@ def _rows_for_json(df: pd.DataFrame, *, include_news: bool = True) -> list[dict]
                 "ebidt_yoy": json_safe_scalar(row.get("ebidt_yoy")),
                 "ebidt_qoq": json_safe_scalar(row.get("ebidt_qoq")),
                 "cf_profit": json_safe_scalar(row.get("cf_profit")),
-                "sales_bust": bool(row.get("sales_bust")),
+                "sales_bust": json_safe_bool(row.get("sales_bust")),
                 "sales_streak": json_safe_scalar(row.get("sales_streak")),
-                "has_tq": bool(row.get("has_tq")),
-                "has_bb": bool(row.get("has_bb")),
+                "has_tq": json_safe_bool(row.get("has_tq")),
+                "has_bb": json_safe_bool(row.get("has_bb")),
                 "tq_score": json_safe_scalar(row.get("tq_score")),
                 "tq_crossover": safe_str(row.get("tq_crossover")) or None,
                 "tq_timeframe": safe_str(row.get("tq_timeframe")) or None,
@@ -3410,6 +3419,25 @@ function render() {{
     }}
   }});
   syncExpandPanelWidth();
+  syncPickCards(rows);
+}}
+
+function syncPickCards(visibleRows) {{
+  const picks = document.querySelectorAll(".pead-pick[data-ticker]");
+  if (!picks.length) return;
+  const filterActive = signalFilter !== "all" || !!searchQuery;
+  const visible = new Set((visibleRows || []).map(r => String(r.ticker || "").toUpperCase()));
+  let shown = 0;
+  picks.forEach(el => {{
+    const t = String(el.getAttribute("data-ticker") || "").toUpperCase();
+    const ok = !filterActive || visible.has(t);
+    el.style.display = ok ? "" : "none";
+    if (ok) shown += 1;
+  }});
+  const empty = document.querySelector(".pead-picks-empty-filter");
+  if (empty) {{
+    empty.style.display = filterActive && shown === 0 ? "" : "none";
+  }}
 }}
 
 document.getElementById("pead-search").oninput = (e) => {{
