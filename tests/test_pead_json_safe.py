@@ -99,4 +99,4 @@ def test_build_pead2_dashboard_html_with_na_fields():
         ]
     )
     html_out = build_pead2_dashboard_html(df, standalone=False)
-    assert "DATA_CURRENT" in html_out
+    assert "pead-data-current" in html_out

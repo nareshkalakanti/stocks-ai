@@ -8,6 +8,7 @@ data/governance.db
 data/logs/
 data/models/
 data/dashboard_cache/
+.cache/
 ########################################################################
 # Python - https://github.com/github/gitignore/blob/master/Python.gitignore
 ########################################################################

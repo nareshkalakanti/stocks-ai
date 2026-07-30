@@ -22,7 +22,30 @@ from stocks.core.database import load_market_cap_from_db
 from stocks.core.text_utils import safe_str
 
 
-_PEAD2_UI_BUILD = "2026-07-19a"
+_PEAD2_UI_BUILD = "2026-07-30c"
+
+_EXPAND_PAYLOAD_KEYS = frozenset(
+    {"quarters", "snapshot", "long_description", "google_news", "stock_note"}
+)
+_SNAPSHOT_SLIM_KEYS = frozenset(
+    {
+        "price",
+        "market_cap_cr",
+        "pe",
+        "pe_ratio",
+        "forward_pe",
+        "cagr",
+        "w52_low",
+        "w52_high",
+        "moving_averages",
+        "website",
+        "company_sector",
+        "company_industry",
+        "headquarters",
+        "employees",
+        "daily_change_pct",
+    }
+)
 
 _PEAD2_FONT_LINKS = """
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -2069,6 +2092,66 @@ from stocks.core.json_utils import json_dumps, json_safe_obj, json_safe_scalar
 from stocks.market.google_news import attach_google_news_to_rows
 
 
+def _json_script_tag(tag_id: str, obj) -> str:
+    """Safe JSON in HTML — escape ``<`` so ``</script>`` in data cannot break the page."""
+    payload = json_dumps(obj, separators=(",", ":"))
+    payload = payload.replace("<", "\\u003c")
+    return f'<script type="application/json" id="{html.escape(tag_id)}">{payload}</script>'
+
+
+def limit_pead_report_df(
+    df: pd.DataFrame,
+    max_rows: int | None,
+) -> tuple[pd.DataFrame, int]:
+    """Return (report slice, universe total) sorted by latest result / score."""
+    total = len(df)
+    if df is None or df.empty or not max_rows or total <= max_rows:
+        return df if df is not None else pd.DataFrame(), total
+    work = df.copy()
+    sort_cols = [c for c in ("result_date", "pead_score") if c in work.columns]
+    if sort_cols:
+        work = work.sort_values(
+            sort_cols,
+            ascending=[False] * len(sort_cols),
+            na_position="last",
+        )
+    return work.head(max_rows).reset_index(drop=True), total
+
+
+def _slim_snapshot(snapshot: dict | None) -> dict:
+    if not isinstance(snapshot, dict):
+        return {}
+    return {k: snapshot[k] for k in _SNAPSHOT_SLIM_KEYS if k in snapshot}
+
+
+def _split_row_payload(row_data: dict) -> tuple[dict, dict]:
+    """Table row vs heavy expand-panel fields (keeps iframe payload small)."""
+    table = dict(row_data)
+    expand: dict = {}
+    for key in _EXPAND_PAYLOAD_KEYS:
+        if key not in table:
+            continue
+        val = table.pop(key)
+        if key == "snapshot":
+            val = _slim_snapshot(val if isinstance(val, dict) else None)
+        if val:
+            expand[key] = val
+    return table, expand
+
+
+def _table_and_expand_rows(df: pd.DataFrame) -> tuple[list[dict], dict[str, dict]]:
+    full = _rows_for_json(df)
+    table_rows: list[dict] = []
+    expand_by_ticker: dict[str, dict] = {}
+    for row in full:
+        table, expand = _split_row_payload(row)
+        table_rows.append(table)
+        ticker = safe_str(table.get("ticker")).upper()
+        if ticker and expand:
+            expand_by_ticker[ticker] = expand
+    return table_rows, expand_by_ticker
+
+
 def _rows_for_json(df: pd.DataFrame) -> list[dict]:
     sync_stock_notes_from_file()
     work = attach_stock_notes(df, sync_file=False)
@@ -2222,7 +2305,8 @@ def _rows_for_json(df: pd.DataFrame) -> list[dict]:
                 "moving_averages": [],
             }
         rows.append(json_safe_obj(row_data))
-    return attach_google_news_to_rows(rows)
+    fetch_news = len(rows) <= 150
+    return attach_google_news_to_rows(rows, fetch_missing=fetch_news)
 
 
 def build_pead2_dashboard_html(
@@ -2239,8 +2323,18 @@ def build_pead2_dashboard_html(
     recent_day_options: tuple[int, ...] | None = None,
     variant: str = "pead2",
     score_high_min: float | None = None,
+    max_rows: int | None = None,
+    report_total: int | None = None,
 ) -> str:
     del recent_filter_days, recent_day_options
+    report_total = report_total if report_total is not None else len(df)
+    df, _ = limit_pead_report_df(df, max_rows)
+    cap_note = ""
+    if report_total > len(df):
+        cap_note = (
+            f" · showing {len(df):,} of {report_total:,} "
+            f"(search table · Download CSV for full list)"
+        )
     is_pead1 = str(variant).lower() in ("pead1", "pead_1", "1")
     is_psq = str(variant).lower() in ("psq", "positive_surprise", "positive_surprise_quant")
     is_peg_aware = str(variant).lower() in ("peg_aware", "peg-aware", "pegaware")
@@ -2256,12 +2350,17 @@ def build_pead2_dashboard_html(
     list_label_js = json_dumps(list_label)
     show_scored_split_js = "true" if show_scored_split else "false"
     updated = _scan_generated_ist(df)
-    data_current = json_dumps(_rows_for_json(df), separators=(",", ":"))
+    table_current, expand_current = _table_and_expand_rows(df)
     prev_df = df_previous if df_previous is not None else pd.DataFrame()
     if is_pead1 or is_holdings:
         prev_df = pd.DataFrame()
-    data_previous = json_dumps(_rows_for_json(prev_df), separators=(",", ":"))
-    has_previous = len(prev_df) > 0
+    prev_df, _ = limit_pead_report_df(prev_df, max_rows)
+    table_previous, expand_previous = _table_and_expand_rows(prev_df)
+    expand_by_ticker = {**expand_previous, **expand_current}
+    data_current_tag = _json_script_tag("pead-data-current", table_current)
+    data_previous_tag = _json_script_tag("pead-data-previous", table_previous)
+    expand_tag = _json_script_tag("pead-expand-data", expand_by_ticker)
+    has_previous = len(table_previous) > 0
     high_min = 5.0 if is_pead1 else 40.0
     if is_psq:
         high_min = 55.0
@@ -2545,7 +2644,7 @@ def build_pead2_dashboard_html(
       <div>
         <h1 class="title">🏆 {html.escape(title)}</h1>
         <div class="meta">
-          {html.escape(updated)} · panel {_PEAD2_UI_BUILD} · click row to expand detail
+          {html.escape(updated)} · panel {_PEAD2_UI_BUILD} · click row to expand detail{html.escape(cap_note)}
           {quarter_toggle}
         </div>
       </div>
@@ -2575,10 +2674,19 @@ def build_pead2_dashboard_html(
     </div>
   </main>
 </div>
+{data_current_tag}
+{data_previous_tag}
+{expand_tag}
 <script>
 {EXPAND_PANEL_JS}
-const DATA_CURRENT = {data_current};
-const DATA_PREVIOUS = {data_previous};
+const DATA_CURRENT = JSON.parse(document.getElementById("pead-data-current").textContent);
+const DATA_PREVIOUS = JSON.parse(document.getElementById("pead-data-previous").textContent);
+const EXPAND_BY_TICKER = JSON.parse(document.getElementById("pead-expand-data").textContent);
+function rowDetail(r) {{
+  if (!r || !r.ticker) return r;
+  const extra = EXPAND_BY_TICKER[r.ticker];
+  return extra ? Object.assign({{}}, r, extra) : r;
+}}
 const HAS_PREVIOUS = {"true" if has_previous else "false"};
 const LIST_LABEL = {list_label_js};
 const SHOW_SCORED_SPLIT = {show_scored_split_js};
@@ -3025,7 +3133,7 @@ function render() {{
       const td = document.createElement("td");
       td.colSpan = cols.length;
       td.className = "pead-expand-td";
-      td.innerHTML = renderPeadExpandPanel(r);
+      td.innerHTML = renderPeadExpandPanel(rowDetail(r));
       tr2.appendChild(td);
       tb.appendChild(tr2);
     }}

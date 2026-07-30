@@ -47,7 +47,13 @@ def embed_html_iframe(
 
     from stocks.core.streamlit_compat import iframe_width_kw
 
-    # Streamlit 1.58+: st.iframe replaces components.v1.html.
+    # components.v1.html is more reliable than st.iframe for large srcdoc payloads.
+    if len(html_content) >= 2_000_000:
+        import streamlit.components.v1 as components
+
+        components.html(html_content, height=h, scrolling=True)
+        return
+
     if hasattr(st, "iframe"):
         st.iframe(html_content, height=h, **iframe_width_kw())
         return

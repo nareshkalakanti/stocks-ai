@@ -140,6 +140,8 @@ PEAD2_REFRESH_RETURNS_ALL = os.getenv("PEAD2_REFRESH_RETURNS_ALL", "false").lowe
     "true",
     "yes",
 )
+# Max rows embedded in the PEAD iframe report (full list still in CSV + session).
+PEAD2_REPORT_MAX_ROWS = int(os.getenv("PEAD2_REPORT_MAX_ROWS", "500"))
 
 PEAD_FACTOR_MAX_WORKERS = YFINANCE_THROTTLED_MAX_WORKERS
 PEAD_FACTOR_SUE_WEIGHT = float(os.getenv("PEAD_FACTOR_SUE_WEIGHT", "0.65"))
