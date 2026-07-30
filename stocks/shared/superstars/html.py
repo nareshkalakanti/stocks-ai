@@ -11,6 +11,7 @@ SUPERSTARS_JS_COLS = [
     {"id": "company", "label": "Company", "fmt": "company"},
     {"id": "investor", "label": "Investor", "fmt": "text"},
     {"id": "sector", "label": "Sector", "fmt": "text"},
+    {"id": "market_cap_cr", "label": "Mcap Cr", "fmt": "num1"},
     {"id": "cap_code", "label": "Cap", "fmt": "text"},
     {"id": "change_display", "label": "Change", "fmt": "ss_change"},
 ]
@@ -22,6 +23,7 @@ SUPERSTARS_JS_COLS_NO_INVESTOR = [
 _EXTRA_COLS = (
     "investor",
     "cap_code",
+    "market_cap_cr",
     "change_display",
     "change_type",
     "holding_entity",
@@ -56,6 +58,8 @@ def _prepare_report_df(df: pd.DataFrame) -> pd.DataFrame:
         work["cap_code"] = "—"
     else:
         work["cap_code"] = work["cap_code"].map(lambda s: safe_str(s) or "—")
+    if "market_cap_cr" not in work.columns:
+        work["market_cap_cr"] = pd.NA
     if "change_display" not in work.columns:
         work["change_display"] = "—"
     else:

@@ -22,7 +22,6 @@ from stocks.shared.links import attach_research_links
 from stocks.shared.fund_watchlists import sync_all_fund_watchlists
 from stocks.scans.scan_toolbar import default_cap_tier_label
 from stocks.governance.score import mcap_cap_code
-from stocks.market.company_profile import merge_company_profile
 from stocks.shared.superstars.holdings import (
     aggregate_all_portfolios,
     enrich_superstar_classification,
@@ -43,7 +42,7 @@ from stocks.shared.superstars.investors import (
 from stocks.dashboards.report_html import embed_html_iframe
 
 _CACHE_VERSION = 19  # NSE SME tickers (strip -SM) for Negen / Niveshaay
-_DISPLAY_READY_KEY = "superstar_display_ready_v20"
+_DISPLAY_READY_KEY = "superstar_display_ready_v22"
 _SS_SECTOR_KEY = "ss_sector_filter"
 _SS_CAP_KEY = "ss_cap_tier"
 _SS_INVESTOR_KEY = "ss_investor"
@@ -106,8 +105,107 @@ def _hydrate_portfolios_from_db(portfolios: dict, fetched_at: dict) -> bool:
     return True
 
 
+def _symbol_keys(sym: str) -> list[str]:
+    s = safe_str(sym).upper()
+    if not s:
+        return []
+    keys = [s]
+    if s.endswith("-SM"):
+        base = s[:-3]
+        if base:
+            keys.append(base)
+    return keys
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _listings_meta_by_ticker() -> dict[str, dict[str, str]]:
+    """Sector / industry from ``stocks`` SQLite (India listings cache)."""
+    from stocks.core.database import load_stocks_from_db
+
+    df = load_stocks_from_db()
+    if df is None or df.empty or "ticker" not in df.columns:
+        return {}
+    out: dict[str, dict[str, str]] = {}
+    for _, row in df.iterrows():
+        key = safe_str(row.get("ticker")).upper()
+        if not key:
+            continue
+        out[key] = {
+            "sector": safe_str(row.get("sector")),
+            "industry": safe_str(row.get("industry")),
+            "sub_sector": safe_str(row.get("sub_sector")),
+        }
+    return out
+
+
+def _apply_listings_sector_fallback(df: pd.DataFrame) -> pd.DataFrame:
+    """Fill missing sectors from ``stocks`` table when classification sqlite misses."""
+    if df is None or df.empty:
+        return df if df is not None else pd.DataFrame()
+    work = df.copy()
+    if "sector" not in work.columns:
+        work["sector"] = ""
+    miss = _sector_missing_mask(work["sector"])
+    if not miss.any():
+        return work
+    listing_map = _listings_meta_by_ticker()
+    if not listing_map:
+        return work
+    sym_col = "symbol" if "symbol" in work.columns else "ticker"
+    for col in ("industry", "sub_sector"):
+        if col not in work.columns:
+            work[col] = ""
+    filled = 0
+    for idx in work.index[miss]:
+        sym = safe_str(work.at[idx, sym_col]).upper()
+        for key in _symbol_keys(sym):
+            meta = listing_map.get(key)
+            if not meta or _sector_is_missing(meta.get("sector")):
+                continue
+            work.at[idx, "sector"] = meta["sector"]
+            if not safe_str(work.at[idx, "industry"]) and meta.get("industry"):
+                work.at[idx, "industry"] = meta["industry"]
+            if not safe_str(work.at[idx, "sub_sector"]) and meta.get("sub_sector"):
+                work.at[idx, "sub_sector"] = meta["sub_sector"]
+            filled += 1
+            break
+    return work
+
+
+def _enrich_superstar_from_db(df: pd.DataFrame) -> pd.DataFrame:
+    """Sector / mcap / website from SQLite only (no screener or Yahoo)."""
+    if df is None or df.empty:
+        return pd.DataFrame()
+    work = df.copy()
+    if "sector" not in work.columns or work["sector"].map(_sector_is_missing).any():
+        work = enrich_superstar_classification(work)
+        work = _apply_listings_sector_fallback(work)
+    work = _attach_mcap_columns(work)
+    work = _attach_website_columns(work)
+    return work
+
+
 def _sector_missing_mask(series: pd.Series) -> pd.Series:
     return series.map(_sector_is_missing)
+
+
+def _website_missing(series: pd.Series) -> pd.Series:
+    return series.map(lambda v: not sanitize_website(v))
+
+
+def _mcap_missing(series: pd.Series) -> pd.Series:
+    vals = pd.to_numeric(series, errors="coerce")
+    return vals.isna()
+
+
+def _count_filled(before: pd.Series, after: pd.Series, *, missing_fn) -> int:
+    if after is None or len(after) == 0:
+        return 0
+    b_miss = missing_fn(before) if before is not None and len(before) else pd.Series(True, index=after.index)
+    a_miss = missing_fn(after)
+    if len(b_miss) != len(a_miss):
+        return int((~a_miss).sum())
+    return int((b_miss & ~a_miss).sum())
 
 
 def _attach_mcap_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -169,11 +267,8 @@ def _attach_website_columns(df: pd.DataFrame) -> pd.DataFrame:
 def _prepare_display_df(df: pd.DataFrame | None) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame()
-    work = df.copy()
-    needs_links = "screener_link" not in work.columns
-    needs_sector = "sector" not in work.columns or work["sector"].map(_sector_is_missing).all()
-    if needs_links or needs_sector:
-        work = enrich_superstar_classification(work)
+    work = _enrich_superstar_from_db(df)
+    if "screener_link" not in work.columns:
         work["ticker"] = work["symbol"]
         work["market"] = work["exchange"].map(
             lambda x: (
@@ -189,15 +284,6 @@ def _prepare_display_df(df: pd.DataFrame | None) -> pd.DataFrame:
         work["sector"] = work["sector"].apply(lambda s: safe_str(s) or "—")
     else:
         work["sector"] = "—"
-    miss = _sector_missing_mask(work["sector"])
-    if miss.any():
-        filled = enrich_superstar_classification(work.loc[miss].copy())
-        if not filled.empty and "sector" in filled.columns:
-            work.loc[miss, "sector"] = filled["sector"].apply(
-                lambda s: safe_str(s) or "—"
-            ).values
-    work = _attach_mcap_columns(work)
-    work = _attach_website_columns(work)
     return work
 
 
@@ -238,73 +324,45 @@ def _apply_superstar_filters(
     return work.reset_index(drop=True)
 
 
-def _fill_superstar_gaps(portfolios: dict, *, max_web: int = 40) -> dict[str, int]:
-    merged = aggregate_all_portfolios(portfolios)
-    if merged.empty:
-        return {"sector": 0, "web": 0, "web_tried": 0}
-
-    if "sector" not in merged.columns:
-        merged["sector"] = ""
-    miss_sec = _sector_missing_mask(merged["sector"])
-    sector_n = 0
-    by_sym: dict[str, pd.Series] = {}
-    if miss_sec.any():
-        filled = enrich_superstar_classification(merged.loc[miss_sec].copy())
-        if not filled.empty and "sector" in filled.columns:
-            sector_n = int((~_sector_missing_mask(filled["sector"])).sum())
-            for _, r in filled.iterrows():
-                sym = safe_str(r.get("symbol")).upper()
-                if sym:
-                    by_sym[sym] = r
-        for _name, data in portfolios.items():
-            if not isinstance(data, dict):
-                continue
-            all_df = data.get("all")
-            if not isinstance(all_df, pd.DataFrame) or all_df.empty or not by_sym:
-                continue
-            work = all_df.copy()
-            if "sector" not in work.columns:
-                work["sector"] = ""
-            changed = False
-            for i, row in work.iterrows():
-                sym = safe_str(row.get("symbol")).upper()
-                src = by_sym.get(sym)
-                if src is None:
-                    continue
-                if not _sector_missing_mask(pd.Series([row.get("sector")])).iloc[0]:
-                    continue
-                work.at[i, "sector"] = safe_str(src.get("sector")) or "—"
-                changed = True
-            if changed:
-                data["all"] = work
-                if "change_type" in work.columns:
-                    data["new_picks"] = work[work["change_type"] == "new"].copy()
-                    data["increased"] = work[work["change_type"] == "increased"].copy()
-                    data["decreased"] = work[work["change_type"] == "decreased"].copy()
-                    data["unchanged"] = work[work["change_type"] == "unchanged"].copy()
-                data["count"] = len(work)
-
-    tickers = sorted({safe_str(t).upper() for t in merged["symbol"] if safe_str(t)})
-    profiles = load_company_profiles_from_db(tickers)
-    need_web = [
-        t for t in tickers if not sanitize_website((profiles.get(t) or {}).get("website"))
-    ][:max_web]
-    web_n = 0
-    market_map: dict[str, str] = {}
-    if "exchange" in merged.columns:
-        for _, row in merged.iterrows():
-            sym = safe_str(row.get("symbol")).upper()
-            if sym and sym not in market_map:
-                market_map[sym] = (
-                    "BSE" if safe_str(row.get("exchange")).upper() == "BSE" else "NSE"
-                )
-    for ticker in need_web:
-        before = sanitize_website((profiles.get(ticker) or {}).get("website"))
-        merge_company_profile({}, ticker, market_map.get(ticker, "NSE"))
-        after = load_company_profiles_from_db([ticker]).get(ticker) or {}
-        if sanitize_website(after.get("website")) and not before:
-            web_n += 1
-    return {"sector": sector_n, "web": web_n, "web_tried": len(need_web)}
+def _fill_superstar_gaps_from_db(portfolios: dict) -> dict[str, int]:
+    """Backfill sector / mcap / website from SQLite caches (no live fetch)."""
+    totals = {"sector": 0, "listing": 0, "web": 0, "mcap": 0}
+    for _name, data in portfolios.items():
+        if not isinstance(data, dict):
+            continue
+        all_df = data.get("all")
+        if not isinstance(all_df, pd.DataFrame) or all_df.empty:
+            continue
+        before = all_df.copy()
+        enriched = _prepare_display_df(before)
+        totals["sector"] += _count_filled(
+            before.get("sector", pd.Series(dtype=object)),
+            enriched.get("sector", pd.Series(dtype=object)),
+            missing_fn=_sector_missing_mask,
+        )
+        totals["web"] += _count_filled(
+            before.get("website", pd.Series(dtype=object)),
+            enriched.get("website", pd.Series(dtype=object)),
+            missing_fn=_website_missing,
+        )
+        totals["mcap"] += _count_filled(
+            before.get("market_cap_cr", pd.Series(dtype=object)),
+            enriched.get("market_cap_cr", pd.Series(dtype=object)),
+            missing_fn=_mcap_missing,
+        )
+        if "sector" in before.columns and "sector" in enriched.columns:
+            b = before["sector"].map(_sector_is_missing)
+            a = enriched["sector"].map(_sector_is_missing)
+            if len(b) == len(a):
+                still = a & ~b
+                if still.any():
+                    listing_only = _apply_listings_sector_fallback(before.loc[still].copy())
+                    if "sector" in listing_only.columns:
+                        totals["listing"] += int(
+                            (~listing_only["sector"].map(_sector_is_missing)).sum()
+                        )
+        data.update(_portfolio_dict_with_display(enriched))
+    return totals
 
 
 def _sector_options(merged: pd.DataFrame) -> list[str]:
@@ -347,22 +405,15 @@ def _prepare_portfolios_for_display(portfolios: dict) -> None:
         all_df = data.get("all")
         if not isinstance(all_df, pd.DataFrame) or all_df.empty:
             continue
-        if "sector" not in all_df.columns or all_df["sector"].map(_sector_is_missing).all():
-            all_df = enrich_superstar_classification(all_df)
         portfolios[name] = _portfolio_dict_with_display(all_df)
     st.session_state[_DISPLAY_READY_KEY] = _CACHE_VERSION
 
 
 def _ensure_merged_classification(merged: pd.DataFrame) -> pd.DataFrame:
-    """Classify + mcap for filter dropdowns and table display."""
+    """Sector / mcap / website for filter dropdowns and table display."""
     if merged.empty:
         return merged
-    work = merged.copy()
-    if "sector" not in work.columns or work["sector"].map(_sector_is_missing).all():
-        work = enrich_superstar_classification(work)
-    if "market_cap_cr" not in work.columns:
-        work = _attach_mcap_columns(work)
-    return work
+    return _enrich_superstar_from_db(merged)
 
 
 def _holdings_tickers() -> set[str]:
@@ -601,7 +652,7 @@ def render_superstars() -> None:
         fill = st.button(
             "Fill gaps",
             use_container_width=True,
-            help="Fill missing Sector from classification DB + fetch Web (screener/Yahoo, up to 40).",
+            help="Fill missing Sector / Mcap / Web from local SQLite (no live fetch).",
         )
 
     if refresh:
@@ -618,15 +669,15 @@ def render_superstars() -> None:
         merged = _ensure_merged_classification(aggregate_all_portfolios(portfolios))
 
     if fill and loaded_count:
-        with st.spinner("Filling missing sectors + websites…"):
-            gap = _fill_superstar_gaps(portfolios, max_web=40)
+        with st.spinner("Filling gaps from database…"):
+            gap = _fill_superstar_gaps_from_db(portfolios)
         st.session_state.pop(_DISPLAY_READY_KEY, None)
         _prepare_portfolios_for_display(portfolios)
         merged = _ensure_merged_classification(aggregate_all_portfolios(portfolios))
         st.success(
             f"Filled **{gap.get('sector', 0)}** sectors · "
-            f"**{gap.get('web', 0)}** websites "
-            f"(tried {gap.get('web_tried', 0)})"
+            f"**{gap.get('mcap', 0)}** mcaps · "
+            f"**{gap.get('web', 0)}** websites"
         )
 
     if not loaded_count:
