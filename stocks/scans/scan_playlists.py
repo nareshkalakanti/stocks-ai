@@ -16,6 +16,12 @@ from stocks.scans.ds_playlist import (
     ds_playlist_listings,
     is_ds_playlist,
 )
+from stocks.scans.fund_watchlist_playlist import (
+    FUND_WATCHLIST_PLAYLIST_LABELS,
+    fund_watchlist_playlist_count,
+    fund_watchlist_playlist_listings,
+    is_fund_watchlist_playlist,
+)
 from stocks.scans.holdings_playlist import (
     HOLDINGS_PLAYLIST_LABEL,
     holdings_playlist_count,
@@ -32,6 +38,7 @@ from stocks.core.text_utils import safe_str
 
 SCAN_PLAYLIST_LABELS = (
     HOLDINGS_PLAYLIST_LABEL,
+    *FUND_WATCHLIST_PLAYLIST_LABELS,
     *NIFTY_PLAYLIST_LABELS,
     DS_PLAYLIST_LABEL,
     BUSINESS_GROUPS_PLAYLIST_LABEL,
@@ -43,6 +50,7 @@ _LEGACY_PLAYLIST_LABELS = frozenset({"Parents", "Spinoffs"})
 def is_scan_playlist(market: str) -> bool:
     return (
         is_holdings_playlist(market)
+        or is_fund_watchlist_playlist(market)
         or is_ds_playlist(market)
         or is_business_groups_playlist(market)
         or is_nifty_index_playlist(market)
@@ -87,6 +95,15 @@ def scan_playlist_listings(
             industry=industry,
             sub_sector=sub_sector,
         )
+    if is_fund_watchlist_playlist(market):
+        return fund_watchlist_playlist_listings(
+            stocks,
+            market,
+            sector=sector,
+            search=search,
+            industry=industry,
+            sub_sector=sub_sector,
+        )
     if is_nifty_index_playlist(market):
         return nifty_playlist_listings(
             stocks,
@@ -118,6 +135,8 @@ def scan_playlist_listings(
 def scan_playlist_count(market: str) -> int:
     if is_holdings_playlist(market):
         return holdings_playlist_count()
+    if is_fund_watchlist_playlist(market):
+        return fund_watchlist_playlist_count(market)
     if is_nifty_index_playlist(market):
         # Cache-only — avoid live NSE fetches while building Market dropdowns.
         return nifty_playlist_count(market, seed_if_empty=False)
@@ -157,6 +176,8 @@ def scan_playlist_note(market: str) -> str:
         return ""
     if is_holdings_playlist(market):
         label = HOLDINGS_PLAYLIST_LABEL
+    elif is_fund_watchlist_playlist(market):
+        label = market
     elif is_nifty_index_playlist(market):
         label = market
     elif is_ds_playlist(market):

@@ -2,22 +2,29 @@
 
 from __future__ import annotations
 
-import html
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 import pandas as pd
 import streamlit as st
 
-from stocks.core.config import SUPERSTAR_CACHE_HOURS
-from stocks.shared.corp_tags import corp_tags_html
+from stocks.core.config import SUPERSTAR_CACHE_HOURS, CAP_TIERS, cap_tier_labels, cap_tier_id_from_label
+from stocks.core.database import (
+    load_company_profiles_from_db,
+    load_market_cap_from_db,
+    save_superstar_holdings,
+    superstar_holdings_db_stats,
+)
+from stocks.core.text_utils import safe_str, sanitize_website
 from stocks.shared.portfolio import load_holdings
-from stocks.shared.links import attach_research_links, screener_url, tradingview_url
-from stocks.dashboards.report_html import embed_html_iframe
-from stocks.core.database import save_superstar_holdings, superstar_holdings_db_stats
+from stocks.shared.links import attach_research_links
+from stocks.shared.fund_watchlists import sync_all_fund_watchlists
+from stocks.scans.scan_toolbar import default_cap_tier_label
+from stocks.governance.score import mcap_cap_code
+from stocks.market.company_profile import merge_company_profile
 from stocks.shared.superstars.holdings import (
     aggregate_all_portfolios,
-    all_investors_summary,
     enrich_superstar_classification,
     portfolios_from_db,
 )
@@ -25,11 +32,28 @@ from stocks.shared.superstars.cache import (
     load_cached_superstar_portfolios,
     save_cached_superstar_portfolios,
 )
-from stocks.shared.superstars.investors import SUPERSTAR_INVESTORS, load_superstar_portfolio
-from stocks.core.text_utils import safe_str
+from stocks.shared.superstars.html import build_superstars_html, superstars_iframe_height
+from stocks.shared.superstars.investors import (
+    SUPERSTAR_INVESTORS,
+    _build_company_lookup,
+    _load_symbol_cache_from_db,
+    load_superstar_portfolio,
+)
+from stocks.dashboards.report_html import embed_html_iframe
 
-_CACHE_VERSION = 13
+_CACHE_VERSION = 19  # NSE SME tickers (strip -SM) for Negen / Niveshaay
 _DISPLAY_READY_KEY = "superstar_display_ready_v"
+_SS_SECTOR_KEY = "ss_sector_filter"
+_SS_CAP_KEY = "ss_cap_tier"
+_SS_INVESTOR_KEY = "ss_investor"
+_SS_CHANGE_KEY = "ss_change_filter"
+_SS_ALL = "All"
+_SS_CHANGE_OPTS = ("All", "New", "Increased", "Decreased")
+_SS_CHANGE_MAP = {
+    "New": "new",
+    "Increased": "increased",
+    "Decreased": "decreased",
+}
 
 
 def _df_row_count(value: pd.DataFrame | list | None) -> int:
@@ -81,33 +105,65 @@ def _hydrate_portfolios_from_db(portfolios: dict, fetched_at: dict) -> bool:
     return True
 
 
-def _company_cell_html(row: pd.Series) -> str:
-    sym = safe_str(row.get("symbol")).upper()
-    name = safe_str(row.get("company_name")) or sym or "—"
-    exch = safe_str(row.get("exchange") or "NSE").upper()
-    sc = row.get("screener_link") or screener_url(
-        sym, "BSE" if exch == "BSE" else "NSE", bse_code=row.get("screener_slug")
+def _sector_missing_mask(series: pd.Series) -> pd.Series:
+    s = series.astype(str).str.strip()
+    return s.eq("") | s.eq("—") | s.eq("nan") | s.eq("None") | series.isna()
+
+
+def _attach_mcap_columns(df: pd.DataFrame) -> pd.DataFrame:
+    work = df.copy()
+    if work.empty:
+        return work
+    if "market_cap_cr" not in work.columns:
+        work["market_cap_cr"] = pd.NA
+    sym_col = "ticker" if "ticker" in work.columns else "symbol"
+
+    def _mcap_keys(t: str) -> list[str]:
+        s = safe_str(t).upper()
+        if not s:
+            return []
+        keys = [s]
+        if s.endswith("-SM"):
+            keys.append(s[:-3])
+        return keys
+
+    tickers: list[str] = []
+    for t in work[sym_col]:
+        tickers.extend(_mcap_keys(t))
+    tickers = list(dict.fromkeys(tickers))
+    if tickers:
+        mcap_df = load_market_cap_from_db(tickers, allow_stale=True)
+        if not mcap_df.empty:
+            mcap_map = {
+                safe_str(r["ticker"]).upper(): r["market_cap_cr"]
+                for _, r in mcap_df.iterrows()
+                if safe_str(r.get("ticker"))
+            }
+            work["market_cap_cr"] = work[sym_col].map(
+                lambda t: next(
+                    (mcap_map[k] for k in _mcap_keys(t) if k in mcap_map),
+                    None,
+                )
+            )
+    work["cap_code"] = work["market_cap_cr"].map(mcap_cap_code)
+    return work
+
+
+def _attach_website_columns(df: pd.DataFrame) -> pd.DataFrame:
+    work = df.copy()
+    if work.empty:
+        return work
+    if "website" not in work.columns:
+        work["website"] = None
+    sym_col = "ticker" if "ticker" in work.columns else "symbol"
+    tickers = [safe_str(t).upper() for t in work[sym_col] if safe_str(t)]
+    if not tickers:
+        return work
+    profiles = load_company_profiles_from_db(tickers)
+    work["website"] = work[sym_col].map(
+        lambda t: sanitize_website((profiles.get(safe_str(t).upper()) or {}).get("website"))
     )
-    tv = row.get("tv_link") or tradingview_url(
-        sym, "BSE" if exch == "BSE" else "NSE", prefer_bse=exch == "BSE"
-    )
-    tags = corp_tags_html(sym)
-    exch_note = (
-        f' <span class="sub">({html.escape(exch)})</span>' if exch and exch != "NSE" else ""
-    )
-    return (
-        f'<div class="company-cell">'
-        f'<div class="company-top">'
-        f'<span class="company-name">{html.escape(name)}</span>'
-        f'<span class="company-actions">'
-        f'<span class="links-inline">'
-        f'<a href="{html.escape(sc)}" target="_blank" rel="noopener noreferrer">SC</a>'
-        f'<a href="{html.escape(tv)}" target="_blank" rel="noopener noreferrer">TV</a>'
-        f"</span></span></div>"
-        f'<div class="sub">{html.escape(sym)}{exch_note}</div>'
-        f"{tags if tags else ''}"
-        f"</div>"
-    )
+    return work
 
 
 def _prepare_display_df(df: pd.DataFrame | None) -> pd.DataFrame:
@@ -117,18 +173,149 @@ def _prepare_display_df(df: pd.DataFrame | None) -> pd.DataFrame:
     if "screener_link" not in work.columns:
         work = enrich_superstar_classification(work)
         work["ticker"] = work["symbol"]
-        work["market"] = work["exchange"].apply(
-            lambda x: "BSE" if safe_str(x).upper() == "BSE" else "NSE"
+        work["market"] = work["exchange"].map(
+            lambda x: (
+                "BSE"
+                if safe_str(x).upper() == "BSE"
+                else ("NSE SME" if safe_str(x).upper() == "NSE SME" else "NSE")
+            )
         )
         work = attach_research_links(work)
-    if "industry" not in work.columns:
-        work["industry"] = work.get("sub_sector", "")
-    work["industry"] = work.apply(
-        lambda r: safe_str(r.get("industry")) or safe_str(r.get("sub_sector")) or "—",
-        axis=1,
-    )
-    work["sector"] = work["sector"].apply(lambda s: safe_str(s) or "—")
+    if "ticker" not in work.columns:
+        work["ticker"] = work["symbol"]
+    if "sector" in work.columns:
+        work["sector"] = work["sector"].apply(lambda s: safe_str(s) or "—")
+    else:
+        work["sector"] = "—"
+    miss = _sector_missing_mask(work["sector"])
+    if miss.any():
+        filled = enrich_superstar_classification(work.loc[miss].copy())
+        if not filled.empty and "sector" in filled.columns:
+            work.loc[miss, "sector"] = filled["sector"].apply(
+                lambda s: safe_str(s) or "—"
+            ).values
+    work = _attach_mcap_columns(work)
+    work = _attach_website_columns(work)
     return work
+
+
+def _cap_tier_mask(mcap: pd.Series, tier_id: str) -> pd.Series:
+    if not tier_id or tier_id == "all":
+        return pd.Series(True, index=mcap.index)
+    tier = next((t for t in CAP_TIERS if t["id"] == tier_id), None)
+    if not tier:
+        return pd.Series(True, index=mcap.index)
+    vals = pd.to_numeric(mcap, errors="coerce")
+    mask = vals.notna()
+    if tier.get("min") is not None:
+        mask &= vals >= float(tier["min"])
+    if tier.get("max") is not None:
+        mask &= vals < float(tier["max"])
+    return mask
+
+
+def _apply_superstar_filters(
+    df: pd.DataFrame | None,
+    *,
+    sector: str,
+    cap_tier_id: str,
+    change: str = "All",
+) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame() if df is None else df.iloc[0:0].copy()
+    work = df.copy()
+    if sector and sector != "All" and "sector" in work.columns:
+        work = work[work["sector"].astype(str) == sector]
+    if cap_tier_id and cap_tier_id != "all":
+        if "market_cap_cr" not in work.columns:
+            work = _attach_mcap_columns(work)
+        work = work[_cap_tier_mask(work["market_cap_cr"], cap_tier_id)]
+    change_key = _SS_CHANGE_MAP.get(change)
+    if change_key and "change_type" in work.columns:
+        work = work[work["change_type"].astype(str).str.lower() == change_key]
+    return work.reset_index(drop=True)
+
+
+def _fill_superstar_gaps(portfolios: dict, *, max_web: int = 40) -> dict[str, int]:
+    merged = aggregate_all_portfolios(portfolios)
+    if merged.empty:
+        return {"sector": 0, "web": 0, "web_tried": 0}
+
+    if "sector" not in merged.columns:
+        merged["sector"] = ""
+    miss_sec = _sector_missing_mask(merged["sector"])
+    sector_n = 0
+    by_sym: dict[str, pd.Series] = {}
+    if miss_sec.any():
+        filled = enrich_superstar_classification(merged.loc[miss_sec].copy())
+        if not filled.empty and "sector" in filled.columns:
+            sector_n = int((~_sector_missing_mask(filled["sector"])).sum())
+            for _, r in filled.iterrows():
+                sym = safe_str(r.get("symbol")).upper()
+                if sym:
+                    by_sym[sym] = r
+        for _name, data in portfolios.items():
+            if not isinstance(data, dict):
+                continue
+            all_df = data.get("all")
+            if not isinstance(all_df, pd.DataFrame) or all_df.empty or not by_sym:
+                continue
+            work = all_df.copy()
+            if "sector" not in work.columns:
+                work["sector"] = ""
+            changed = False
+            for i, row in work.iterrows():
+                sym = safe_str(row.get("symbol")).upper()
+                src = by_sym.get(sym)
+                if src is None:
+                    continue
+                if not _sector_missing_mask(pd.Series([row.get("sector")])).iloc[0]:
+                    continue
+                work.at[i, "sector"] = safe_str(src.get("sector")) or "—"
+                changed = True
+            if changed:
+                data["all"] = work
+                if "change_type" in work.columns:
+                    data["new_picks"] = work[work["change_type"] == "new"].copy()
+                    data["increased"] = work[work["change_type"] == "increased"].copy()
+                    data["decreased"] = work[work["change_type"] == "decreased"].copy()
+                    data["unchanged"] = work[work["change_type"] == "unchanged"].copy()
+                data["count"] = len(work)
+
+    tickers = sorted({safe_str(t).upper() for t in merged["symbol"] if safe_str(t)})
+    profiles = load_company_profiles_from_db(tickers)
+    need_web = [
+        t for t in tickers if not sanitize_website((profiles.get(t) or {}).get("website"))
+    ][:max_web]
+    web_n = 0
+    market_map: dict[str, str] = {}
+    if "exchange" in merged.columns:
+        for _, row in merged.iterrows():
+            sym = safe_str(row.get("symbol")).upper()
+            if sym and sym not in market_map:
+                market_map[sym] = (
+                    "BSE" if safe_str(row.get("exchange")).upper() == "BSE" else "NSE"
+                )
+    for ticker in need_web:
+        before = sanitize_website((profiles.get(ticker) or {}).get("website"))
+        merge_company_profile({}, ticker, market_map.get(ticker, "NSE"))
+        after = load_company_profiles_from_db([ticker]).get(ticker) or {}
+        if sanitize_website(after.get("website")) and not before:
+            web_n += 1
+    return {"sector": sector_n, "web": web_n, "web_tried": len(need_web)}
+
+
+def _sector_options(merged: pd.DataFrame) -> list[str]:
+    if merged.empty or "sector" not in merged.columns:
+        return ["All"]
+    vals = sorted(
+        {
+            safe_str(s)
+            for s in merged["sector"]
+            if safe_str(s) and safe_str(s) != "—"
+        }
+    )
+    return ["All", *vals]
 
 
 def _portfolio_dict_with_display(df: pd.DataFrame) -> dict[str, pd.DataFrame | str | int]:
@@ -149,7 +336,6 @@ def _portfolio_dict_with_display(df: pd.DataFrame) -> dict[str, pd.DataFrame | s
 
 
 def _prepare_portfolios_for_display(portfolios: dict) -> None:
-    """Enrich each investor portfolio once (sector, links) — avoids repeat work per table."""
     if st.session_state.get(_DISPLAY_READY_KEY) == _CACHE_VERSION:
         return
     for name in list(portfolios.keys()):
@@ -163,34 +349,6 @@ def _prepare_portfolios_for_display(portfolios: dict) -> None:
     st.session_state[_DISPLAY_READY_KEY] = _CACHE_VERSION
 
 
-def _change_html(change_display: str, change_type: str) -> str:
-    ct = safe_str(change_type).lower()
-    if ct == "new" or ct == "increased":
-        color = "#16a34a"
-        weight = "700" if ct == "new" else "600"
-    elif ct == "decreased":
-        color = "#dc2626"
-        weight = "600"
-    else:
-        color = "#6b7280"
-        weight = "400"
-    return (
-        f'<span style="color:{color};font-weight:{weight};">'
-        f"{html.escape(change_display)}</span>"
-    )
-
-
-def _row_change_class(change_type: str) -> str:
-    ct = safe_str(change_type).lower()
-    if ct == "new":
-        return " change-new"
-    if ct == "increased":
-        return " change-inc"
-    if ct == "decreased":
-        return " change-dec"
-    return ""
-
-
 def _holdings_tickers() -> set[str]:
     try:
         holdings = load_holdings(seed_if_empty=False)
@@ -201,193 +359,41 @@ def _holdings_tickers() -> set[str]:
         return set()
 
 
-def _table_height(row_count: int) -> int:
-    return min(720, max(120, 56 + row_count * 52))
-
-
-_SUPERSTARS_REPORT_CSS = """
-<style>
-  * { box-sizing: border-box; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    color: #111827;
-    margin: 0;
-    padding: 0;
-    font-size: 13px;
-    line-height: 1.45;
-  }
-  .ss-table-wrap { overflow-x: auto; padding: 0 2px 8px; }
-  .ss-table {
-    width: 100%;
-    border-collapse: collapse;
-    table-layout: auto;
-    font-size: 13px;
-  }
-  .ss-table th, .ss-table td {
-    padding: 10px 12px;
-    border-bottom: 1px solid #e5e7eb;
-    vertical-align: middle;
-  }
-  .ss-table th {
-    background: #f9fafb;
-    font-weight: 600;
-    text-align: left;
-    white-space: nowrap;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #6b7280;
-  }
-  .ss-table th.num, .ss-table td.num {
-    text-align: right;
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
-  .ss-table td.text {
-    color: #374151;
-    max-width: 320px;
-    white-space: normal;
-    line-height: 1.35;
-  }
-  .ss-table tbody tr:hover td { background: #f3f4f6; }
-  .ss-table tbody tr.change-new td { background: #ecfdf5 !important; }
-  .ss-table tbody tr.change-inc td { background: #f0fdf4 !important; }
-  .ss-table tbody tr.change-dec td { background: #fef2f2 !important; }
-  .ss-table tbody tr.change-new:hover td { background: #d1fae5 !important; }
-  .ss-table tbody tr.change-inc:hover td { background: #dcfce7 !important; }
-  .ss-table tbody tr.change-dec:hover td { background: #fee2e2 !important; }
-  .ss-table tbody tr.holdings-match {
-    box-shadow: inset 4px 0 0 #2563eb;
-  }
-  td.company-td { white-space: normal; min-width: 220px; max-width: 380px; }
-  .company-cell { min-width: 0; }
-  .company-top {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .company-name {
-    font-weight: 600;
-    font-size: 14px;
-    line-height: 1.4;
-    letter-spacing: -0.01em;
-    white-space: normal;
-    word-break: break-word;
-    flex: 1;
-    min-width: 0;
-    color: #0f172a;
-  }
-  .company-actions { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
-  .links-inline { display: inline-flex; gap: 4px; flex-shrink: 0; }
-  .links-inline a {
-    display: inline-block;
-    padding: 2px 7px;
-    border-radius: 4px;
-    background: #eff6ff;
-    color: #1d4ed8;
-    text-decoration: none;
-    font-size: 10px;
-    font-weight: 700;
-  }
-  .links-inline a:hover { background: #dbeafe; }
-  .sub { color: #6b7280; font-size: 11px; margin-top: 2px; }
-  .corp-tags {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 5px 6px;
-    margin-top: 5px;
-  }
-  .corp-tag {
-    display: inline-block;
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    line-height: 1.25;
-    padding: 3px 8px;
-    border-radius: 5px;
-    white-space: nowrap;
-  }
-  .corp-tag-bg { color: #5b21b6; background: #ede9fe; }
-  .corp-tag-hold { color: #1d4ed8; background: #dbeafe; }
-  .corp-tag-sme { color: #9a3412; background: #ffedd5; }
-  .corp-tag-dem { color: #92400e; background: #fef3c7; }
-  .corp-tag-spin { color: #0e7490; background: #cffafe; }
-  .corp-tag-spec { color: #9d174d; background: #fce7f3; }
-</style>
-"""
-
-
-def _wrap_superstars_html(body: str) -> str:
-    return (
-        "<!DOCTYPE html><html><head>"
-        '<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"{_SUPERSTARS_REPORT_CSS}</head><body>{body}</body></html>"
-    )
-
-
-def _embed_superstars_table(table_id: str, thead: str, body_rows: list[str]) -> None:
-    if not body_rows:
-        st.caption("No rows.")
-        return
-    body = (
-        f'<div class="ss-table-wrap"><table class="ss-table" id="{html.escape(table_id)}">'
-        f"<thead><tr>{thead}</tr></thead>"
-        f"<tbody>{''.join(body_rows)}</tbody></table></div>"
-    )
-    embed_html_iframe(_wrap_superstars_html(body), height=_table_height(len(body_rows)))
-
-
 def _display_holdings_table(
     df: pd.DataFrame | None,
     *,
-    table_id: str,
-    holdings_symbols: set[str],
+    table_id: str = "",
+    holdings_symbols: set[str] | None = None,
+    show_investor: bool = False,
+    title: str = "SuperStars",
 ) -> None:
+    """Governance Map–style HTML report (interactive table + expand panel)."""
+    del holdings_symbols
+    if df is None or df.empty:
+        st.caption("No holdings.")
+        return
+
     display = _prepare_display_df(df)
     if display.empty:
         st.caption("No holdings.")
         return
+    if show_investor and "investor" in df.columns and "investor" not in display.columns:
+        display = display.copy()
+        if len(display) == len(df):
+            display["investor"] = [safe_str(v) for v in df["investor"]]
 
-    body_rows: list[str] = []
-    for _, row in display.iterrows():
-        sym = safe_str(row.get("symbol")).upper()
-        on_holdings = bool(sym and sym in holdings_symbols)
-        classes: list[str] = []
-        if on_holdings:
-            classes.append("holdings-match")
-        change_cls = _row_change_class(safe_str(row.get("change_type")))
-        if change_cls:
-            classes.append(change_cls.strip())
-        row_cls = f' class="{" ".join(classes)}"' if classes else ""
-
-        holding_pct = (
-            f'{float(row["holding_percent"]):.2f}%'
-            if pd.notna(row.get("holding_percent"))
-            else "—"
-        )
-        body_rows.append(
-            "<tr"
-            + row_cls
-            + ">"
-            f'<td class="company-td">{_company_cell_html(row)}</td>'
-            f'<td class="text">{html.escape(safe_str(row.get("sector")))}</td>'
-            f'<td class="text">{html.escape(safe_str(row.get("industry")))}</td>'
-            f'<td class="num">{holding_pct}</td>'
-            + f"<td class=\"num\">{_change_html(safe_str(row.get('change_display')), safe_str(row.get('change_type')))}</td>"
-            + f'<td class="num">{html.escape(safe_str(row.get("holding_value_display")))}</td>'
-            + f'<td class="num">{html.escape(safe_str(row.get("price_display")) or "—")}</td>'
-            + "</tr>"
-        )
-
-    thead = (
-        "<th>Stock</th><th>Sector</th><th>Industry</th>"
-        '<th class="num">Holding %</th><th class="num">Qtr Change</th>'
-        '<th class="num">Value</th><th class="num">Price</th>'
+    embed_html = build_superstars_html(
+        display,
+        title=title,
+        show_investor=show_investor,
+        standalone=False,
     )
-    _embed_superstars_table(table_id, thead, body_rows)
+    key = table_id or ("ss_report_all" if show_investor else "ss_report_one")
+    embed_html_iframe(
+        embed_html,
+        height=superstars_iframe_height(len(display)),
+        key=key,
+    )
 
 
 def _persist_portfolio(investor: str, data: dict, fetched_at: str) -> int:
@@ -405,16 +411,51 @@ def _refresh_all_portfolios(
     """Fetch every superstar investor, persist to DB, return (rows_saved, timestamp)."""
     ts = datetime.now().strftime("%Y-%m-%d %H:%M")
     total_saved = 0
+    n = len(SUPERSTAR_INVESTORS)
     progress = st.progress(0.0, text="Fetching all superstar portfolios…")
-    for i, inv_entry in enumerate(SUPERSTAR_INVESTORS):
+
+    # Warm caches once — Refresh all uses fast ticker resolve (no Yahoo price checks).
+    _load_symbol_cache_from_db()
+    company_lookup = _build_company_lookup()
+    workers = min(6, max(2, n))
+    done = 0
+
+    def _fetch_one(inv_entry: dict) -> tuple[str, dict]:
         name = inv_entry["name"]
-        progress.progress(
-            i / len(SUPERSTAR_INVESTORS),
-            text=f"Fetching {name} ({i + 1}/{len(SUPERSTAR_INVESTORS)})…",
+        data = load_superstar_portfolio(
+            inv_entry, company_lookup=company_lookup, fast=True
         )
-        portfolios[name] = load_superstar_portfolio(inv_entry)
-        fetched_at[name] = ts
-        total_saved += _persist_portfolio(name, portfolios[name], ts)
+        return name, data
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(_fetch_one, inv_entry): inv_entry["name"]
+            for inv_entry in SUPERSTAR_INVESTORS
+        }
+        for fut in as_completed(futures):
+            name = futures[fut]
+            try:
+                name, data = fut.result()
+            except Exception as exc:
+                data = {
+                    "all": pd.DataFrame(),
+                    "new_picks": pd.DataFrame(),
+                    "increased": pd.DataFrame(),
+                    "decreased": pd.DataFrame(),
+                    "unchanged": pd.DataFrame(),
+                    "count": 0,
+                    "error": str(exc),
+                    "entities": [],
+                }
+            portfolios[name] = data
+            fetched_at[name] = ts
+            total_saved += _persist_portfolio(name, data, ts)
+            done += 1
+            progress.progress(
+                done / n,
+                text=f"Fetched {name} ({done}/{n})…",
+            )
+
     progress.progress(1.0, text="Done")
     progress.empty()
     save_cached_superstar_portfolios(
@@ -427,59 +468,44 @@ def _refresh_all_portfolios(
     return total_saved, ts
 
 
-def _investor_expander_label(name: str, data: dict) -> str:
-    count = int(data.get("count") or 0)
-    new_n = _df_row_count(data.get("new_picks"))
-    inc_n = _df_row_count(data.get("increased"))
-    dec_n = _df_row_count(data.get("decreased"))
-    parts = [f"{count} holdings"]
-    if new_n:
-        parts.append(f"🟢 {new_n} new")
-    if inc_n:
-        parts.append(f"↑ {inc_n}")
-    if dec_n:
-        parts.append(f"↓ {dec_n}")
-    return f"{name} · {' · '.join(parts)}"
-
 
 def _render_investor_section(
     name: str,
-    data: dict,
+    data: dict | None = None,
     *,
+    holdings_df: pd.DataFrame | None = None,
     holdings_symbols: set[str],
+    sector: str = "All",
+    cap_tier_id: str = "all",
+    change: str = "All",
+    show_investor: bool = False,
 ) -> None:
-    if data.get("error"):
+    if data and data.get("error"):
         st.error(f"Could not load portfolio: {data['error']}")
         return
 
-    count = int(data.get("count") or 0)
-    if not count:
+    source = holdings_df if holdings_df is not None else (data or {}).get("all")
+    if source is None or (isinstance(source, pd.DataFrame) and source.empty):
         st.caption("No holdings for the latest quarter.")
         return
 
-    new_df = data.get("new_picks")
-    has_new = isinstance(new_df, pd.DataFrame) and not new_df.empty
+    all_df = _apply_superstar_filters(
+        source, sector=sector, cap_tier_id=cap_tier_id, change=change
+    )
+    if all_df.empty:
+        st.caption("No holdings match filters.")
+        return
 
-    if has_new:
-        st.markdown("**Latest picks**")
-        _display_holdings_table(
-            new_df,
-            table_id=f"superstar_new_{re.sub(r'[^a-z0-9]+', '_', name.lower()).strip('_')}",
-            holdings_symbols=holdings_symbols,
-        )
-
-    st.markdown("**All holdings**")
-    all_df = data.get("all")
-    if isinstance(all_df, pd.DataFrame) and not all_df.empty:
-        all_df = all_df.sort_values(
-            ["holding_value_cr", "holding_percent"],
-            ascending=[False, False],
-            na_position="last",
-        )
+    sort_cols = [c for c in ("holding_value_cr", "holding_percent") if c in all_df.columns]
+    if sort_cols:
+        all_df = all_df.sort_values(sort_cols, ascending=[False] * len(sort_cols), na_position="last")
+    slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") or "all"
     _display_holdings_table(
         all_df,
-        table_id=f"superstar_all_{re.sub(r'[^a-z0-9]+', '_', name.lower()).strip('_')}",
+        table_id=f"superstar_all_{slug}",
         holdings_symbols=holdings_symbols,
+        show_investor=show_investor,
+        title=name if name != "All" else "SuperStars",
     )
 
 
@@ -498,38 +524,9 @@ def render_superstars() -> None:
         st.session_state["superstar_fetched_at"] = {}
 
     investor_names = [entry["name"] for entry in SUPERSTAR_INVESTORS]
-
-    with st.container(border=True):
-        c1, c2 = st.columns([3, 1], vertical_alignment="bottom")
-        with c1:
-            st.caption(
-                f"All **{len(SUPERSTAR_INVESTORS)}** tracked investors · "
-                f"latest picks and full holdings · "
-                f"green = new/increased · red = decreased"
-            )
-        with c2:
-            refresh = st.button(
-                "Refresh all",
-                type="primary",
-                use_container_width=True,
-                help=(
-                    f"Fetch all {len(SUPERSTAR_INVESTORS)} investors from Trendlyne "
-                    f"and save to database (bypasses {SUPERSTAR_CACHE_HOURS}h cache)"
-                ),
-            )
-
+    investor_opts = [_SS_ALL, *investor_names]
     portfolios = st.session_state["superstar_portfolios"]
     fetched_at = st.session_state["superstar_fetched_at"]
-
-    if refresh:
-        total_saved, ts = _refresh_all_portfolios(portfolios, fetched_at)
-        st.session_state.pop(_DISPLAY_READY_KEY, None)
-        stats = superstar_holdings_db_stats()
-        st.success(
-            f"Loaded **{len(SUPERSTAR_INVESTORS)}** investors · "
-            f"**{total_saved:,}** holdings saved to DB · "
-            f"**{stats['symbols']:,}** unique tickers · {ts}"
-        )
 
     loaded_count = _loaded_investor_count(portfolios, investor_names)
     if loaded_count == 0:
@@ -539,71 +536,152 @@ def render_superstars() -> None:
         _hydrate_portfolios_from_db(portfolios, fetched_at)
         loaded_count = _loaded_investor_count(portfolios, investor_names)
 
+    if loaded_count:
+        _prepare_portfolios_for_display(portfolios)
+
+    merged = (
+        aggregate_all_portfolios(portfolios)
+        if loaded_count
+        else pd.DataFrame()
+    )
+    if not merged.empty and "market_cap_cr" not in merged.columns:
+        merged = _attach_mcap_columns(merged)
+
+    sector_opts = _sector_options(merged)
+    cap_labels = cap_tier_labels()
+    if _SS_SECTOR_KEY not in st.session_state or st.session_state[_SS_SECTOR_KEY] not in sector_opts:
+        st.session_state[_SS_SECTOR_KEY] = "All"
+    if _SS_CAP_KEY not in st.session_state or st.session_state[_SS_CAP_KEY] not in cap_labels:
+        st.session_state[_SS_CAP_KEY] = default_cap_tier_label()
+    if (
+        _SS_INVESTOR_KEY not in st.session_state
+        or st.session_state[_SS_INVESTOR_KEY] not in investor_opts
+    ):
+        st.session_state[_SS_INVESTOR_KEY] = _SS_ALL
+    if (
+        _SS_CHANGE_KEY not in st.session_state
+        or st.session_state[_SS_CHANGE_KEY] not in _SS_CHANGE_OPTS
+    ):
+        st.session_state[_SS_CHANGE_KEY] = "All"
+
+    # Investor · Sector · Cap · Change · Refresh · Fill
+    t1, t2, t3, t4, t5, t6 = st.columns(
+        [1.5, 1.1, 0.95, 0.85, 0.65, 0.7], vertical_alignment="bottom"
+    )
+    with t1:
+        investor = st.selectbox("Investor", investor_opts, key=_SS_INVESTOR_KEY)
+    with t2:
+        sector = st.selectbox("Sector", sector_opts, key=_SS_SECTOR_KEY)
+    with t3:
+        st.selectbox("Cap", cap_labels, key=_SS_CAP_KEY)
+    with t4:
+        change = st.selectbox(
+            "Change",
+            list(_SS_CHANGE_OPTS),
+            key=_SS_CHANGE_KEY,
+            help="New = first-time holding this quarter (green rows).",
+        )
+    with t5:
+        refresh = st.button("Refresh", type="primary", use_container_width=True)
+    with t6:
+        fill = st.button(
+            "Fill gaps",
+            use_container_width=True,
+            help="Fill missing Sector from classification DB + fetch Web (screener/Yahoo, up to 40).",
+        )
+
+    if refresh:
+        total_saved, ts = _refresh_all_portfolios(portfolios, fetched_at)
+        fund_counts = sync_all_fund_watchlists()
+        st.session_state.pop(_DISPLAY_READY_KEY, None)
+        _prepare_portfolios_for_display(portfolios)
+        loaded_count = _loaded_investor_count(portfolios, investor_names)
+        fund_n = sum(fund_counts.values())
+        st.success(
+            f"**{loaded_count}** investors · **{total_saved:,}** holdings · {ts}"
+            + (f" · watchlists {fund_n}" if fund_n else "")
+        )
+        merged = aggregate_all_portfolios(portfolios)
+        if not merged.empty and "market_cap_cr" not in merged.columns:
+            merged = _attach_mcap_columns(merged)
+
+    if fill and loaded_count:
+        with st.spinner("Filling missing sectors + websites…"):
+            gap = _fill_superstar_gaps(portfolios, max_web=40)
+        st.session_state.pop(_DISPLAY_READY_KEY, None)
+        _prepare_portfolios_for_display(portfolios)
+        merged = aggregate_all_portfolios(portfolios)
+        if not merged.empty and "market_cap_cr" not in merged.columns:
+            merged = _attach_mcap_columns(merged)
+        st.success(
+            f"Filled **{gap.get('sector', 0)}** sectors · "
+            f"**{gap.get('web', 0)}** websites "
+            f"(tried {gap.get('web_tried', 0)})"
+        )
+
     if not loaded_count:
-        st.info(
-            f"Click **Refresh all** to fetch every superstar portfolio "
-            f"({len(SUPERSTAR_INVESTORS)} investors). "
-            f"Data is saved to the database and reused for **{SUPERSTAR_CACHE_HOURS} hours**."
+        st.info(f"Click **Refresh** to load {len(SUPERSTAR_INVESTORS)} portfolios.")
+        return
+
+    cap_tier_id = cap_tier_id_from_label(st.session_state.get(_SS_CAP_KEY) or "")
+    holdings_symbols = _holdings_tickers()
+    show_all = investor == _SS_ALL
+
+    if show_all:
+        source = merged
+        count = len(source) if isinstance(source, pd.DataFrame) else 0
+        filtered = _apply_superstar_filters(
+            source, sector=sector, cap_tier_id=cap_tier_id, change=change
+        )
+        n_show = len(filtered) if isinstance(filtered, pd.DataFrame) else 0
+        bits = [f"**{loaded_count}** investors", f"**{count}** holdings"]
+        if sector != "All" or cap_tier_id != "all" or change != "All":
+            bits.append(f"**{n_show}** shown")
+        if change == "New" and isinstance(source, pd.DataFrame) and "change_type" in source.columns:
+            bits.append(f"**{int((source['change_type']=='new').sum())}** new total")
+        if fetched_at:
+            bits.append(str(max(fetched_at.values())))
+        st.caption(" · ".join(bits) + " · click row for detail · Web / SC / TV")
+        _render_investor_section(
+            _SS_ALL,
+            holdings_df=source,
+            holdings_symbols=holdings_symbols,
+            sector=sector,
+            cap_tier_id=cap_tier_id,
+            change=change,
+            show_investor=True,
         )
         return
 
-    _prepare_portfolios_for_display(portfolios)
-    holdings_symbols = _holdings_tickers()
-    merged = aggregate_all_portfolios(portfolios)
-    summary = all_investors_summary(merged)
-    db_stats = superstar_holdings_db_stats()
-    overlap = int(
-        merged["symbol"].astype(str).str.upper().isin(holdings_symbols).sum()
-    ) if not merged.empty else 0
+    data = portfolios.get(investor, {})
+    entry = next((e for e in SUPERSTAR_INVESTORS if e["name"] == investor), {})
+    count = int(data.get("count") or 0)
+    filtered = _apply_superstar_filters(
+        data.get("all"), sector=sector, cap_tier_id=cap_tier_id, change=change
+    )
+    n_show = len(filtered) if isinstance(filtered, pd.DataFrame) else 0
 
-    ts_display = ""
-    if fetched_at:
-        ts_display = max(fetched_at.values())
-    elif st.session_state.get("superstar_db_fetched_at"):
-        ts_display = str(st.session_state["superstar_db_fetched_at"])
-
-    meta_bits = [
-        f"**{loaded_count}** investors loaded",
-        f"**{summary['unique_symbols']}** unique stocks",
-        f"**{summary['new_picks']}** new picks",
-        f"**{summary['increased']}** increased",
-        f"**{summary['decreased']}** decreased",
-    ]
-    if overlap:
-        meta_bits.append(f"**{overlap}** in your Holdings")
+    bits = [f"**{count}** holdings"]
+    if sector != "All" or cap_tier_id != "all" or change != "All":
+        bits.append(f"**{n_show}** shown")
+    new_n = _df_row_count(data.get("new_picks"))
+    if new_n:
+        bits.append(f"{new_n} new")
+    funds = (entry or {}).get("funds") or []
+    if funds:
+        bits.append(f"{len(funds)} funds")
+    ts_display = fetched_at.get(investor) or (
+        max(fetched_at.values()) if fetched_at else ""
+    )
     if ts_display:
-        meta_bits.append(f"as of {ts_display}")
-    if db_stats.get("rows"):
-        meta_bits.append(f"**{db_stats['rows']:,}** rows in DB")
-    st.write(" · ".join(meta_bits))
+        bits.append(str(ts_display))
+    st.caption(" · ".join(bits) + " · set **Change = New** to see first-time buys")
 
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Investors", loaded_count)
-    c2.metric("Unique stocks", summary["unique_symbols"])
-    c3.metric("New picks", summary["new_picks"])
-    c4.metric("Increased", summary["increased"])
-    c5.metric("Decreased", summary["decreased"])
-
-    st.divider()
-
-    for entry in SUPERSTAR_INVESTORS:
-        name = entry["name"]
-        data = portfolios.get(name, {})
-        slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
-        new_n = _df_row_count(data.get("new_picks"))
-        inc_n = _df_row_count(data.get("increased"))
-        expanded = bool(new_n or inc_n)
-        load_key = f"ss_loaded_{slug}"
-        if load_key not in st.session_state:
-            st.session_state[load_key] = expanded
-        with st.expander(_investor_expander_label(name, data), expanded=expanded):
-            if not st.session_state[load_key]:
-                if st.button("Show holdings", key=f"ss_show_{slug}", use_container_width=True):
-                    st.session_state[load_key] = True
-                    st.rerun()
-            else:
-                _render_investor_section(
-                    name,
-                    data,
-                    holdings_symbols=holdings_symbols,
-                )
+    _render_investor_section(
+        investor,
+        data,
+        holdings_symbols=holdings_symbols,
+        sector=sector,
+        cap_tier_id=cap_tier_id,
+        change=change,
+    )

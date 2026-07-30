@@ -79,6 +79,55 @@ def _fmt_when(val) -> str:
         return s[:16]
 
 
+def _fmt_price(val) -> str:
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return "—"
+    try:
+        n = float(val)
+    except (TypeError, ValueError):
+        return "—"
+    if n >= 1000:
+        return f"₹{n:,.1f}"
+    if n >= 100:
+        return f"₹{n:.1f}"
+    return f"₹{n:.2f}"
+
+
+def _fmt_mcap(val) -> str:
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return "—"
+    try:
+        n = float(val)
+    except (TypeError, ValueError):
+        return "—"
+    if n >= 1000:
+        return f"₹{n:,.0f} Cr"
+    if n >= 100:
+        return f"₹{n:.0f} Cr"
+    return f"₹{n:.1f} Cr"
+
+
+def _price_cell(val) -> str:
+    text = _fmt_price(val)
+    if text == "—":
+        return '<td class="eq-muted">—</td>'
+    return f'<td class="eq-price">{html.escape(text)}</td>'
+
+
+def _mcap_cell(val) -> str:
+    text = _fmt_mcap(val)
+    if text == "—":
+        return '<td class="eq-muted">—</td>'
+    return f'<td class="eq-mcap">{html.escape(text)}</td>'
+
+
+def _sector_cell(val) -> str:
+    s = safe_str(val)
+    if not s:
+        return '<td class="eq-muted">—</td>'
+    return f'<td class="eq-sector" title="{html.escape(s)}">{html.escape(s)}</td>'
+
+
 _EQ_CSS = """
 <style>
   .eq-wrap {
@@ -130,6 +179,30 @@ _EQ_CSS = """
     color:#64748b; font-size:12.5px; margin-top:4px; line-height:1.35;
     display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
     overflow:hidden;
+  }
+  .eq-pick .eq-pick-price {
+    margin-top:8px; font-size:20px; font-weight:800; color:#0f172a;
+    font-variant-numeric: tabular-nums; letter-spacing:-0.02em;
+  }
+  .eq-pick .eq-pick-price.eq-muted { font-size:14px; font-weight:600; color:#94a3b8; }
+  .eq-pick .eq-pick-meta {
+    display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;
+  }
+  .eq-chip-meta {
+    display:inline-block; padding:3px 8px; border-radius:999px;
+    background:#f1f5f9; color:#475569; font-size:11px; font-weight:600;
+    border:1px solid #e2e8f0; max-width:100%;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .eq-chip-meta.eq-mcap-chip { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }
+  .eq-price {
+    font-weight:700; color:#0f172a; font-variant-numeric: tabular-nums;
+  }
+  .eq-mcap {
+    font-weight:600; color:#334155; font-variant-numeric: tabular-nums;
+  }
+  .eq-sector {
+    max-width:140px; overflow:hidden; text-overflow:ellipsis; color:#475569;
   }
   .eq-pick .eq-pick-stats {
     display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:14px; font-size:12px;
@@ -290,6 +363,17 @@ def _pick_card(r: pd.Series) -> str:
     ret = r.get("return_score")
     d1 = r.get("ret_1d")
     np_y = r.get("np_yoy")
+    price_txt = _fmt_price(r.get("price_now"))
+    price_cls = "eq-pick-price" if price_txt != "—" else "eq-pick-price eq-muted"
+    sector = safe_str(r.get("sector")) or safe_str(r.get("industry"))
+    mcap_txt = _fmt_mcap(r.get("market_cap_cr"))
+    meta_bits = []
+    if sector:
+        meta_bits.append(
+            f'<span class="eq-chip-meta" title="{html.escape(sector)}">{html.escape(sector)}</span>'
+        )
+    if mcap_txt != "—":
+        meta_bits.append(f'<span class="eq-chip-meta eq-mcap-chip">{html.escape(mcap_txt)}</span>')
 
     def _n(v, suffix="") -> str:
         if v is None or (isinstance(v, float) and pd.isna(v)):
@@ -305,6 +389,8 @@ def _pick_card(r: pd.Series) -> str:
         <div>
           <a class="eq-pick-ticker" href="{html.escape(tv)}" target="_blank" rel="noopener noreferrer">{html.escape(ticker)}</a>
           <div class="eq-pick-name">{name}</div>
+          <div class="{price_cls}">{html.escape(price_txt)}</div>
+          {f'<div class="eq-pick-meta">{"".join(meta_bits)}</div>' if meta_bits else ''}
         </div>
         {_badge_cell(tag).replace("<td>", "").replace("</td>", "")}
       </div>
@@ -326,6 +412,7 @@ def build_earningsq_html(
     subtitle: str | None = None,
     standalone: bool = True,
     top_n: int = 8,
+    scan_stats: dict | None = None,
 ) -> str:
     if df is None or df.empty:
         body = (
@@ -354,6 +441,9 @@ def build_earningsq_html(
             f"{_badge_cell(tag)}"
             f'<td class="eq-ticker"><a href="{html.escape(tv)}" target="_blank" rel="noopener noreferrer">{html.escape(ticker)}</a>'
             f'<div class="eq-meta">{name}</div>{_links_html(r, compact=True)}</td>'
+            f"{_sector_cell(r.get('sector') or r.get('industry'))}"
+            f"{_mcap_cell(r.get('market_cap_cr'))}"
+            f"{_price_cell(r.get('price_now'))}"
             f"<td>{html.escape(_fmt_when(r.get('broadcast_at')))}</td>"
             f"{_hours_cell(r.get('market_hours'))}"
             f"{_score_cell(r.get('surprise_score'))}"
@@ -368,6 +458,20 @@ def build_earningsq_html(
     meta = subtitle or f"{len(work)} prints"
     strong_n = int((work["quality_tag"] == "strong").sum())
     fade_n = int((work["quality_tag"] == "fade").sum())
+    stats = scan_stats or dict(getattr(df, "attrs", {}) or {}).get("scan_stats") or {}
+    raw_n = int(stats.get("nse_announcements_raw") or 0)
+    uniq_n = int(stats.get("unique_tickers") or 0)
+    uni_n = int(stats.get("nse_equity_universe") or 0)
+    coverage = ""
+    if raw_n or uniq_n or uni_n:
+        parts = []
+        if raw_n:
+            parts.append(f"{raw_n:,} NSE announcements scanned")
+        if uniq_n:
+            parts.append(f"{uniq_n:,} result stocks scored")
+        if uni_n:
+            parts.append(f"{uni_n:,} NSE equities listed")
+        coverage = " · ".join(parts)
 
     section = f"""
 {_EQ_CSS}
@@ -378,6 +482,7 @@ def build_earningsq_html(
     <span><span class="eq-badge eq-badge-strong">Strong</span> good print</span>
     <span><span class="eq-badge eq-badge-soft">Mild</span> positive but softer</span>
     <span><span class="eq-badge eq-badge-fade">Caution</span> big surprise, weak price</span>
+    {f'<span><strong>Coverage</strong> {html.escape(coverage)}</span>' if coverage else ''}
   </div>
 
   <div class="eq-section-label">Top picks · {html.escape(meta)}</div>
@@ -398,6 +503,9 @@ def build_earningsq_html(
         <tr>
           <th>Quality</th>
           <th>Stock</th>
+          <th>Sector</th>
+          <th>Mcap</th>
+          <th>Price</th>
           <th>Printed</th>
           <th>When</th>
           <th title="Earnings surprise score">Surprise</th>

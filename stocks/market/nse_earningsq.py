@@ -123,13 +123,21 @@ def normalize_earningsq_announcement(item: dict) -> dict | None:
 def fetch_nse_earnings_announcements(
     *,
     lookback_days: int = 7,
-) -> list[dict]:
+) -> tuple[list[dict], dict[str, int]]:
     """
     NSE equities corporate announcements in ``lookback_days``, filtered to
     financial-result prints. Newest first. Deduped per ticker (latest wins).
+
+    Returns ``(rows, stats)`` where stats covers raw feed size vs result prints.
     """
     end = datetime.now()
     start = end - timedelta(days=max(1, int(lookback_days)))
+    stats: dict[str, int] = {
+        "lookback_days": int(lookback_days),
+        "nse_announcements_raw": 0,
+        "result_prints": 0,
+        "unique_tickers": 0,
+    }
     session = _session_for_thread()
     try:
         resp = session.get(
@@ -144,24 +152,28 @@ def fetch_nse_earnings_announcements(
         resp.raise_for_status()
         items = resp.json()
     except Exception:
-        return []
+        return [], stats
 
     if not isinstance(items, list):
-        return []
+        return [], stats
 
+    stats["nse_announcements_raw"] = len(items)
     rows: list[dict] = []
     for item in items:
         row = normalize_earningsq_announcement(item)
         if row:
             rows.append(row)
 
+    stats["result_prints"] = len(rows)
     rows.sort(key=lambda r: r["broadcast_at"], reverse=True)
     latest: dict[str, dict] = {}
     for row in rows:
         t = row["ticker"]
         if t not in latest:
             latest[t] = row
-    return sorted(latest.values(), key=lambda r: r["broadcast_at"], reverse=True)
+    out = sorted(latest.values(), key=lambda r: r["broadcast_at"], reverse=True)
+    stats["unique_tickers"] = len(out)
+    return out, stats
 
 
 def fetch_nse_financial_results_meta(*, period: str = "Quarterly") -> list[dict]:

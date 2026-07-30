@@ -176,8 +176,12 @@ def enrich_superstar_classification(df: pd.DataFrame) -> pd.DataFrame:
 
     work = df.copy()
     work["ticker"] = work["symbol"]
-    work["market"] = work["exchange"].apply(
-        lambda x: "BSE" if safe_str(x).upper() == "BSE" else "NSE"
+    work["market"] = work["exchange"].map(
+        lambda x: (
+            "BSE"
+            if safe_str(x).upper() == "BSE"
+            else ("NSE SME" if safe_str(x).upper() == "NSE SME" else "NSE")
+        )
     )
     work = enrich_stocks_classification(work)
     return apply_display_sector_mapping(work)

@@ -10,9 +10,10 @@ from typing import Any, Callable
 import pandas as pd
 
 from stocks.core.config import HOLDINGS_PEAD_CACHE_HOURS, yfinance_worker_count
-from stocks.core.database import load_pead2_cache
+from stocks.core.database import load_market_cap_from_db, load_pead2_cache
 from stocks.core.json_utils import json_safe_obj
 from stocks.core.text_utils import safe_str
+from stocks.listings.classification_service import load_classification_maps, lookup_classification
 from stocks.market.nse_earningsq import fetch_nse_earnings_announcements
 from stocks.strategies.earningsq.scores import (
     compute_return_score,
@@ -267,6 +268,105 @@ def load_fixture_events() -> list[dict]:
     return data if isinstance(data, list) else []
 
 
+def attach_sector_mcap(df: pd.DataFrame) -> pd.DataFrame:
+    """Fill sector / market_cap_cr from classification maps + SQLite / PEAD cache."""
+    if df is None or df.empty or "ticker" not in df.columns:
+        return df
+    out = df.copy()
+    tickers = (
+        out["ticker"].astype(str).str.strip().str.upper().replace("", pd.NA).dropna().unique().tolist()
+    )
+    if not tickers:
+        return out
+
+    mcap_map: dict[str, float] = {}
+    try:
+        # Prefer fresh cache; fall back to last-known so names like CENTENKA still show mcap.
+        for allow_stale in (False, True):
+            mcap_df = load_market_cap_from_db(tickers, allow_stale=allow_stale)
+            if mcap_df is None or mcap_df.empty:
+                continue
+            for _, row in mcap_df.iterrows():
+                t = safe_str(row.get("ticker")).upper()
+                if t in mcap_map:
+                    continue
+                val = row.get("market_cap_cr")
+                if t and val is not None and not (isinstance(val, float) and pd.isna(val)):
+                    try:
+                        mcap_map[t] = float(val)
+                    except (TypeError, ValueError):
+                        continue
+    except Exception:
+        pass
+
+    missing = [t for t in tickers if t not in mcap_map]
+    if missing:
+        try:
+            pead_map = load_pead2_cache(missing, max_hours=HOLDINGS_PEAD_CACHE_HOURS)
+            for t, blob in (pead_map or {}).items():
+                key = safe_str(t).upper()
+                if not key or key in mcap_map or not isinstance(blob, dict):
+                    continue
+                raw = blob.get("market_cap_cr")
+                if raw is None:
+                    lag0 = (blob.get("lags") or {}).get("0")
+                    if isinstance(lag0, dict):
+                        snap = lag0.get("snapshot") if isinstance(lag0.get("snapshot"), dict) else {}
+                        raw = snap.get("market_cap_cr") or lag0.get("market_cap_cr")
+                try:
+                    if raw is not None and not pd.isna(raw):
+                        mcap_map[key] = float(raw)
+                except (TypeError, ValueError):
+                    continue
+        except Exception:
+            pass
+
+    class_maps = None
+    try:
+        class_maps = load_classification_maps()
+    except Exception:
+        class_maps = None
+
+    sectors: list[str] = []
+    industries: list[str] = []
+    mcaps: list[float | None] = []
+    for _, row in out.iterrows():
+        t = safe_str(row.get("ticker")).upper()
+        sector = safe_str(row.get("sector"))
+        industry = safe_str(row.get("industry"))
+        if class_maps is not None and (not sector or not industry):
+            s, i, _ss = lookup_classification(
+                t, maps=class_maps, market=safe_str(row.get("market")) or "NSE"
+            )
+            sector = sector or s or i
+            industry = industry or i
+        sectors.append(sector or "")
+        industries.append(industry or "")
+
+        mcap = row.get("market_cap_cr")
+        if mcap is None or (isinstance(mcap, float) and pd.isna(mcap)):
+            mcap = mcap_map.get(t)
+            if mcap is None:
+                snap = row.get("snapshot")
+                if isinstance(snap, dict):
+                    raw = snap.get("market_cap_cr")
+                    try:
+                        mcap = float(raw) if raw is not None and not pd.isna(raw) else None
+                    except (TypeError, ValueError):
+                        mcap = None
+        else:
+            try:
+                mcap = float(mcap)
+            except (TypeError, ValueError):
+                mcap = mcap_map.get(t)
+        mcaps.append(mcap)
+
+    out["sector"] = sectors
+    out["industry"] = industries
+    out["market_cap_cr"] = mcaps
+    return out
+
+
 def run_earningsq_scan(
     *,
     lookback_days: int = 7,
@@ -283,15 +383,44 @@ def run_earningsq_scan(
     2) Enrich growth metrics from PEAD2 cache (long TTL)
     3) Optional post-result returns from Yahoo/BSE history
     4) Score surprise + return
+
+    Scan coverage is stored on ``df.attrs["scan_stats"]``.
     """
-    events = fetch_nse_earnings_announcements(lookback_days=lookback_days)
+    events, feed_stats = fetch_nse_earnings_announcements(lookback_days=lookback_days)
     source = "nse"
     if not events and use_fixtures_if_empty:
         events = load_fixture_events()
         source = "fixture"
+        feed_stats = {
+            "lookback_days": int(lookback_days),
+            "nse_announcements_raw": 0,
+            "result_prints": len(events),
+            "unique_tickers": len(
+                {safe_str(e.get("ticker")).upper() for e in events if safe_str(e.get("ticker"))}
+            ),
+        }
+
+    nse_universe = 0
+    try:
+        from stocks.market.nse_equity_listings import fetch_nse_equity_listings
+
+        listings = fetch_nse_equity_listings(force=False)
+        if listings is not None and not listings.empty:
+            nse_universe = int(listings["ticker"].nunique()) if "ticker" in listings.columns else len(listings)
+    except Exception:
+        nse_universe = 0
+
+    scan_stats = {
+        **feed_stats,
+        "nse_equity_universe": nse_universe,
+        "scored": 0,
+        "feed_source": source,
+    }
 
     if not events:
-        return pd.DataFrame()
+        empty = pd.DataFrame()
+        empty.attrs["scan_stats"] = scan_stats
+        return empty
 
     tickers = [safe_str(e.get("ticker")).upper() for e in events if safe_str(e.get("ticker"))]
     pead_map = load_pead2_cache(tickers, max_hours=HOLDINGS_PEAD_CACHE_HOURS)
@@ -331,8 +460,11 @@ def run_earningsq_scan(
                 continue
 
     df = pd.DataFrame(json_safe_obj(enriched))
+    scan_stats["scored"] = len(df)
     if df.empty:
+        df.attrs["scan_stats"] = scan_stats
         return df
+    df = attach_sector_mcap(df)
     df["feed_source"] = source
     df["fetched_at"] = datetime.now(timezone.utc).isoformat()
     if min_surprise is not None and "surprise_score" in df.columns:
@@ -341,11 +473,14 @@ def run_earningsq_scan(
     sort_cols = [c for c in ("broadcast_at", "ticker") if c in df.columns]
     if sort_cols:
         df = df.sort_values(sort_cols, ascending=[False, True], kind="mergesort")
-    return df.reset_index(drop=True)
+    out = df.reset_index(drop=True)
+    out.attrs["scan_stats"] = scan_stats
+    return out
 
 
 __all__ = [
     "FIXTURES_PATH",
+    "attach_sector_mcap",
     "enrich_earningsq_row",
     "load_fixture_events",
     "metrics_from_quarters",

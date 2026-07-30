@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+import threading
 from html import unescape
 from typing import Any
 
@@ -25,33 +26,206 @@ TRENDLYNE_PORTFOLIO_URL = (
     "{portfolio_id}/latest/{portfolio_slug}/"
 )
 
-_STOCKROW_TR_RE = re.compile(
-    r'<tr>\s*<td[^>]*>.*?class="nolb stockrow"[^>]*>.*?</tr>',
-    re.S | re.I,
+# NOTE: do not use a DOTALL `<tr>.*?stockrow.*?</tr>` regex on full pages —
+# Trendlyne HTML is ~1MB and that pattern hangs on catastrophic backtracking.
+_STOCKROW_ANCHOR_RE = re.compile(
+    r'<a[^>]*class="[^"]*stockrow[^"]*"[^>]*>(.*?)</a>',
+    re.I | re.S,
 )
+_STOCKROW_TITLE_RE = re.compile(
+    r'title="([^"]+?)\s+Share Price',
+    re.I,
+)
+_TD_RE = re.compile(r"<td[^>]*>(.*?)</td>", re.I | re.S)
+_TAG_RE = re.compile(r"<[^>]+>")
+
 
 SUPERSTAR_INVESTORS = [
-    {"name": "Manohar Devabhaktuni", "query": "MANOHAR DEVABHAKTUNI"},
-    {"name": "Madhusudan Kela", "query": "MADHUSUDAN KELA"},
-    {"name": "Ashish Kacholia", "query": "ASHISH KACHOLIA"},
-    {"name": "Dolly Khanna", "query": "DOLLY KHANNA"},
-    {"name": "Porinju V Veliyath", "query": "PORINJU V VELIYATH"},
-    {"name": "Ramesh Damani", "query": "RAMESH DAMANI"},
     {
-        "name": "Sunil Kumar",
-        "query": "SUNIL KUMAR",
-        "portfolio_id": "53800",
-        "portfolio_slug": "sunil-kumar-portfolio",
+        "name": 'Radhakishan Damani',
+        "portfolio_id": '178317',
+        "portfolio_slug": 'radhakishan-damani-portfolio',
+        "query": 'RADHAKISHAN DAMANI',
+        "funds": [
+            {"label": 'Bright Star Investments', "query": 'bright star investments'},
+        ],
     },
-    {"name": "Radhakishan Damani", "query": "RADHAKISHAN DAMANI"},
     {
-        "name": "Sunil Singhania",
-        "query": "SUNIL SINGHANIA",
-        "portfolio_id": "182955",
-        "portfolio_slug": "sunil-singhania-portfolio",
+        "name": 'Rakesh Jhunjhunwala and Associates',
+        "portfolio_id": '53781',
+        "portfolio_slug": 'rakesh-jhunjhunwala-and-associates-portfolio',
+        "query": 'RAKESH JHUNJHUNWALA AND ASSOCIATES',
+        "funds": [
+            {"label": 'RARE Enterprises', "query": 'RARE ENTERPRISES'},
+            {
+                "label": 'Rekha Jhunjhunwala',
+                "portfolio_id": '53782',
+                "portfolio_slug": 'rekha-jhunjhunwala-portfolio',
+                "query": 'REKHA JHUNJHUNWALA',
+            },
+        ],
     },
-    {"name": "Mukul Mahavir Agrawal", "query": "MUKUL MAHAVIR AGRAWAL"},
-    {"name": "Vijay Kishanlal Kedia", "query": "VIJAY KISHANLAL KEDIA"},
+    {
+        "name": 'Mukul Agrawal',
+        "portfolio_id": '53774',
+        "portfolio_slug": 'mukul-agrawal-portfolio',
+        "query": 'MUKUL AGRAWAL',
+        "funds": [],
+    },
+    {
+        "name": 'Akash Bhanshali',
+        "portfolio_id": '53740',
+        "portfolio_slug": 'akash-bhanshali-portfolio',
+        "query": 'AKASH BHANSHALI',
+        "funds": [],
+    },
+    {
+        "name": 'Nemish S Shah',
+        "portfolio_id": '53776',
+        "portfolio_slug": 'nemish-s-shah-portfolio',
+        "query": 'NEMISH S SHAH',
+        "funds": [],
+    },
+    {
+        "name": 'Ashish Kacholia',
+        "portfolio_id": '53746',
+        "portfolio_slug": 'ashish-kacholia-portfolio',
+        "query": 'ASHISH KACHOLIA',
+        "funds": [],
+    },
+    {
+        "name": 'Sunil Singhania',
+        "portfolio_id": '182955',
+        "portfolio_slug": 'sunil-singhania-portfolio',
+        "query": 'SUNIL SINGHANIA',
+        "funds": [
+            {"label": 'Abakkus Fund', "portfolio_id": '584233', "portfolio_slug": 'abakkus-fund-portfolio'},
+            {"label": 'Abakkus Growth Fund -1', "query": 'ABAKKUS GROWTH FUND -1'},
+            {"label": 'Abakkus Emerging Opportunities Fund-1', "query": 'ABAKKUS EMERGING OPPORTUNITIES FUND-1'},
+            {"label": 'Abakkus Diversified Alpha Fund', "query": 'abakkus diversified alpha fund'},
+        ],
+    },
+    {
+        "name": 'Madhusudan Kela',
+        "portfolio_id": '584325',
+        "portfolio_slug": 'madhusudan-kela-portfolio',
+        "query": 'MADHUSUDAN KELA',
+        "funds": [],
+    },
+    {
+        "name": 'Anil Kumar Goel and Associates',
+        "portfolio_id": '53743',
+        "portfolio_slug": 'anil-kumar-goel-and-associates-portfolio',
+        "query": 'ANIL KUMAR GOEL AND ASSOCIATES',
+        "funds": [],
+    },
+    {
+        "name": 'Ashish Dhawan',
+        "portfolio_id": '53745',
+        "portfolio_slug": 'ashish-dhawan-portfolio',
+        "query": 'ASHISH DHAWAN',
+        "funds": [],
+    },
+    {
+        "name": 'Porinju V Veliyath',
+        "portfolio_id": '53777',
+        "portfolio_slug": 'porinju-v-veliyath-portfolio',
+        "query": 'PORINJU V VELIYATH',
+        "funds": [
+            {"label": 'Equity Intelligence India Pvt Ltd', "query": 'equity intelligence india private limited'},
+        ],
+    },
+    {
+        "name": 'Vijay Kishanlal Kedia',
+        "portfolio_id": '53805',
+        "portfolio_slug": 'vijay-kishanlal-kedia-portfolio',
+        "query": 'VIJAY KISHANLAL KEDIA',
+        "funds": [],
+    },
+    {
+        "name": 'Dolly Khanna',
+        "portfolio_id": '53757',
+        "portfolio_slug": 'dolly-khanna-portfolio',
+        "query": 'DOLLY KHANNA',
+        "funds": [],
+    },
+    {
+        "name": 'Ramesh Damani',
+        "portfolio_id": '62728',
+        "portfolio_slug": 'ramesh-damani-portfolio',
+        "query": 'RAMESH DAMANI',
+        "funds": [],
+    },
+    {
+        "name": 'Sunil Kumar',
+        "portfolio_id": '53800',
+        "portfolio_slug": 'sunil-kumar-portfolio',
+        "query": 'SUNIL KUMAR',
+        "funds": [],
+    },
+    {
+        "name": 'Ajay Upadhyaya',
+        "portfolio_id": '53739',
+        "portfolio_slug": 'ajay-upadhyaya-portfolio',
+        "query": 'AJAY UPADHYAYA',
+        "funds": [],
+    },
+    {
+        "name": 'Hitesh Ramji Javeri and Associates',
+        "portfolio_id": '53762',
+        "portfolio_slug": 'hitesh-ramji-javeri-and-associates-portfolio',
+        "query": 'HITESH RAMJI JAVERI AND ASSOCIATES',
+        "funds": [],
+    },
+    {
+        "name": 'Vanaja Sundar Iyer',
+        "portfolio_id": '53804',
+        "portfolio_slug": 'vanaja-sundar-iyer-portfolio',
+        "query": 'VANAJA SUNDAR IYER',
+        "funds": [],
+    },
+    {
+        "name": 'Sanjay Gupta',
+        "portfolio_id": '53787',
+        "portfolio_slug": 'sanjay-gupta-portfolio',
+        "query": 'SANJAY GUPTA',
+        "funds": [],
+    },
+    {
+        "name": 'Nikhil Vora',
+        "portfolio_id": '584329',
+        "portfolio_slug": 'nikhil-vora-portfolio',
+        "query": 'NIKHIL VORA',
+        "funds": [],
+    },
+    {
+        "name": 'Shankar Sharma',
+        "portfolio_id": '584326',
+        "portfolio_slug": 'shankar-sharma-portfolio',
+        "query": 'SHANKAR SHARMA',
+        "funds": [],
+    },
+    {
+        "name": 'Manohar Devabhaktuni',
+        "query": 'MANOHAR DEVABHAKTUNI',
+        "funds": [],
+    },
+    {
+        "name": 'Negen Capital / Negen Undiscovered Value Fund',
+        "query": 'NEGEN',
+        "funds": [
+            {"label": 'Negen Undiscovered Value Fund', "query": 'NEGEN UNDISCOVERED VALUE FUND'},
+            {"label": 'Negen Capital Services Pvt Ltd', "query": 'negen capital services pvt ltd'},
+        ],
+    },
+    {
+        "name": 'Niveshaay',
+        "query": 'niveshaay',
+        "funds": [
+            {"label": 'Niveshaay Hedgehogs Fund', "query": 'niveshaay hedgehogs fund'},
+            {"label": 'Niveshaay Sambhav Fund', "query": 'niveshaay sambhav fund'},
+        ],
+    },
 ]
 
 # Fast path for names yfinance may not return cleanly
@@ -67,6 +241,32 @@ COMPANY_OVERRIDES: dict[str, dict[str, str]] = {
         "exchange": "NSE",
         "screener_slug": "IBULLSLTD",
     },
+    # BSE / recently listed — not always in NSE equity+SME CSV yet
+    "digilogic systems": {
+        "symbol": "DIGILOGIC",
+        "exchange": "BSE",
+        "screener_slug": "DIGILOGIC",
+    },
+    "hannah joseph hospital": {
+        "symbol": "HANNAH",
+        "exchange": "BSE",
+        "screener_slug": "HANNAH",
+    },
+    "jd cables": {
+        "symbol": "JDCABLES",
+        "exchange": "BSE",
+        "screener_slug": "JDCABLES",
+    },
+    "apollo techno industries": {
+        "symbol": "ATIL",
+        "exchange": "BSE",
+        "screener_slug": "ATIL",
+    },
+    "true colors": {
+        "symbol": "TRUECOLORS",
+        "exchange": "BSE",
+        "screener_slug": "TRUECOLORS",
+    },
 }
 
 _NAME_ABBREVS = (
@@ -76,6 +276,9 @@ _NAME_ABBREVS = (
     (r"\bfin\b", "finance"),
     (r"\bintl\b", "international"),
     (r"\bind\b", "industries"),
+    (r"\bcomms\b", "communications"),
+    (r"\binfra\b", "infrastructure"),
+    (r"\bengg\b", "engineering"),
     (r"\bltd\b", ""),
     (r"\blimited\b", ""),
     (r"\bprivate\b", ""),
@@ -110,10 +313,54 @@ _ROW_RE_V2 = re.compile(
     re.S,
 )
 
-RESOLVER_VERSION = 5
+RESOLVER_VERSION = 6  # NSE SME: strip -SM, keep NSE SME exchange, abbrev expand
 
 _symbol_cache: dict[str, dict[str, str]] = {}
 _price_cache: dict[str, float | None] = {}
+_symbol_cache_lock = threading.Lock()
+
+
+def _sme_ticker_set() -> frozenset[str]:
+    try:
+        from stocks.shared.corp_tags import nse_sme_ticker_set
+
+        return nse_sme_ticker_set()
+    except Exception:
+        return frozenset()
+
+
+def _normalize_listing_meta(meta: dict[str, str] | None) -> dict[str, str]:
+    """Map Trendlyne ``TICKER-SM`` → listing ticker + ``NSE SME`` when known."""
+    empty = {"symbol": "", "exchange": "", "screener_slug": ""}
+    if not meta:
+        return empty
+    symbol = safe_str(meta.get("symbol")).upper()
+    exchange = safe_str(meta.get("exchange")).upper() or "NSE"
+    slug = safe_str(meta.get("screener_slug")) or symbol
+    if not symbol:
+        return empty
+    base = symbol[:-3] if symbol.endswith("-SM") else symbol
+    sme = _sme_ticker_set()
+    if base in sme or symbol in sme:
+        return {
+            "symbol": base,
+            "exchange": "NSE SME",
+            "screener_slug": slug if slug.endswith("-SM") else f"{base}-SM",
+        }
+    if symbol.endswith("-SM"):
+        # Unknown to SME CSV — still drop suffix; treat as NSE for Yahoo/links.
+        return {
+            "symbol": base,
+            "exchange": "NSE" if exchange in {"", "NSE", "NSE SME"} else exchange,
+            "screener_slug": slug or f"{base}-SM",
+        }
+    if exchange == "NSE SME":
+        return {
+            "symbol": base,
+            "exchange": "NSE SME",
+            "screener_slug": slug if "-SM" in slug else (f"{base}-SM" if base else slug),
+        }
+    return {"symbol": symbol, "exchange": exchange, "screener_slug": slug or symbol}
 
 
 def _expand_abbreviations(text: str) -> str:
@@ -169,6 +416,7 @@ def _init_symbol_cache_table() -> None:
 
 def _purge_stale_symbol_cache() -> None:
     """Drop cached mappings from older resolver logic or known bad rows."""
+    global _symbol_cache
     _init_symbol_cache_table()
     try:
         conn = sqlite3.connect(DB_PATH)
@@ -181,13 +429,15 @@ def _purge_stale_symbol_cache() -> None:
             "DELETE FROM superstar_symbol_cache WHERE norm_name = ? AND symbol = ?",
             ("indiabulls", "IEL"),
         )
+        # Stale Trendlyne SME suffixes break mcap / listings joins.
+        conn.execute(
+            "DELETE FROM superstar_symbol_cache WHERE symbol LIKE '%-SM'"
+        )
         conn.commit()
         conn.close()
     except Exception:
         pass
-    for key, cached in list(_symbol_cache.items()):
-        if cached.get("symbol") == "IEL" and key == "indiabulls":
-            del _symbol_cache[key]
+    _symbol_cache = {}
 
 
 def _load_symbol_cache_from_db() -> None:
@@ -204,11 +454,13 @@ def _load_symbol_cache_from_db() -> None:
         conn.close()
         for norm, sym, exch, slug in rows:
             if sym:
-                _symbol_cache[norm] = {
-                    "symbol": sym,
-                    "exchange": exch or "NSE",
-                    "screener_slug": slug or sym,
-                }
+                _symbol_cache[norm] = _normalize_listing_meta(
+                    {
+                        "symbol": sym,
+                        "exchange": exch or "NSE",
+                        "screener_slug": slug or sym,
+                    }
+                )
     except Exception:
         pass
 
@@ -218,30 +470,31 @@ def _save_symbol_cache_to_db(norm_name: str, meta: dict[str, str]) -> None:
         return
     _init_symbol_cache_table()
     try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.execute(
-            """
-            INSERT INTO superstar_symbol_cache (
-                norm_name, symbol, exchange, screener_slug, resolver_version, updated_at
+        with _symbol_cache_lock:
+            conn = sqlite3.connect(DB_PATH, timeout=30)
+            conn.execute(
+                """
+                INSERT INTO superstar_symbol_cache (
+                    norm_name, symbol, exchange, screener_slug, resolver_version, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(norm_name) DO UPDATE SET
+                    symbol = excluded.symbol,
+                    exchange = excluded.exchange,
+                    screener_slug = excluded.screener_slug,
+                    resolver_version = excluded.resolver_version,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    norm_name,
+                    meta["symbol"],
+                    meta.get("exchange", "NSE"),
+                    meta.get("screener_slug", meta["symbol"]),
+                    RESOLVER_VERSION,
+                ),
             )
-            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(norm_name) DO UPDATE SET
-                symbol = excluded.symbol,
-                exchange = excluded.exchange,
-                screener_slug = excluded.screener_slug,
-                resolver_version = excluded.resolver_version,
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            (
-                norm_name,
-                meta["symbol"],
-                meta.get("exchange", "NSE"),
-                meta.get("screener_slug", meta["symbol"]),
-                RESOLVER_VERSION,
-            ),
-        )
-        conn.commit()
-        conn.close()
+            conn.commit()
+            conn.close()
     except Exception:
         pass
 
@@ -256,7 +509,14 @@ def _build_company_lookup() -> dict[str, dict[str, str]]:
         stocks = pd.DataFrame()
 
     if not stocks.empty:
-        for _, row in stocks.iterrows():
+        # Prefer mainboard NSE over SME/BSE when the same normalized name appears.
+        market_rank = {"NSE": 0, "NSE SME": 1, "BSE": 2}
+        ranked = stocks.copy()
+        ranked["_mrank"] = ranked["market"].map(
+            lambda m: market_rank.get(safe_str(m).upper(), 9)
+        )
+        ranked = ranked.sort_values("_mrank", kind="mergesort")
+        for _, row in ranked.iterrows():
             name = safe_str(row.get("name"))
             ticker = safe_str(row.get("ticker")).upper()
             market = safe_str(row.get("market")).upper()
@@ -271,6 +531,12 @@ def _build_company_lookup() -> dict[str, dict[str, str]]:
                     "symbol": ticker,
                     "exchange": "BSE",
                     "screener_slug": bse or ticker,
+                }
+            elif market == "NSE SME":
+                lookup[key] = {
+                    "symbol": ticker,
+                    "exchange": "NSE SME",
+                    "screener_slug": f"{ticker}-SM",
                 }
             else:
                 lookup[key] = {
@@ -296,10 +562,13 @@ def _token_match_score(
     required = min_overlap if min_overlap is not None else (2 if len(q_tokens) > 1 else 1)
     if overlap < required:
         return 0.0
-    score = overlap / max(len(q_tokens), len(c_tokens))
-    extra = len(c_tokens - q_tokens)
-    if extra > 0:
-        score *= len(q_tokens) / len(c_tokens)
+    score = overlap / len(q_tokens | c_tokens)
+    if overlap >= len(q_tokens) and len(q_tokens) >= 2:
+        # Trendlyne short names ("Gala Precision") vs full listing names.
+        score = max(score, 0.72)
+    elif overlap < len(q_tokens):
+        # Incomplete query coverage (avoid Apollo Techno → Gujarat Apollo).
+        score *= overlap / len(q_tokens)
     return score
 
 
@@ -319,7 +588,7 @@ def _fetch_market_price(symbol: str, exchange: str) -> float | None:
         return _price_cache[cache_key]
     price: float | None = None
     try:
-        market = "NSE" if exchange == "NSE" else "BSE"
+        market = "BSE" if safe_str(exchange).upper() == "BSE" else "NSE"
         yf_sym = to_yfinance_symbol(symbol, market)
         ticker = yf.Ticker(yf_sym)
         fast = getattr(ticker, "fast_info", None)
@@ -360,7 +629,10 @@ def _candidate_key(meta: dict[str, str]) -> str:
 
 
 def _collect_resolution_candidates(
-    company_name: str, lookup: dict[str, dict[str, str]]
+    company_name: str,
+    lookup: dict[str, dict[str, str]],
+    *,
+    allow_web_search: bool = True,
 ) -> list[tuple[dict[str, str], float, str]]:
     key = _norm_name(company_name)
     seen: set[str] = set()
@@ -377,6 +649,9 @@ def _collect_resolution_candidates(
 
     if key in lookup:
         _add(lookup[key], 1.0, "exact")
+        # Exact DB hit is enough for fast/bulk refresh — skip Yahoo + fuzzy.
+        if not allow_web_search:
+            return candidates
 
     for db_key, meta in lookup.items():
         if db_key == key:
@@ -384,6 +659,10 @@ def _collect_resolution_candidates(
         name_score = _token_match_score(company_name, db_key)
         if name_score >= 0.55:
             _add(meta, name_score, "fuzzy")
+
+    # Strong fuzzy match (≥0.85) is good enough without Yahoo when web search disabled.
+    if not allow_web_search:
+        return candidates
 
     try:
         quotes: list[dict] = []
@@ -416,6 +695,8 @@ def _collect_resolution_candidates(
 def _pick_best_candidate(
     candidates: list[tuple[dict[str, str], float, str]],
     reference_price: float | None,
+    *,
+    verify_price: bool = True,
 ) -> dict[str, str]:
     empty = {"symbol": "", "exchange": "", "screener_slug": ""}
     if not candidates:
@@ -424,12 +705,12 @@ def _pick_best_candidate(
     best_meta = empty
     best_score = float("-inf")
     for meta, name_score, source in candidates:
-        price_score = _price_fit_score(
-            reference_price, meta["symbol"], meta["exchange"]
-        )
-        if reference_price is not None and price_score <= -1.0:
-            continue
-        if reference_price is not None:
+        if verify_price and reference_price is not None:
+            price_score = _price_fit_score(
+                reference_price, meta["symbol"], meta["exchange"]
+            )
+            if price_score <= -1.0:
+                continue
             total = name_score * 0.5 + price_score * 0.5
         else:
             total = name_score
@@ -464,21 +745,59 @@ def _resolve_company(
     company_name: str,
     lookup: dict[str, dict[str, str]],
     reference_price: float | None = None,
+    *,
+    fast: bool = False,
 ) -> dict[str, str]:
+    """
+    Resolve company name → ticker.
+
+    ``fast=True`` (Refresh all): trust symbol cache + local listing lookup; skip
+    Yahoo price checks and skip Yahoo search when an exact listing hit exists.
+    """
     norm = _norm_name(company_name)
-    cached = _symbol_cache.get(norm)
+    with _symbol_cache_lock:
+        cached = _symbol_cache.get(norm)
     if cached and cached.get("symbol"):
+        cached = _normalize_listing_meta(cached)
+        if fast:
+            return cached
         price_ok = _price_fit_score(
             reference_price, cached["symbol"], cached.get("exchange", "NSE")
         )
         if reference_price is None or price_ok >= 0.0:
             return cached
 
-    candidates = _collect_resolution_candidates(company_name, lookup)
-    meta = _pick_best_candidate(candidates, reference_price)
+    # Fast path: local listing + symbol cache only — never call Yahoo during Refresh all.
+    allow_web = not fast
+    verify_price = not fast
+    if fast:
+        key = _norm_name(company_name)
+        if key in lookup:
+            allow_web = False
+        candidates = _collect_resolution_candidates(
+            company_name, lookup, allow_web_search=False
+        )
+        meta = _normalize_listing_meta(
+            _pick_best_candidate(candidates, reference_price, verify_price=False)
+        )
+        if meta.get("symbol"):
+            with _symbol_cache_lock:
+                _symbol_cache[norm] = meta
+            _save_symbol_cache_to_db(norm, meta)
+        return meta
+
+    candidates = _collect_resolution_candidates(
+        company_name, lookup, allow_web_search=allow_web
+    )
+    meta = _normalize_listing_meta(
+        _pick_best_candidate(
+            candidates, reference_price, verify_price=verify_price
+        )
+    )
 
     if meta.get("symbol"):
-        _symbol_cache[norm] = meta
+        with _symbol_cache_lock:
+            _symbol_cache[norm] = meta
         _save_symbol_cache_to_db(norm, meta)
 
     return meta
@@ -584,12 +903,45 @@ def _append_trendlyne_row(
 
 
 def _cells_from_tr(tr_html: str) -> list[str]:
-    tds = re.findall(r"<td[^>]*>(.*?)</td>", tr_html, re.S | re.I)
+    tds = _TD_RE.findall(tr_html)
     cells: list[str] = []
     for raw in tds:
-        text = unescape(re.sub(r"<[^>]+>", " ", str(raw or "")))
+        text = unescape(_TAG_RE.sub(" ", str(raw or "")))
         cells.append(re.sub(r"\s+", " ", text).strip())
+    # Checkbox / empty leading columns on curated portfolio pages.
+    while cells and not cells[0]:
+        cells.pop(0)
     return cells
+
+
+def _company_from_stockrow_tr(tr_html: str) -> str:
+    title = _STOCKROW_TITLE_RE.search(tr_html)
+    if title:
+        return unescape(title.group(1).strip())
+    anchor = _STOCKROW_ANCHOR_RE.search(tr_html)
+    if anchor:
+        text = unescape(_TAG_RE.sub(" ", anchor.group(1)))
+        return re.sub(r"\s+", " ", text).strip()
+    return ""
+
+
+def _iter_stockrow_trs(html: str) -> list[str]:
+    """Linear scan for `<tr>…stockrow…</tr>` — safe on large Trendlyne pages."""
+    out: list[str] = []
+    lower = html.lower()
+    start = 0
+    while True:
+        idx = lower.find("stockrow", start)
+        if idx < 0:
+            break
+        tr_start = lower.rfind("<tr", 0, idx)
+        tr_end = lower.find("</tr>", idx)
+        if tr_start < 0 or tr_end < 0:
+            start = idx + 8
+            continue
+        out.append(html[tr_start : tr_end + 5])
+        start = tr_end + 5
+    return out
 
 
 def _parse_qty(value: str) -> int | None:
@@ -726,15 +1078,21 @@ def _merge_change_overrides(
 
 
 def _parse_trendlyne_stockrows(
-    html: str, holder_name: str = ""
+    html: str, holder_name: str = "", *, merge_legacy_changes: bool = False
 ) -> list[dict[str, Any]]:
     """Parse all superstar holdings from Trendlyne search or portfolio HTML."""
     if "No Results Found" in html and "publicly holds" not in html:
         return []
 
     by_company: dict[str, dict[str, Any]] = {}
-    for tr_html in _STOCKROW_TR_RE.findall(html):
+    for tr_html in _iter_stockrow_trs(html):
         cells = _cells_from_tr(tr_html)
+        company = _company_from_stockrow_tr(tr_html)
+        if company:
+            if cells:
+                cells[0] = company
+            else:
+                cells = [company]
         if not cells:
             continue
         layout = _detect_stockrow_layout(cells)
@@ -751,11 +1109,16 @@ def _parse_trendlyne_stockrows(
             by_company[key] = row
 
     rows = list(by_company.values())
-    return _merge_change_overrides(rows, html)
+    # Legacy regex merge is O(catastrophic) on ~1MB pages — only for sparse search HTML.
+    if merge_legacy_changes and len(html) < 400_000:
+        return _merge_change_overrides(rows, html)
+    return rows
 
 
 def _parse_trendlyne_html(html: str, holder_name: str = "") -> list[dict[str, Any]]:
-    rows = _parse_trendlyne_stockrows(html, holder_name)
+    rows = _parse_trendlyne_stockrows(
+        html, holder_name, merge_legacy_changes=True
+    )
     if rows:
         return rows
 
@@ -793,7 +1156,7 @@ def _parse_superstar_portfolio_page(
     html: str, holder_name: str
 ) -> list[dict[str, Any]]:
     """Parse Trendlyne curated superstar portfolio page (by portfolio id)."""
-    return _parse_trendlyne_stockrows(html, holder_name)
+    return _parse_trendlyne_stockrows(html, holder_name, merge_legacy_changes=False)
 
 
 def fetch_investor_portfolio(
@@ -824,12 +1187,15 @@ def fetch_investor_portfolio(
 def enrich_holdings(
     holdings: list[dict[str, Any]],
     company_lookup: dict[str, dict[str, str]] | None = None,
+    *,
+    fast: bool = False,
 ) -> pd.DataFrame:
     if not holdings:
         return pd.DataFrame()
 
     global _price_cache
-    _price_cache = {}
+    if not fast:
+        _price_cache = {}
     _load_symbol_cache_from_db()
     if company_lookup is None:
         company_lookup = _build_company_lookup()
@@ -840,7 +1206,10 @@ def enrich_holdings(
         price = row.get("price")
         ref_price = float(price) if pd.notna(price) and price else None
         meta = _resolve_company(
-            row["company_name"], company_lookup, reference_price=ref_price
+            row["company_name"],
+            company_lookup,
+            reference_price=None if fast else ref_price,
+            fast=fast,
         )
         return pd.Series(
             [
@@ -869,11 +1238,71 @@ def enrich_holdings(
     df["price_display"] = df["price"].apply(
         lambda p: f"₹{p:,.2f}" if pd.notna(p) and p else ""
     )
+    # Company-name merge can leave two rows that resolve to the same ticker.
+    df = _collapse_holdings_by_symbol(df)
     return df.sort_values(
         ["holding_value_cr", "holding_percent"],
         ascending=[False, False],
         na_position="last",
     ).reset_index(drop=True)
+
+
+def _collapse_holdings_by_symbol(df: pd.DataFrame) -> pd.DataFrame:
+    """Collapse rows that share the same resolved (symbol, exchange)."""
+    if df is None or df.empty or "symbol" not in df.columns:
+        return df
+    work = df.copy()
+    work["_sym"] = work["symbol"].map(lambda v: safe_str(v).upper())
+    work["_ex"] = work["exchange"].map(lambda v: safe_str(v).upper() or "NSE") if "exchange" in work.columns else "NSE"
+    # Keep unresolved names as distinct rows (empty symbol).
+    unresolved = work[work["_sym"] == ""].drop(columns=["_sym", "_ex"], errors="ignore")
+    resolved = work[work["_sym"] != ""]
+    if resolved.empty:
+        return unresolved.reset_index(drop=True) if not unresolved.empty else work.drop(
+            columns=["_sym", "_ex"], errors="ignore"
+        )
+
+    rows: list[dict[str, Any]] = []
+    rank = {"new": 3, "increased": 2, "decreased": 1, "unchanged": 0}
+    for (_, _), grp in resolved.groupby(["_sym", "_ex"], sort=False):
+        if len(grp) == 1:
+            rows.append(grp.drop(columns=["_sym", "_ex"]).iloc[0].to_dict())
+            continue
+        base = grp.iloc[0].drop(labels=["_sym", "_ex"]).to_dict()
+        entities: set[str] = set()
+        for _, r in grp.iterrows():
+            ent = safe_str(r.get("holding_entity"))
+            if ent:
+                for part in ent.split(" · "):
+                    if safe_str(part):
+                        entities.add(safe_str(part))
+            if rank.get(safe_str(r.get("change_type")), 0) > rank.get(
+                safe_str(base.get("change_type")), 0
+            ):
+                base["change_type"] = r.get("change_type")
+                base["change_qtr"] = r.get("change_qtr")
+            try:
+                bp = float(base["holding_percent"]) if base.get("holding_percent") is not None else None
+            except (TypeError, ValueError):
+                bp = None
+            try:
+                cp = float(r["holding_percent"]) if r.get("holding_percent") is not None else None
+            except (TypeError, ValueError):
+                cp = None
+            if cp is not None and (bp is None or cp > bp):
+                base["holding_percent"] = cp
+        try:
+            base["holding_value_cr"] = float(grp["holding_value_cr"].fillna(0).sum())
+        except (TypeError, ValueError):
+            pass
+        if entities:
+            base["holding_entity"] = " · ".join(sorted(entities))
+        rows.append(base)
+
+    out = pd.DataFrame(rows)
+    if not unresolved.empty:
+        out = pd.concat([out, unresolved], ignore_index=True)
+    return out
 
 
 def _portfolio_from_df(df: pd.DataFrame) -> dict[str, pd.DataFrame | str | int]:
@@ -898,11 +1327,96 @@ def _portfolio_from_df(df: pd.DataFrame) -> dict[str, pd.DataFrame | str | int]:
     }
 
 
+def _merge_entity_holdings(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Collapse same company across personal + fund entities under one stock row.
+
+    Keeps ``holding_entity`` as a joined label (e.g. ``Personal · Equity Intelligence…``).
+    """
+    if not rows:
+        return []
+    by_company: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        key = _norm_name(safe_str(row.get("company_name")))
+        if not key:
+            continue
+        entity = safe_str(row.get("holding_entity") or row.get("holder_name")) or "Personal"
+        prev = by_company.get(key)
+        if prev is None:
+            copy = dict(row)
+            copy["holding_entity"] = entity
+            entities = {entity}
+            copy["_entities"] = entities
+            by_company[key] = copy
+            continue
+        entities: set[str] = prev.get("_entities") or set()
+        entities.add(entity)
+        prev["_entities"] = entities
+        prev["holding_entity"] = " · ".join(sorted(entities))
+        prev_val = float(prev.get("holding_value_cr") or 0)
+        cur_val = float(row.get("holding_value_cr") or 0)
+        prev["holding_value_cr"] = prev_val + cur_val
+        # Prefer richer change signal; keep higher single holding %.
+        rank = {"new": 3, "increased": 2, "decreased": 1, "unchanged": 0}
+        if rank.get(safe_str(row.get("change_type")), 0) > rank.get(
+            safe_str(prev.get("change_type")), 0
+        ):
+            prev["change_type"] = row.get("change_type")
+            prev["change_qtr"] = row.get("change_qtr")
+        try:
+            prev_pct = float(prev.get("holding_percent")) if prev.get("holding_percent") is not None else None
+        except (TypeError, ValueError):
+            prev_pct = None
+        try:
+            cur_pct = float(row.get("holding_percent")) if row.get("holding_percent") is not None else None
+        except (TypeError, ValueError):
+            cur_pct = None
+        if cur_pct is not None and (prev_pct is None or cur_pct > prev_pct):
+            prev["holding_percent"] = cur_pct
+        if not safe_str(prev.get("holder_name")):
+            prev["holder_name"] = row.get("holder_name")
+    out = []
+    for row in by_company.values():
+        row.pop("_entities", None)
+        out.append(row)
+    return out
+
+
+def _fetch_source_holdings(
+    *,
+    label: str,
+    query: str = "",
+    portfolio_id: str | None = None,
+    portfolio_slug: str | None = None,
+) -> list[dict[str, Any]]:
+    raw = fetch_investor_portfolio(
+        query or label,
+        portfolio_id=portfolio_id,
+        portfolio_slug=portfolio_slug,
+        holder_name=label,
+    )
+    for row in raw:
+        row["holding_entity"] = label
+        if not safe_str(row.get("holder_name")):
+            row["holder_name"] = label
+    return raw
+
+
 def load_superstar_portfolio(
-    entry: dict[str, str],
+    entry: dict[str, Any],
     company_lookup: dict[str, dict[str, str]] | None = None,
+    *,
+    fast: bool = False,
 ) -> dict[str, pd.DataFrame | str | int]:
-    """Fetch and enrich one superstar investor portfolio."""
+    """
+    Fetch personal + linked fund pages, merge under the investor ``name``.
+
+    Example (Porinju): personal Trendlyne portfolio + Equity Intelligence fund
+    holdings appear under ``Porinju V Veliyath``, with ``holding_entity`` showing
+    which filing name held the stock.
+
+    ``fast=True`` skips Yahoo price verification during ticker resolve (Refresh all).
+    """
     empty = {
         "all": pd.DataFrame(),
         "new_picks": pd.DataFrame(),
@@ -911,34 +1425,79 @@ def load_superstar_portfolio(
         "unchanged": pd.DataFrame(),
         "count": 0,
         "error": "",
+        "entities": [],
     }
     if company_lookup is None:
         company_lookup = _build_company_lookup()
+
+    investor_name = safe_str(entry.get("name"))
+    combined: list[dict[str, Any]] = []
+    entities: list[str] = []
+    errors: list[str] = []
+
+    has_personal = bool(entry.get("portfolio_id") or entry.get("query"))
+    if has_personal:
+        personal_label = "Personal"
+        try:
+            rows = _fetch_source_holdings(
+                label=personal_label,
+                query=safe_str(entry.get("query")) or investor_name,
+                portfolio_id=entry.get("portfolio_id"),
+                portfolio_slug=entry.get("portfolio_slug"),
+            )
+            combined.extend(rows)
+            entities.append(personal_label)
+        except Exception as exc:
+            errors.append(f"Personal: {exc}")
+
+    for fund in entry.get("funds") or []:
+        if not isinstance(fund, dict):
+            continue
+        label = safe_str(fund.get("label")) or "Fund"
+        try:
+            rows = _fetch_source_holdings(
+                label=label,
+                query=safe_str(fund.get("query")) or label,
+                portfolio_id=fund.get("portfolio_id"),
+                portfolio_slug=fund.get("portfolio_slug"),
+            )
+            combined.extend(rows)
+            entities.append(label)
+        except Exception as exc:
+            errors.append(f"{label}: {exc}")
+
+    if not combined:
+        empty["error"] = "; ".join(errors) if errors else "No holdings fetched"
+        empty["entities"] = entities
+        return empty
+
+    merged = _merge_entity_holdings(combined)
+    # Canonical holder under the superstar display name.
+    for row in merged:
+        row["holder_name"] = investor_name
     try:
-        raw = fetch_investor_portfolio(
-            entry["query"],
-            portfolio_id=entry.get("portfolio_id"),
-            portfolio_slug=entry.get("portfolio_slug"),
-            holder_name=entry.get("name", ""),
-        )
-        holder_label = entry.get("name", "")
-        if holder_label:
-            for row in raw:
-                if not safe_str(row.get("holder_name")):
-                    row["holder_name"] = holder_label
-        df = enrich_holdings(raw, company_lookup)
-        return _portfolio_from_df(df)
+        df = enrich_holdings(merged, company_lookup, fast=fast)
+        out = _portfolio_from_df(df)
+        out["entities"] = entities
+        if errors:
+            out["error"] = "; ".join(errors)
+        return out
     except Exception as exc:
         empty["error"] = str(exc)
+        empty["entities"] = entities
         return empty
 
 
 def load_superstar_portfolios(
-    investors: list[dict[str, str]] | None = None,
+    investors: list[dict[str, Any]] | None = None,
+    *,
+    fast: bool = False,
 ) -> dict[str, dict[str, pd.DataFrame | str | int]]:
     investors = investors or SUPERSTAR_INVESTORS
     company_lookup = _build_company_lookup()
     return {
-        entry["name"]: load_superstar_portfolio(entry, company_lookup)
+        entry["name"]: load_superstar_portfolio(
+            entry, company_lookup, fast=fast
+        )
         for entry in investors
     }

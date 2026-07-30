@@ -1,7 +1,7 @@
 """Positive Surprise Quant strategy package."""
 
 from stocks.strategies.positive_surprise.service import (
-    prepare_pead_universe,
+    prepare_psq_universe,
     run_positive_surprise_scan,
 )
 from stocks.strategies.positive_surprise.strategy import (
@@ -12,7 +12,7 @@ from stocks.strategies.positive_surprise.strategy import (
 
 __all__ = [
     "format_psq_export_df",
-    "prepare_pead_universe",
+    "prepare_psq_universe",
     "psq_caption",
     "run_positive_surprise_scan",
     "score_positive_surprise",

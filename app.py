@@ -13,6 +13,7 @@ from stocks.pages.superstars import render_superstars
 from stocks.pages.valuepickr import render_valuepickr
 from stocks.pages.demerger import render_demerger
 from stocks.pages.earningsq import render_earningsq
+from stocks.pages.fund_watchlists import render_fund_watchlists
 
 st.set_page_config(
     page_title="AI",
@@ -29,11 +30,12 @@ _SIDEBAR_PAGES = [
     "Sector Landscape",
     "SuperStars",
     "Holdings",
+    "Fund Watchlists",
     "ValuePickr",
     "Demergers",
 ]
-# v3: added EarningsQ — bump key so stale int_value radio state is dropped
-_SIDEBAR_KEY = "app_sidebar_page_v3"
+# v6: Fund Watchlists (Negen / Niveshaay)
+_SIDEBAR_KEY = "app_sidebar_page_v6"
 
 normalize_radio_session_state(_SIDEBAR_KEY, _SIDEBAR_PAGES)
 
@@ -55,6 +57,8 @@ elif page == "SuperStars":
     render_superstars()
 elif page == "Holdings":
     render_holdings()
+elif page == "Fund Watchlists":
+    render_fund_watchlists()
 elif page == "ValuePickr":
     render_valuepickr()
 elif page == "Demergers":

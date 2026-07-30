@@ -254,6 +254,7 @@ def rows_for_json(
     *,
     extra_cols: tuple[str, ...] = (),
     fetch_news: bool = True,
+    include_superstars: bool = True,
 ) -> list[dict]:
     if df.empty:
         return []
@@ -268,12 +269,13 @@ def rows_for_json(
     ss_map: dict[str, dict] = {}
     breakout_map: dict[str, dict] = {}
     if tickers:
-        try:
-            from stocks.shared.superstars.holdings import superstar_pead_map
+        if include_superstars:
+            try:
+                from stocks.shared.superstars.holdings import superstar_pead_map
 
-            ss_map = superstar_pead_map(tickers)
-        except Exception:
-            ss_map = {}
+                ss_map = superstar_pead_map(tickers)
+            except Exception:
+                ss_map = {}
         try:
             from stocks.core.database import load_strategy_breakout_map
 
@@ -457,20 +459,29 @@ def build_interactive_section(
     open_section: bool = False,
     expand_hint: str = "Click row — same detail as PEAD (quarterly, links, news)",
     fetch_news: bool = True,
+    extra_cols: tuple[str, ...] = (),
+    include_superstars: bool = True,
+    meta_label: str = "signals",
 ) -> str:
     del kind
     data_json = json_dumps(
-        rows_for_json(df, fetch_news=fetch_news),
+        rows_for_json(
+            df,
+            fetch_news=fetch_news,
+            extra_cols=extra_cols,
+            include_superstars=include_superstars,
+        ),
         separators=(",", ":"),
     )
     cols_str = json.dumps(cols_json, separators=(",", ":"))
     open_attr = " open" if open_section else ""
     hint = html.escape(expand_hint)
+    meta = html.escape(meta_label)
     return f"""
 <details class="fund-section"{open_attr} id="{section_id}-wrap">
   <summary>
     <span>{html.escape(title)}</span>
-    <span class="fund-section-meta">{len(df)} signals</span>
+    <span class="fund-section-meta">{len(df)} {meta}</span>
   </summary>
   <div class="fund-section-body">
     <div class="table-wrap">
@@ -502,15 +513,16 @@ def build_interactive_section(
     return (
       `<div class="company-cell">` +
       `<div class="company-top">` +
+      `<div class="company-name-wrap">` +
       `<span class="company-name" title="${{esc(name)}}">${{esc(name)}}</span>` +
+      `</div>` +
       `<span class="company-actions">` +
       `<span class="expand-hint" title="{hint}"></span>` +
       `<span class="links-inline">` +
-      `<a href="${{r.sc}}" target="_blank" rel="noopener noreferrer">SC</a>` +
-      `<a href="${{r.tv}}" target="_blank" rel="noopener noreferrer">TV</a>` +
+      `<a href="${{r.sc}}" target="_blank" rel="noopener noreferrer" title="screener.in">SC</a>` +
+      `<a href="${{r.tv}}" target="_blank" rel="noopener noreferrer" title="TradingView">TV</a>` +
       webLink +
       `</span></span></div>` +
-      `<div class="sub">${{esc(r.ticker)}}</div>` +
       (tags ? `<div class="company-tags-row">${{tags}}</div>` : "") +
       `</div>`
     );
@@ -519,6 +531,15 @@ def build_interactive_section(
     const v = r[c.id];
     switch (c.fmt) {{
       case "company": return fmtCompany(r);
+      case "ss_change": {{
+        const label = v != null && String(v).trim() ? esc(v) : "—";
+        const ct = String(r.change_type || "").toLowerCase();
+        if (ct === "new" || ct === "increased")
+          return `<span style="color:#16a34a;font-weight:${{ct === "new" ? 700 : 600}}">${{label}}</span>`;
+        if (ct === "decreased")
+          return `<span style="color:#dc2626;font-weight:600">${{label}}</span>`;
+        return label;
+      }}
       case "text": return v != null ? esc(v) : "—";
       case "date": return v ? esc(String(v).slice(0, 10)) : "—";
       case "score":

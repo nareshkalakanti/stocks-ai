@@ -149,10 +149,10 @@ def format_psq_export_df(df: pd.DataFrame) -> pd.DataFrame:
 
 def psq_caption() -> str:
     return (
-        "Positive Surprise Quant rides **seasonality-adjusted** earnings surprise "
-        "(same-quarter **YoY** EPS / sales / NP) with a **PEG** overlay "
-        "(Fwd PE ÷ growth). Sector & market-cap agnostic · typical hold **2–4 months** · "
-        "needs active monitoring."
+        "**NSE only** · Independent of PEAD/Yahoo. "
+        "Uses NSE result announcements + Integrated Filing Ind-AS XBRL "
+        "for same-quarter **YoY** (EPS → sales → NP), with optional **PEG** from cached PE. "
+        "Typical hold **2–4 months** · needs active monitoring."
     )
 
 

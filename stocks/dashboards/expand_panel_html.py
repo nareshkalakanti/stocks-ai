@@ -680,8 +680,7 @@ function fmtCorpTags(r) {
   if (r.special_situation) parts.push('<div class="corp-tag corp-tag-spec">Special Situation</div>');
   if (r.ss_holders_label) {
     const ssLabel = String(r.ss_holders_label);
-    const ssShow = (r.ss_best ? "★ " : "") + ssLabel;
-    parts.push(`<div class="corp-tag corp-tag-ss" title="${esc(ssLabel)}">${esc(ssShow)}</div>`);
+    parts.push(`<div class="corp-tag corp-tag-ss" title="${esc(ssLabel)}">${esc(ssLabel)}</div>`);
   }
   if (r.has_tq) {
     const tqBits = ["TQ weekly"];

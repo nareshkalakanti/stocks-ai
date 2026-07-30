@@ -195,6 +195,21 @@ def _init_db_schema() -> None:
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS fund_watchlists (
+                list_key TEXT NOT NULL,
+                ticker TEXT NOT NULL,
+                market TEXT NOT NULL DEFAULT 'NSE',
+                name TEXT,
+                holding_entity TEXT,
+                holding_value_cr REAL,
+                source_investor TEXT,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (list_key, ticker)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_fund_watchlists_ticker
+                ON fund_watchlists(ticker);
+
             CREATE TABLE IF NOT EXISTS spinoffs (
                 ticker TEXT PRIMARY KEY,
                 market TEXT,
@@ -535,7 +550,7 @@ def _init_db_schema() -> None:
 
 def _ensure_superstar_holdings_columns(conn) -> None:
     cols = {row[1] for row in conn.execute("PRAGMA table_info(superstar_holdings)")}
-    for col in ("sector", "sub_sector", "industry", "screener_slug"):
+    for col in ("sector", "sub_sector", "industry", "screener_slug", "holding_entity"):
         if col not in cols:
             conn.execute(f"ALTER TABLE superstar_holdings ADD COLUMN {col} TEXT")
 
@@ -937,8 +952,17 @@ def load_metrics_from_db(tickers: list[str]) -> pd.DataFrame:
     return df
 
 
-def load_market_cap_from_db(tickers: list[str] | None = None) -> pd.DataFrame:
-    """Load market_cap_cr from SQLite (fundamentals_cache + stock_metrics, longest TTL)."""
+def load_market_cap_from_db(
+    tickers: list[str] | None = None,
+    *,
+    max_hours: int | None = None,
+    allow_stale: bool = False,
+) -> pd.DataFrame:
+    """Load market_cap_cr from SQLite (fundamentals_cache + stock_metrics).
+
+    ``max_hours`` defaults to ``MARKET_CAP_CACHE_HOURS``. Pass ``None`` with
+    ``allow_stale=True`` to keep the newest cached value even when aged out.
+    """
     init_db()
     params: tuple = ()
     where = "WHERE market_cap_cr IS NOT NULL"
@@ -966,11 +990,14 @@ def load_market_cap_from_db(tickers: list[str] | None = None) -> pd.DataFrame:
 
     combined = pd.concat(frames, ignore_index=True)
     combined = combined.sort_values("fetched_at").drop_duplicates("ticker", keep="last")
-    fresh = combined["fetched_at"].apply(lambda ts: _is_fresh(ts, MARKET_CAP_CACHE_HOURS))
+    ttl = MARKET_CAP_CACHE_HOURS if max_hours is None and not allow_stale else max_hours
+    if ttl is not None:
+        fresh = combined["fetched_at"].apply(lambda ts: _is_fresh(ts, ttl))
+        combined = combined.loc[fresh]
     cols = ["ticker", "market_cap_cr"]
     if "market" in combined.columns:
         cols.append("market")
-    return combined.loc[fresh, cols].reset_index(drop=True)
+    return combined[cols].reset_index(drop=True)
 
 
 def save_market_cap_to_db(
@@ -1332,6 +1359,86 @@ def holdings_count() -> int:
     init_db()
     with get_connection() as conn:
         return int(conn.execute("SELECT COUNT(*) FROM holdings").fetchone()[0])
+
+
+def load_fund_watchlist(list_key: str) -> pd.DataFrame:
+    """Tickers for one fund watchlist (Negen / Niveshaay), separate from holdings."""
+    init_db()
+    key = safe_str(list_key).lower()
+    if not key:
+        return pd.DataFrame()
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT list_key, ticker, market, name, holding_entity,
+                   holding_value_cr, source_investor, updated_at
+            FROM fund_watchlists
+            WHERE list_key = ?
+            ORDER BY holding_value_cr DESC, ticker COLLATE NOCASE
+            """,
+            (key,),
+        ).fetchall()
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame([dict(r) for r in rows])
+
+
+def replace_fund_watchlist(list_key: str, df: pd.DataFrame) -> int:
+    """Replace all rows for ``list_key``. Returns ticker count written."""
+    init_db()
+    key = safe_str(list_key).lower()
+    if not key:
+        return 0
+    now = _utc_now()
+    with get_connection() as conn:
+        conn.execute("DELETE FROM fund_watchlists WHERE list_key = ?", (key,))
+        if df is None or df.empty:
+            return 0
+        rows: list[tuple] = []
+        seen: set[str] = set()
+        for _, row in df.iterrows():
+            ticker = safe_str(row.get("ticker")).upper()
+            if not ticker or ticker in seen:
+                continue
+            seen.add(ticker)
+            rows.append(
+                (
+                    key,
+                    ticker,
+                    safe_str(row.get("market")).upper() or "NSE",
+                    safe_str(row.get("name")) or None,
+                    safe_str(row.get("holding_entity")) or None,
+                    row.get("holding_value_cr"),
+                    safe_str(row.get("source_investor")) or None,
+                    now,
+                )
+            )
+        if not rows:
+            return 0
+        conn.executemany(
+            """
+            INSERT INTO fund_watchlists (
+                list_key, ticker, market, name, holding_entity,
+                holding_value_cr, source_investor, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+        return len(rows)
+
+
+def fund_watchlist_count_db(list_key: str) -> int:
+    init_db()
+    key = safe_str(list_key).lower()
+    if not key:
+        return 0
+    with get_connection() as conn:
+        return int(
+            conn.execute(
+                "SELECT COUNT(*) FROM fund_watchlists WHERE list_key = ?",
+                (key,),
+            ).fetchone()[0]
+        )
 
 
 def load_spinoffs_from_db() -> pd.DataFrame:
@@ -2831,14 +2938,18 @@ def save_superstar_holdings(
         conn.execute("DELETE FROM superstar_holdings WHERE investor = ?", (name,))
         if df is None or df.empty:
             return 0
-        rows: list[tuple] = []
+        # PRIMARY KEY (investor, symbol, exchange) — collapse dups after name→ticker resolve.
+        by_key: dict[tuple[str, str], tuple] = {}
         for _, row in df.iterrows():
             symbol = safe_str(row.get("symbol")).upper()
             if not symbol:
                 continue
             exchange = safe_str(row.get("exchange")).upper() or "NSE"
-            rows.append(
-                (
+            entity = safe_str(row.get("holding_entity")) or None
+            key = (symbol, exchange)
+            prev = by_key.get(key)
+            if prev is None:
+                by_key[key] = (
                     name,
                     symbol,
                     exchange,
@@ -2852,9 +2963,59 @@ def save_superstar_holdings(
                     safe_str(row.get("sub_sector")) or None,
                     safe_str(row.get("industry")) or None,
                     safe_str(row.get("screener_slug")) or None,
+                    entity,
                     now,
                 )
+                continue
+            # Merge holding_entity labels; keep richer row fields.
+            prev_entity = safe_str(prev[13])
+            entities = {p for p in (prev_entity.split(" · ") if prev_entity else []) if p}
+            if entity:
+                entities.update(p for p in entity.split(" · ") if p)
+            merged_entity = " · ".join(sorted(entities)) if entities else None
+            try:
+                prev_val = float(prev[7] or 0)
+            except (TypeError, ValueError):
+                prev_val = 0.0
+            try:
+                cur_val = float(row.get("holding_value_cr") or 0)
+            except (TypeError, ValueError):
+                cur_val = 0.0
+            rank = {"new": 3, "increased": 2, "decreased": 1, "unchanged": 0}
+            change_type = prev[6]
+            change_qtr = prev[5]
+            if rank.get(safe_str(row.get("change_type")), 0) > rank.get(safe_str(change_type), 0):
+                change_type = safe_str(row.get("change_type"))
+                change_qtr = row.get("change_qtr")
+            holding_pct = prev[4]
+            try:
+                cur_pct = float(row.get("holding_percent")) if row.get("holding_percent") is not None else None
+            except (TypeError, ValueError):
+                cur_pct = None
+            try:
+                prev_pct = float(holding_pct) if holding_pct is not None else None
+            except (TypeError, ValueError):
+                prev_pct = None
+            if cur_pct is not None and (prev_pct is None or cur_pct > prev_pct):
+                holding_pct = cur_pct
+            by_key[key] = (
+                name,
+                symbol,
+                exchange,
+                prev[3] or safe_str(row.get("company_name")),
+                holding_pct,
+                change_qtr,
+                change_type,
+                prev_val + cur_val,
+                prev[8] if prev[8] is not None else row.get("price"),
+                prev[9] or (safe_str(row.get("sector")) or None),
+                prev[10] or (safe_str(row.get("sub_sector")) or None),
+                prev[11] or (safe_str(row.get("industry")) or None),
+                prev[12] or (safe_str(row.get("screener_slug")) or None),
+                merged_entity,
+                now,
             )
+        rows = list(by_key.values())
         if not rows:
             return 0
         conn.executemany(
@@ -2862,9 +3023,9 @@ def save_superstar_holdings(
             INSERT INTO superstar_holdings (
                 investor, symbol, exchange, company_name, holding_percent,
                 change_qtr, change_type, holding_value_cr, price,
-                sector, sub_sector, industry, screener_slug, fetched_at
+                sector, sub_sector, industry, screener_slug, holding_entity, fetched_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
@@ -2879,7 +3040,7 @@ def load_all_superstar_holdings_df() -> pd.DataFrame:
             """
             SELECT investor, symbol, exchange, company_name, holding_percent,
                    change_qtr, change_type, holding_value_cr, price,
-                   sector, sub_sector, industry, screener_slug, fetched_at
+                   sector, sub_sector, industry, screener_slug, holding_entity, fetched_at
             FROM superstar_holdings
             ORDER BY investor COLLATE NOCASE, holding_percent DESC
             """

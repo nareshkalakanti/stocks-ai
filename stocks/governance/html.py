@@ -786,7 +786,7 @@ def build_governance_map_html(
     if (!tags.length) return "";
     return (
       `<div class="gov-holder-row">` +
-      `<span class="gov-holder-label">${{best ? "Superstars ★" : "Superstars"}}</span>` +
+      `<span class="gov-holder-label">Superstars</span>` +
       tags.join("") +
       `</div>`
     );
