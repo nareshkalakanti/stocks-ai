@@ -11,7 +11,6 @@ from stocks.strategies.pead2.html import build_pead2_dashboard_html, pead2_ifram
 from stocks.strategies.pead2.service import (
     Pead2ScanCoverage,
     expand_pead_candidates_to_universe,
-    pead2_scan_coverage,
     prepare_pead_universe,
     refresh_pead2_returns_only,
     run_pead2_scan,
@@ -32,7 +31,12 @@ from stocks.scans.scan_toolbar import (
 from stocks.dashboards.report_html import embed_html_iframe
 from stocks.scans.scan_universe import cap_tier_min_mcap_cr, resolve_cap_tier_id
 from stocks.scans.stock_filters import apply_stock_filters
-from stocks.listings.stocks_data import load_india_stocks
+from stocks.pages.stocks_cache import load_stocks_cached
+
+_PEAD2_HTML_KEY = "pead2_html_cache_key"
+_PEAD2_HTML_BODY = "pead2_embed_html_v2"
+_PEAD2_DISPLAY_KEY = "pead2_display_cache_key"
+_PEAD2_DISPLAY_DF = "pead2_display_df_v2"
 
 
 def _inject_pead_scan_css() -> None:
@@ -69,11 +73,24 @@ def _resolve_universe_and_coverage(
             return universe, coverage
 
     universe, _, _ = prepare_pead_universe(filtered, cap_tier_id=cap_tier_id)
+    from stocks.strategies.pead2.service import pead2_scan_coverage
+
     coverage = pead2_scan_coverage(universe)
     st.session_state.pead2_universe = universe
     st.session_state.pead2_coverage = coverage
     st.session_state.pead2_universe_key = filter_key
     return universe, coverage
+
+
+def _invalidate_pead_html_cache() -> None:
+    st.session_state.pop(_PEAD2_HTML_KEY, None)
+    st.session_state.pop(_PEAD2_HTML_BODY, None)
+
+
+def _invalidate_pead_display_cache() -> None:
+    _invalidate_pead_html_cache()
+    st.session_state.pop(_PEAD2_DISPLAY_KEY, None)
+    st.session_state.pop(_PEAD2_DISPLAY_DF, None)
 
 
 def _store_scan_result(result: dict) -> None:
@@ -82,6 +99,49 @@ def _store_scan_result(result: dict) -> None:
         "candidates_previous", pd.DataFrame()
     )
     st.session_state.pead2_cache_hits = int(result.get("cache_hits") or 0)
+    st.session_state.pead2_results_gen = int(
+        st.session_state.get("pead2_results_gen", 0)
+    ) + 1
+    _invalidate_pead_display_cache()
+
+
+def _display_cache_key(
+    filter_key: tuple,
+    *,
+    holdings_view: bool,
+) -> tuple:
+    return (
+        filter_key,
+        holdings_view,
+        int(st.session_state.get("pead2_results_gen", 0)),
+    )
+
+
+def _prepare_display_frames(
+    candidates: pd.DataFrame,
+    candidates_previous: pd.DataFrame | None,
+    universe: pd.DataFrame,
+    *,
+    holdings_view: bool,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    work = candidates
+    prev = (
+        candidates_previous
+        if candidates_previous is not None and not candidates_previous.empty
+        else pd.DataFrame()
+    )
+    if holdings_view and not universe.empty:
+        work = expand_pead_candidates_to_universe(universe, work)
+        prev = (
+            expand_pead_candidates_to_universe(universe, prev)
+            if not prev.empty
+            else expand_pead_candidates_to_universe(universe, pd.DataFrame())
+        )
+    work = enrich_pead_candidates(work)
+    work = attach_strategy_breakout_signals(work)
+    if not prev.empty:
+        prev = attach_strategy_breakout_signals(enrich_pead_candidates(prev))
+    return work, prev
 
 
 def _clear_pead2_refresh_query() -> None:
@@ -100,13 +160,20 @@ def _run_scan(
     host = status_slot if status_slot is not None else st
     progress = host.progress(0, text="PEAD — loading from DB...")
 
-    def _progress(done: int, total: int) -> None:
+    def _progress(done: int, total: int, phase: str = "pead") -> None:
+        labels = {
+            "pead": "PEAD fetch",
+            "returns": "Returns refresh",
+            "breakouts": "BB+TQ weekly",
+            "persist": "Saving TQ/BB",
+        }
+        label = labels.get(phase, "PEAD")
         if total <= 0:
-            progress.progress(1.0, text="PEAD — loading from DB...")
+            progress.progress(1.0, text=f"{label}…")
             return
         progress.progress(
             min(done / total, 1.0),
-            text=f"PEAD / BB+TQ weekly {done:,}/{total:,}...",
+            text=f"{label} {done:,}/{total:,}…",
         )
 
     try:
@@ -127,7 +194,7 @@ def render_pead2(*, show_title: bool = True) -> None:
     _inject_pead_scan_css()
 
     try:
-        stocks = load_india_stocks()
+        stocks = load_stocks_cached()
     except Exception as exc:
         st.error(f"Could not load dataset `{INDIA_STOCKS_DATASET}`: {exc}")
         return
@@ -149,11 +216,12 @@ def render_pead2(*, show_title: bool = True) -> None:
         filter_key = _pead_filter_key(
             filters,
             cap_tier_id=cap_tier_id,
-            )
+        )
         if st.session_state.get("pead2_filter_key") != filter_key:
             st.session_state.pead2_filter_key = filter_key
             st.session_state.pop("pead2_candidates", None)
             st.session_state.pop("pead2_universe_key", None)
+            _invalidate_pead_display_cache()
 
         universe, coverage = _resolve_universe_and_coverage(
             filtered,
@@ -169,12 +237,10 @@ def render_pead2(*, show_title: bool = True) -> None:
                 key="pead2_scan",
                 help=(
                     f"Fetch missing or cache older than {PEAD2_CACHE_HOURS}h from Yahoo, "
-                    "refresh Returns from latest prices, score PEAD, then check BB/TQ weekly."
+                    "refresh returns (aged rows only), score PEAD, then check BB/TQ weekly."
                 ),
             )
 
-    coverage = pead2_scan_coverage(universe)
-    st.session_state.pead2_coverage = coverage
     holdings_view = is_holdings_playlist(filters.market)
 
     if st.query_params.get("pead2_refresh") == "1":
@@ -193,6 +259,9 @@ def render_pead2(*, show_title: bool = True) -> None:
             return
         status_slot.empty()
         _store_scan_result(result)
+        coverage = result.get("coverage")
+        if isinstance(coverage, Pead2ScanCoverage):
+            st.session_state.pead2_coverage = coverage
         st.caption("Returns refreshed from latest Yahoo prices.")
         st.rerun()
 
@@ -215,9 +284,8 @@ def render_pead2(*, show_title: bool = True) -> None:
             return
         _store_scan_result(result)
         coverage = result.get("coverage")
-        if not isinstance(coverage, Pead2ScanCoverage):
-            coverage = pead2_scan_coverage(universe)
-        st.session_state.pead2_coverage = coverage
+        if isinstance(coverage, Pead2ScanCoverage):
+            st.session_state.pead2_coverage = coverage
         st.session_state.pead2_universe_key = filter_key
 
         fetched = int(result.get("fetched") or 0)
@@ -234,44 +302,74 @@ def render_pead2(*, show_title: bool = True) -> None:
         st.caption("Set filters, then click **Scan**.")
         return
 
-    if holdings_view and not universe.empty:
-        candidates = expand_pead_candidates_to_universe(universe, candidates)
-        if candidates_previous is not None and not candidates_previous.empty:
-            candidates_previous = expand_pead_candidates_to_universe(
-                universe, candidates_previous
-            )
-        else:
-            candidates_previous = expand_pead_candidates_to_universe(universe, pd.DataFrame())
-
     if candidates.empty:
         st.caption("Set filters, then click **Scan**.")
         return
 
-    candidates = enrich_pead_candidates(candidates)
-    candidates = attach_strategy_breakout_signals(candidates)
+    display_key = _display_cache_key(filter_key, holdings_view=holdings_view)
+    cached_display = st.session_state.get(_PEAD2_DISPLAY_DF)
+    if (
+        st.session_state.get(_PEAD2_DISPLAY_KEY) == display_key
+        and isinstance(cached_display, dict)
+        and "current" in cached_display
+    ):
+        candidates = cached_display["current"]
+        prev_df = cached_display.get("previous", pd.DataFrame())
+    else:
+        candidates, prev_df = _prepare_display_frames(
+            candidates,
+            candidates_previous,
+            universe,
+            holdings_view=holdings_view,
+        )
+        st.session_state[_PEAD2_DISPLAY_DF] = {
+            "current": candidates,
+            "previous": prev_df,
+        }
+        st.session_state[_PEAD2_DISPLAY_KEY] = display_key
+        _invalidate_pead_html_cache()
 
-    prev_df = (
-        candidates_previous
-        if candidates_previous is not None and not candidates_previous.empty
-        else pd.DataFrame()
-    )
-    if not prev_df.empty:
-        prev_df = attach_strategy_breakout_signals(enrich_pead_candidates(prev_df))
     cache_hits = int(st.session_state.get("pead2_cache_hits") or 0)
-    scored_n = int(candidates["pead_score"].notna().sum()) if "pead_score" in candidates.columns else len(candidates)
-    tq_n = int(candidates["has_tq"].fillna(False).astype(bool).sum()) if "has_tq" in candidates.columns else 0
-    bb_n = int(candidates["has_bb"].fillna(False).astype(bool).sum()) if "has_bb" in candidates.columns else 0
-    embed_html = build_pead2_dashboard_html(
-        candidates,
-        df_previous=prev_df,
-        title="Holdings PEAD" if holdings_view else "Top PEAD Candidates",
-        list_label="Holdings" if holdings_view else "PEAD candidates",
-        show_scored_split=holdings_view,
-        standalone=False,
+    scored_n = (
+        int(candidates["pead_score"].notna().sum())
+        if "pead_score" in candidates.columns
+        else len(candidates)
     )
+    tq_n = (
+        int(candidates["has_tq"].fillna(False).astype(bool).sum())
+        if "has_tq" in candidates.columns
+        else 0
+    )
+    bb_n = (
+        int(candidates["has_bb"].fillna(False).astype(bool).sum())
+        if "has_bb" in candidates.columns
+        else 0
+    )
+
+    html_cache_key = (
+        display_key,
+        len(candidates),
+        scored_n,
+        holdings_view,
+    )
+    embed_html = None
+    if st.session_state.get(_PEAD2_HTML_KEY) == html_cache_key:
+        embed_html = st.session_state.get(_PEAD2_HTML_BODY)
+
+    if not embed_html:
+        with st.spinner("Building PEAD report…"):
+            embed_html = build_pead2_dashboard_html(
+                candidates,
+                df_previous=prev_df,
+                title="Holdings PEAD" if holdings_view else "Top PEAD Candidates",
+                list_label="Holdings" if holdings_view else "PEAD candidates",
+                show_scored_split=holdings_view,
+                standalone=False,
+            )
+        st.session_state[_PEAD2_HTML_KEY] = html_cache_key
+        st.session_state[_PEAD2_HTML_BODY] = embed_html
 
     if holdings_view:
-        coverage = st.session_state.get("pead2_coverage")
         no_data_n = coverage.no_data if isinstance(coverage, Pead2ScanCoverage) else 0
         tier_note = (
             f" · **{cap_tier_label(cap_tier_id)}**"

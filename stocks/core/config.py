@@ -128,6 +128,18 @@ PEAD2_RECENT_DAY_OPTIONS = tuple(
 ) or (7, 15, 30, 60)
 PEAD2_RECENT_MAX_FETCH = int(os.getenv("PEAD2_RECENT_MAX_FETCH", "300"))
 PEAD2_CALC_VERSION = 22
+# Set false to skip live BB+TQ weekly yfinance checks on PEAD scan (use cached signals only).
+PEAD2_CHECK_BREAKOUTS = os.getenv("PEAD2_CHECK_BREAKOUTS", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+# When false, PEAD scan only refreshes returns for aged cache rows (not every scorable ticker).
+PEAD2_REFRESH_RETURNS_ALL = os.getenv("PEAD2_REFRESH_RETURNS_ALL", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
 
 PEAD_FACTOR_MAX_WORKERS = YFINANCE_THROTTLED_MAX_WORKERS
 PEAD_FACTOR_SUE_WEIGHT = float(os.getenv("PEAD_FACTOR_SUE_WEIGHT", "0.65"))

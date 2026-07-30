@@ -32,7 +32,8 @@ from stocks.governance.service import (
     seats_for_person,
     seed_curated_boards,
 )
-from stocks.listings.stocks_data import load_india_stocks, market_options
+from stocks.listings.stocks_data import market_options
+from stocks.pages.stocks_cache import load_stocks_cached
 from stocks.market.nse_index_constituents import (
     NIFTY_INDEXES,
     ensure_all_nifty_indexes,
@@ -185,7 +186,7 @@ def _render_governance_scan(*, show_title: bool = True) -> None:
     )
 
     try:
-        stocks = load_india_stocks()
+        stocks = load_stocks_cached()
     except Exception as exc:
         st.error(f"Could not load dataset `{INDIA_STOCKS_DATASET}`: {exc}")
         return

@@ -27,6 +27,7 @@ from stocks.shared.superstars.holdings import (
     aggregate_all_portfolios,
     enrich_superstar_classification,
     portfolios_from_db,
+    _sector_is_missing,
 )
 from stocks.shared.superstars.cache import (
     load_cached_superstar_portfolios,
@@ -42,7 +43,7 @@ from stocks.shared.superstars.investors import (
 from stocks.dashboards.report_html import embed_html_iframe
 
 _CACHE_VERSION = 19  # NSE SME tickers (strip -SM) for Negen / Niveshaay
-_DISPLAY_READY_KEY = "superstar_display_ready_v"
+_DISPLAY_READY_KEY = "superstar_display_ready_v20"
 _SS_SECTOR_KEY = "ss_sector_filter"
 _SS_CAP_KEY = "ss_cap_tier"
 _SS_INVESTOR_KEY = "ss_investor"
@@ -106,8 +107,7 @@ def _hydrate_portfolios_from_db(portfolios: dict, fetched_at: dict) -> bool:
 
 
 def _sector_missing_mask(series: pd.Series) -> pd.Series:
-    s = series.astype(str).str.strip()
-    return s.eq("") | s.eq("—") | s.eq("nan") | s.eq("None") | series.isna()
+    return series.map(_sector_is_missing)
 
 
 def _attach_mcap_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -170,7 +170,9 @@ def _prepare_display_df(df: pd.DataFrame | None) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame()
     work = df.copy()
-    if "screener_link" not in work.columns:
+    needs_links = "screener_link" not in work.columns
+    needs_sector = "sector" not in work.columns or work["sector"].map(_sector_is_missing).all()
+    if needs_links or needs_sector:
         work = enrich_superstar_classification(work)
         work["ticker"] = work["symbol"]
         work["market"] = work["exchange"].map(
@@ -345,8 +347,22 @@ def _prepare_portfolios_for_display(portfolios: dict) -> None:
         all_df = data.get("all")
         if not isinstance(all_df, pd.DataFrame) or all_df.empty:
             continue
+        if "sector" not in all_df.columns or all_df["sector"].map(_sector_is_missing).all():
+            all_df = enrich_superstar_classification(all_df)
         portfolios[name] = _portfolio_dict_with_display(all_df)
     st.session_state[_DISPLAY_READY_KEY] = _CACHE_VERSION
+
+
+def _ensure_merged_classification(merged: pd.DataFrame) -> pd.DataFrame:
+    """Classify + mcap for filter dropdowns and table display."""
+    if merged.empty:
+        return merged
+    work = merged.copy()
+    if "sector" not in work.columns or work["sector"].map(_sector_is_missing).all():
+        work = enrich_superstar_classification(work)
+    if "market_cap_cr" not in work.columns:
+        work = _attach_mcap_columns(work)
+    return work
 
 
 def _holdings_tickers() -> set[str]:
@@ -540,12 +556,10 @@ def render_superstars() -> None:
         _prepare_portfolios_for_display(portfolios)
 
     merged = (
-        aggregate_all_portfolios(portfolios)
+        _ensure_merged_classification(aggregate_all_portfolios(portfolios))
         if loaded_count
         else pd.DataFrame()
     )
-    if not merged.empty and "market_cap_cr" not in merged.columns:
-        merged = _attach_mcap_columns(merged)
 
     sector_opts = _sector_options(merged)
     cap_labels = cap_tier_labels()
@@ -601,18 +615,14 @@ def render_superstars() -> None:
             f"**{loaded_count}** investors · **{total_saved:,}** holdings · {ts}"
             + (f" · watchlists {fund_n}" if fund_n else "")
         )
-        merged = aggregate_all_portfolios(portfolios)
-        if not merged.empty and "market_cap_cr" not in merged.columns:
-            merged = _attach_mcap_columns(merged)
+        merged = _ensure_merged_classification(aggregate_all_portfolios(portfolios))
 
     if fill and loaded_count:
         with st.spinner("Filling missing sectors + websites…"):
             gap = _fill_superstar_gaps(portfolios, max_web=40)
         st.session_state.pop(_DISPLAY_READY_KEY, None)
         _prepare_portfolios_for_display(portfolios)
-        merged = aggregate_all_portfolios(portfolios)
-        if not merged.empty and "market_cap_cr" not in merged.columns:
-            merged = _attach_mcap_columns(merged)
+        merged = _ensure_merged_classification(aggregate_all_portfolios(portfolios))
         st.success(
             f"Filled **{gap.get('sector', 0)}** sectors · "
             f"**{gap.get('web', 0)}** websites "

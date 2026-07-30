@@ -11,7 +11,7 @@ from stocks.core.config import (
     INDIA_STOCKS_DATASET,
     cap_tier_id_from_label,
 )
-from stocks.listings.stocks_data import load_india_stocks
+from stocks.pages.stocks_cache import load_stocks_cached
 from stocks.dashboards.report_html import embed_html_iframe
 from stocks.market.fundamentals_service import apply_cap_tier_filter
 from stocks.scans.results_utils import analysis_universe
@@ -212,7 +212,7 @@ def _try_restore_results(
 
 def render_headwind_tailwind() -> None:
     try:
-        stocks = load_india_stocks()
+        stocks = load_stocks_cached()
     except Exception as exc:
         st.error(f"Could not load dataset `{INDIA_STOCKS_DATASET}`: {exc}")
         return

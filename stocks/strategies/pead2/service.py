@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Literal
@@ -14,9 +15,11 @@ import yfinance as yf
 from stocks.core.config import (
     PEAD2_CACHE_HOURS,
     PEAD2_CALC_VERSION,
+    PEAD2_CHECK_BREAKOUTS,
     PEAD2_DRIFT_DAYS,
     PEAD2_MAX_WORKERS,
     PEAD2_MIN_QUARTERS,
+    PEAD2_REFRESH_RETURNS_ALL,
     PEAD2_SALES_BUST_QOQ_MIN,
     PEAD2_SALES_BUST_STREAK,
     STRATEGY_YFINANCE_MAX_INFLIGHT,
@@ -78,6 +81,22 @@ _PEAD2_EBIDT_FALLBACK_FIELDS = (
     "Net Interest Income",
     "Net Income Continuous Operations",
 )
+
+
+def _emit_pead_progress(
+    callback: Callable[..., None] | None,
+    done: int,
+    total: int,
+    *,
+    phase: str = "pead",
+) -> None:
+    """Notify scan UI; accepts ``(done, total)`` or ``(done, total, phase)`` callbacks."""
+    if not callback:
+        return
+    try:
+        callback(done, total, phase)
+    except TypeError:
+        callback(done, total)
 
 
 def _series_from_income(income: pd.DataFrame, fields: tuple[str, ...]) -> pd.Series | None:
@@ -442,9 +461,41 @@ def _partition_pead2_universe_cache(
 
 
 def pead2_scan_coverage(universe: pd.DataFrame) -> Pead2ScanCoverage:
-    """DB-only count of cached vs remaining tickers for the current universe."""
-    _, _, coverage, _ = _partition_pead2_universe_cache(universe)
-    return coverage
+    """DB-only count of cached vs remaining tickers (no profile hydrate / pending list)."""
+    tickers, _, _ = _universe_ticker_lists(universe)
+    if not tickers:
+        return Pead2ScanCoverage(0, 0, 0, 0, 0, 0)
+
+    all_cached = load_pead2_cache(tickers, max_hours=999999)
+    fetched_at = load_pead2_fetched_at(tickers)
+
+    cached_n = 0
+    stale = 0
+    missing = 0
+    scorable = 0
+    aged = 0
+    for ticker in tickers:
+        raw = all_cached.get(ticker)
+        if raw is None:
+            missing += 1
+            continue
+        if raw.get("calc_version") != PEAD2_CALC_VERSION:
+            stale += 1
+            continue
+        cached_n += 1
+        if _pead2_scorable_blob(raw):
+            scorable += 1
+        if _is_pead2_cache_aged(fetched_at.get(ticker)):
+            aged += 1
+
+    return Pead2ScanCoverage(
+        universe_total=len(tickers),
+        cached=cached_n,
+        stale=stale,
+        missing=missing,
+        scorable=scorable,
+        aged=aged,
+    )
 
 
 def _breakout_map_from_frames(
@@ -506,30 +557,46 @@ def attach_weekly_breakouts_to_pead(
     tq_done = 0
     bb_total = len(universe)
     tq_total = len(universe)
+    progress_lock = threading.Lock()
 
     def _bb_progress(done: int, total: int) -> None:
         nonlocal bb_done
-        bb_done = done
-        if progress_callback:
-            progress_callback(bb_done + tq_done, bb_total + tq_total)
+        with progress_lock:
+            bb_done = done
+            _emit_pead_progress(
+                progress_callback,
+                bb_done + tq_done,
+                bb_total + tq_total,
+                phase="breakouts",
+            )
 
     def _tq_progress(done: int, total: int) -> None:
         nonlocal tq_done
-        tq_done = done
-        if progress_callback:
-            progress_callback(bb_done + tq_done, bb_total + tq_total)
+        with progress_lock:
+            tq_done = done
+            _emit_pead_progress(
+                progress_callback,
+                bb_done + tq_done,
+                bb_total + tq_total,
+                phase="breakouts",
+            )
 
-    bb_df = run_bb_strategy(
-        universe,
-        timeframe="weekly",
-        progress_callback=_bb_progress if progress_callback else None,
-    )
-    tq_df = run_tq_strategy(
-        universe,
-        timeframe="weekly",
-        max_workers=max_workers,
-        progress_callback=_tq_progress if progress_callback else None,
-    )
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        bb_future = pool.submit(
+            run_bb_strategy,
+            universe,
+            timeframe="weekly",
+            progress_callback=_bb_progress if progress_callback else None,
+        )
+        tq_future = pool.submit(
+            run_tq_strategy,
+            universe,
+            timeframe="weekly",
+            max_workers=max_workers,
+            progress_callback=_tq_progress if progress_callback else None,
+        )
+        bb_df = bb_future.result()
+        tq_df = tq_future.result()
 
     if persist:
         from stocks.core.database import (
@@ -539,11 +606,13 @@ def attach_weekly_breakouts_to_pead(
         )
 
         checked = universe["ticker"].astype(str).str.strip().str.upper().tolist()
+        _emit_pead_progress(progress_callback, 0, 1, phase="persist")
         clear_strategy_breakouts_for_tickers(checked, timeframe="weekly")
         if bb_df is not None and not bb_df.empty:
             upsert_strategy_bb_signals(bb_df, timeframe="weekly")
         if tq_df is not None and not tq_df.empty:
             upsert_strategy_tq_signals(tq_df, timeframe="weekly")
+        _emit_pead_progress(progress_callback, 1, 1, phase="persist")
 
     bmap = _breakout_map_from_frames(tq_df=tq_df, bb_df=bb_df)
     return apply_breakout_map(df, bmap, overwrite=True)
@@ -1066,16 +1135,22 @@ def _apply_pead2_returns_refresh(
     *,
     skip_tickers: set[str] | None = None,
     max_workers: int | None = None,
+    progress_callback: Callable[..., None] | None = None,
+    refresh_all: bool | None = None,
 ) -> tuple[dict[str, dict], int]:
     """Refresh lag-0 returns for cached scorable tickers (skip just-fetched rows)."""
     tickers, markets, universe_keys = _universe_ticker_lists(universe)
     skip = skip_tickers or set()
+    do_all = PEAD2_REFRESH_RETURNS_ALL if refresh_all is None else bool(refresh_all)
+    fetched_at = load_pead2_fetched_at(tickers) if not do_all else {}
+
     jobs = [
         (ticker, market, cached[ticker])
         for ticker, market in zip(tickers, markets)
         if ticker in cached
         and ticker not in skip
         and _pead2_scorable_blob(cached[ticker])
+        and (do_all or _is_pead2_cache_aged(fetched_at.get(ticker)))
     ]
     if not jobs:
         return cached, 0
@@ -1085,6 +1160,8 @@ def _apply_pead2_returns_refresh(
         min(max_workers or PEAD2_MAX_WORKERS, STRATEGY_YFINANCE_MAX_INFLIGHT),
     )
     updated: list[dict] = []
+    total = len(jobs)
+    done = 0
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
             pool.submit(_refresh_returns_blob, ticker, market, blob): ticker
@@ -1092,12 +1169,13 @@ def _apply_pead2_returns_refresh(
         }
         for future in as_completed(futures):
             row = future.result()
-            if not row:
-                continue
-            key = safe_str(row.get("ticker")).upper()
-            if key in universe_keys:
-                updated.append(row)
-                cached[key] = row
+            if row:
+                key = safe_str(row.get("ticker")).upper()
+                if key in universe_keys:
+                    updated.append(row)
+                    cached[key] = row
+            done += 1
+            _emit_pead_progress(progress_callback, done, total, phase="returns")
     if updated:
         save_pead2_cache(updated)
     return cached, len(updated)
@@ -1117,6 +1195,7 @@ def refresh_pead2_returns_only(
         only_pending=True,
         max_fetch=0,
         check_breakouts=False,
+        refresh_returns_all=True,
     )
 
 
@@ -1177,7 +1256,7 @@ def run_pead2_recent_scan(
     done = 0
     fetch_failed = 0
     if progress_callback and fetch_total == 0:
-        progress_callback(1, 1)
+        _emit_pead_progress(progress_callback, 1, 1, phase="pead")
 
     fresh_rows: list[dict] = []
     tombstone_rows: list[dict] = []
@@ -1204,8 +1283,7 @@ def run_pead2_recent_scan(
                     if ticker not in cached:
                         tombstone_rows.append(_pead2_no_data_blob(ticker, market))
                 done += 1
-                if progress_callback:
-                    progress_callback(done, fetch_total)
+                _emit_pead_progress(progress_callback, done, fetch_total, phase="pead")
         if fresh_rows or tombstone_rows:
             save_pead2_cache(fresh_rows + tombstone_rows)
             cached, _, coverage, legacy_by_ticker = _partition_pead2_universe_cache(universe)
@@ -1218,6 +1296,8 @@ def run_pead2_recent_scan(
         cached,
         skip_tickers=fresh_keys,
         max_workers=workers,
+        progress_callback=progress_callback,
+        refresh_all=refresh_returns_all,
     )
     rows = _scorable_cached_rows(cached, universe_keys)
     cache_hits = len(rows)
@@ -1276,6 +1356,7 @@ def run_pead2_scan(
     pending_mode: PendingFetchMode = "all",
     max_fetch: int | None = None,
     check_breakouts: bool | None = None,
+    refresh_returns_all: bool | None = None,
 ) -> dict:
     """
     Load PEAD rows from SQLite, then fetch Yahoo for tickers not cached at the
@@ -1321,9 +1402,9 @@ def run_pead2_scan(
     fetch_failed = 0
     if progress_callback:
         if fetch_total == 0:
-            progress_callback(1, 1)
+            _emit_pead_progress(progress_callback, 1, 1, phase="pead")
         elif cache_hits:
-            progress_callback(0, fetch_total)
+            _emit_pead_progress(progress_callback, 0, fetch_total, phase="pead")
 
     fresh_rows: list[dict] = []
     tombstone_rows: list[dict] = []
@@ -1350,8 +1431,7 @@ def run_pead2_scan(
                     if _should_tombstone_failed_fetch(fetch_mode):
                         tombstone_rows.append(_pead2_no_data_blob(ticker, market))
                 done += 1
-                if progress_callback:
-                    progress_callback(done, fetch_total)
+                _emit_pead_progress(progress_callback, done, fetch_total, phase="pead")
         if fresh_rows or tombstone_rows:
             save_pead2_cache(fresh_rows + tombstone_rows)
             cached, _, coverage, legacy_by_ticker = _partition_pead2_universe_cache(
@@ -1367,6 +1447,8 @@ def run_pead2_scan(
         cached,
         skip_tickers=fresh_keys,
         max_workers=workers,
+        progress_callback=progress_callback,
+        refresh_all=refresh_returns_all,
     )
     rows = _scorable_cached_rows(cached, universe_keys)
     cache_hits = len(rows)
@@ -1390,7 +1472,9 @@ def run_pead2_scan(
     do_breakouts = check_breakouts
     if do_breakouts is None:
         # Skip live TQ/BB on DB-only loads (e.g. holdings expand with max_fetch=0).
-        do_breakouts = not (only_pending and (max_fetch == 0))
+        do_breakouts = PEAD2_CHECK_BREAKOUTS and not (
+            only_pending and (max_fetch == 0)
+        )
 
     tq_hits = 0
     bb_hits = 0
@@ -1401,6 +1485,14 @@ def run_pead2_scan(
             progress_callback=progress_callback,
             persist=True,
         )
+        if "has_tq" in df.columns:
+            tq_hits = int(df["has_tq"].fillna(False).astype(bool).sum())
+        if "has_bb" in df.columns:
+            bb_hits = int(df["has_bb"].fillna(False).astype(bool).sum())
+    elif not df.empty:
+        from stocks.strategies.pead2.strategy import attach_strategy_breakout_signals
+
+        df = attach_strategy_breakout_signals(df)
         if "has_tq" in df.columns:
             tq_hits = int(df["has_tq"].fillna(False).astype(bool).sum())
         if "has_bb" in df.columns:

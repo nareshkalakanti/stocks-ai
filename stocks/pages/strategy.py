@@ -26,7 +26,7 @@ from stocks.dashboards.report_html import embed_html_iframe
 from stocks.scans.results_utils import analysis_universe
 from stocks.scans.scan_universe import resolve_cap_tier_id
 from stocks.scans.stock_filters import apply_stock_filters
-from stocks.listings.stocks_data import load_india_stocks
+from stocks.pages.stocks_cache import load_stocks_cached
 from stocks.strategies.ema_daily.html import build_ema_daily_html, ema_daily_iframe_height
 from stocks.strategies.ema_daily.service import (
     prepare_ema_daily_universe,
@@ -112,7 +112,7 @@ STRATEGY_SECTIONS = (
 
 @st.cache_data(ttl=120, show_spinner=False)
 def _load_stocks_cached() -> pd.DataFrame:
-    return load_india_stocks()
+    return load_stocks_cached()
 
 
 def _prepare_quant_report(df: pd.DataFrame) -> pd.DataFrame:

@@ -21,6 +21,8 @@ def _clean(value) -> str:
     text = str(value).strip()
     if text.lower() in ("", "nan", "none", "nat", "null"):
         return ""
+    if text in ("—", "–", "-"):
+        return ""
     return text
 
 

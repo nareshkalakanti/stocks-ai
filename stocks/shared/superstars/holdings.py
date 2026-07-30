@@ -168,6 +168,14 @@ def superstar_pead_map(tickers: list[str]) -> dict[str, dict]:
     return out
 
 
+def _sector_is_missing(value) -> bool:
+    s = safe_str(value).strip()
+    return not s or s in ("—", "–", "-", "nan", "None") or (
+        isinstance(value, float) and pd.isna(value)
+    )
+
+
+
 def enrich_superstar_classification(df: pd.DataFrame) -> pd.DataFrame:
     """Attach sector / industry / sub_sector from local classification DB."""
     if df is None or df.empty:
@@ -175,7 +183,15 @@ def enrich_superstar_classification(df: pd.DataFrame) -> pd.DataFrame:
     from stocks.listings.sector_display import apply_display_sector_mapping
 
     work = df.copy()
-    work["ticker"] = work["symbol"]
+    sym_col = "symbol" if "symbol" in work.columns else "ticker"
+
+    def _resolve_ticker(raw: str) -> str:
+        sym = safe_str(raw).upper()
+        if sym.endswith("-SM"):
+            return sym[:-3] or sym
+        return sym
+
+    work["ticker"] = work[sym_col].map(_resolve_ticker)
     work["market"] = work["exchange"].map(
         lambda x: (
             "BSE"
@@ -183,7 +199,19 @@ def enrich_superstar_classification(df: pd.DataFrame) -> pd.DataFrame:
             else ("NSE SME" if safe_str(x).upper() == "NSE SME" else "NSE")
         )
     )
-    work = enrich_stocks_classification(work)
+    if "sector" in work.columns:
+        work.loc[work["sector"].map(_sector_is_missing), "sector"] = ""
+    work = enrich_stocks_classification(work, overwrite_sector=False)
+    miss = work["sector"].map(_sector_is_missing) if "sector" in work.columns else pd.Series(True, index=work.index)
+    if miss.any():
+        retry = enrich_stocks_classification(
+            work.loc[miss].copy(),
+            overwrite_sector=True,
+        )
+        if not retry.empty:
+            for col in ("sector", "industry", "sub_sector"):
+                if col in retry.columns:
+                    work.loc[miss, col] = retry[col].values
     return apply_display_sector_mapping(work)
 
 
@@ -202,9 +230,13 @@ def aggregate_all_portfolios(portfolios: dict) -> pd.DataFrame:
     if not frames:
         return pd.DataFrame()
     merged = pd.concat(frames, ignore_index=True)
-    if "sector" in merged.columns and merged["sector"].astype(str).str.strip().ne("").any():
-        return merged
-    return enrich_superstar_classification(merged)
+    has_sectors = (
+        "sector" in merged.columns
+        and merged["sector"].map(lambda s: not _sector_is_missing(s)).any()
+    )
+    if not has_sectors:
+        return enrich_superstar_classification(merged)
+    return merged
 
 
 def all_investors_summary(df: pd.DataFrame) -> dict:
