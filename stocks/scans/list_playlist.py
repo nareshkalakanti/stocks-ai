@@ -19,13 +19,28 @@ from stocks.scans.holdings_playlist import (
 )
 from stocks.shared.early_edge import EARLY_EDGE_PLAYLIST_LABEL
 
+NSE_WATCHING_LABEL = "NSE"
+NSE_SME_WATCHING_LABEL = "NSE SME"
+MARKET_WATCHING_LIST_LABELS = (NSE_WATCHING_LABEL, NSE_SME_WATCHING_LABEL)
+
 WATCHING_LIST_LABELS = (
     EARLY_EDGE_PLAYLIST_LABEL,
     HOLDINGS_PLAYLIST_LABEL,
     *FUND_WATCHLIST_PLAYLIST_LABELS,
+    *MARKET_WATCHING_LIST_LABELS,
+)
+
+# Universe lists — excluded from "common stocks" (2+ curated lists).
+WATCHING_COMMON_LIST_LABELS = tuple(
+    label for label in WATCHING_LIST_LABELS if label not in MARKET_WATCHING_LIST_LABELS
 )
 
 _LIST_SET = frozenset(WATCHING_LIST_LABELS)
+_MARKET_LIST_SET = frozenset(MARKET_WATCHING_LIST_LABELS)
+
+
+def is_market_watching_list(label: str) -> bool:
+    return safe_str(label) in _MARKET_LIST_SET
 
 
 def is_watching_list(label: str) -> bool:
@@ -38,6 +53,12 @@ def watching_list_option_count(label: str) -> int:
 
         df = load_early_edge_df()
         return len(df) if df is not None and not df.empty else 0
+    if is_market_watching_list(label):
+        from stocks.listings.stocks_data import apply_market_column_filter, load_india_stocks
+
+        stocks = load_india_stocks()
+        filtered = apply_market_column_filter(stocks, label)
+        return len(filtered) if filtered is not None and not filtered.empty else 0
     if is_holdings_playlist(label):
         return holdings_playlist_count()
     if is_fund_watchlist_playlist(label):

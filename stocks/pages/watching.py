@@ -1,17 +1,22 @@
-"""Watching — curated lists: Early Edge, Holdings, Negen, Niveshaay."""
+"""Watching — curated lists: Early Edge, Holdings, Negen, Niveshaay, NSE, NSE SME."""
 
 from __future__ import annotations
+
+import math
 
 import pandas as pd
 import streamlit as st
 
 from stocks.core.text_utils import safe_str
 from stocks.dashboards.iframe_helpers import embed_html_iframe
-from stocks.listings.stocks_data import load_india_stocks
+from stocks.listings.stocks_data import apply_market_column_filter, load_india_stocks
 from stocks.scans.holdings_playlist import HOLDINGS_PLAYLIST_LABEL
 from stocks.scans.list_playlist import (
+    MARKET_WATCHING_LIST_LABELS,
+    WATCHING_COMMON_LIST_LABELS,
     WATCHING_LIST_LABELS,
     format_watching_list_option,
+    is_market_watching_list,
 )
 from stocks.scans.scan_toolbar import inject_scan_toolbar_css
 from stocks.shared.early_edge import (
@@ -40,9 +45,13 @@ from stocks.shared.portfolio import (
 )
 
 from stocks.shared.watching_common_html import build_watching_common_html
+from stocks.shared.watching_pagination import render_watching_pagination
 
 _WATCHING_LIST_KEY = "watching_list"
+_WATCHING_LIST_PREV_KEY = "watching_list_prev"
 _COMMON_TILES_MAX = 12
+_WATCHING_PAGE_SIZE = 100
+_PAGINATED_LISTS = frozenset(MARKET_WATCHING_LIST_LABELS)
 
 _LABEL_TO_FUND_KEY = {
     NEGEN_PLAYLIST_LABEL: "negen",
@@ -59,7 +68,60 @@ _LIST_CAPTIONS: dict[str, str] = {
     ),
     NEGEN_PLAYLIST_LABEL: "**Negen** fund watchlist.",
     NIVESHAAY_PLAYLIST_LABEL: "**Niveshaay** fund watchlist.",
+    "NSE": "All **NSE mainboard** listings.",
+    "NSE SME": "All **NSE Emerge / SME** listings.",
 }
+
+
+def _page_session_key(list_label: str) -> str:
+    return f"watching_page_{safe_str(list_label).lower().replace(' ', '_')}"
+
+
+def _reset_pagination_if_list_changed(selected: str) -> None:
+    prev = st.session_state.get(_WATCHING_LIST_PREV_KEY)
+    if prev == selected:
+        return
+    for label in MARKET_WATCHING_LIST_LABELS:
+        st.session_state[_page_session_key(label)] = 1
+    st.session_state[_WATCHING_LIST_PREV_KEY] = selected
+
+
+def _paginate_raw(
+    raw: pd.DataFrame,
+    list_label: str,
+) -> tuple[pd.DataFrame, int, int, int]:
+    """Return ``(page_slice, page, total_pages, total_rows)``."""
+    total_rows = len(raw) if raw is not None and not raw.empty else 0
+    if total_rows == 0 or list_label not in _PAGINATED_LISTS:
+        return raw, 1, 1, total_rows
+
+    total_pages = max(1, math.ceil(total_rows / _WATCHING_PAGE_SIZE))
+    page_key = _page_session_key(list_label)
+    page = int(st.session_state.get(page_key, 1) or 1)
+    page = max(1, min(page, total_pages))
+    st.session_state[page_key] = page
+    start = (page - 1) * _WATCHING_PAGE_SIZE
+    end = start + _WATCHING_PAGE_SIZE
+    return raw.iloc[start:end].copy(), page, total_pages, total_rows
+
+
+def _render_pagination_bar(
+    list_label: str,
+    *,
+    page: int,
+    total_pages: int,
+    total_rows: int,
+    position: str = "top",
+) -> None:
+    render_watching_pagination(
+        list_label,
+        page=page,
+        total_pages=total_pages,
+        total_rows=total_rows,
+        page_size=_WATCHING_PAGE_SIZE,
+        page_key=_page_session_key(list_label),
+        position=position,
+    )
 
 
 def _tickers_from_df(df: pd.DataFrame | None) -> set[str]:
@@ -75,12 +137,19 @@ def _raw_for_list(selected: str) -> pd.DataFrame:
         return load_holdings(seed_if_empty=True)
     if selected in _LABEL_TO_FUND_KEY:
         return load_fund_watchlist_df(_LABEL_TO_FUND_KEY[selected])
+    if is_market_watching_list(selected):
+        stocks = load_india_stocks()
+        df = apply_market_column_filter(stocks, selected)
+        if df is None or df.empty:
+            return pd.DataFrame()
+        sort_col = "ticker" if "ticker" in df.columns else df.columns[0]
+        return df.sort_values(sort_col, ascending=True).reset_index(drop=True)
     return pd.DataFrame()
 
 
 def _list_membership() -> dict[str, set[str]]:
     out: dict[str, set[str]] = {}
-    for label in WATCHING_LIST_LABELS:
+    for label in WATCHING_COMMON_LIST_LABELS:
         for ticker in _tickers_from_df(_raw_for_list(label)):
             out.setdefault(ticker, set()).add(label)
     return out
@@ -99,7 +168,7 @@ def _common_stocks() -> list[tuple[str, list[str]]]:
 
 def _lookup_ticker_row(ticker: str) -> dict:
     key = safe_str(ticker).upper()
-    for label in WATCHING_LIST_LABELS:
+    for label in WATCHING_COMMON_LIST_LABELS:
         raw = _raw_for_list(label)
         if raw is None or raw.empty or "ticker" not in raw.columns:
             continue
@@ -345,9 +414,30 @@ def _render_selected_list(selected: str) -> None:
         st.info("No tickers in this list yet.")
         return
 
-    view = _enrich_for_list(selected, raw)
-    iframe_key = f"watching_board_{selected.lower().replace(' ', '_')}"
+    page_raw = raw
+    page, total_pages, total_rows = 1, 1, len(raw)
+    if selected in _PAGINATED_LISTS:
+        page_raw, page, total_pages, total_rows = _paginate_raw(raw, selected)
+        _render_pagination_bar(
+            selected,
+            page=page,
+            total_pages=total_pages,
+            total_rows=total_rows,
+            position="top",
+        )
+
+    view = _enrich_for_list(selected, page_raw)
+    iframe_key = f"watching_board_{selected.lower().replace(' ', '_')}_p{page}"
     _render_watching_board(view, title=selected, iframe_key=iframe_key)
+
+    if selected in _PAGINATED_LISTS and total_rows > 0:
+        _render_pagination_bar(
+            selected,
+            page=page,
+            total_pages=total_pages,
+            total_rows=total_rows,
+            position="bottom",
+        )
 
 
 def render_watching(*, show_title: bool = True) -> None:
@@ -367,7 +457,10 @@ def render_watching(*, show_title: bool = True) -> None:
                 list_opts,
                 key=_WATCHING_LIST_KEY,
                 format_func=format_watching_list_option,
-                help="Early Edge, Holdings, Negen, Niveshaay — same board and Fill missing for every list.",
+                help=(
+                    "Early Edge, Holdings, Negen, Niveshaay, NSE, NSE SME — "
+                    "same board and Fill missing (NSE / SME: current page only)."
+                ),
             )
         with row[1]:
             fill = st.button(
@@ -375,14 +468,19 @@ def render_watching(*, show_title: bool = True) -> None:
                 use_container_width=True,
                 help=(
                     "Fetch missing price, mcap, website, sector, and sub-sector "
-                    "from screener + Yahoo for the current list (same as agent fixes)."
+                    "from screener + Yahoo. NSE / NSE SME: current page only."
                 ),
                 key="watching_fill",
             )
 
+    _reset_pagination_if_list_changed(selected)
+
     raw_selected = _raw_for_list(selected)
-    if not raw_selected.empty:
-        gap_view = _enrich_for_list(selected, raw_selected)
+    gap_raw = raw_selected
+    if selected in _PAGINATED_LISTS and not raw_selected.empty:
+        gap_raw, _, _, _ = _paginate_raw(raw_selected, selected)
+    if not gap_raw.empty:
+        gap_view = _enrich_for_list(selected, gap_raw)
         gap_line = format_watching_gaps(watching_gap_counts(gap_view))
         if gap_line:
             st.caption(gap_line)
@@ -390,6 +488,13 @@ def render_watching(*, show_title: bool = True) -> None:
     _render_common_tiles()
 
     if fill:
-        _run_fill_missing(_raw_for_list(selected), list_label=selected)
+        fill_raw = raw_selected
+        if selected in _PAGINATED_LISTS and not raw_selected.empty:
+            fill_raw, page, total_pages, total_rows = _paginate_raw(raw_selected, selected)
+            st.info(
+                f"Filling gaps for **page {page}** only "
+                f"({total_rows:,} stocks in {selected} — use Next / Previous to fill other pages)."
+            )
+        _run_fill_missing(fill_raw, list_label=selected)
 
     _render_selected_list(selected)

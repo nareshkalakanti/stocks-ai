@@ -45,7 +45,7 @@ def _normalize_website(url: str | None) -> str | None:
 
 
 def fetch_screener_profile(ticker: str, market: str | None = None) -> dict:
-    """Best-effort website, about, and market cap (₹ Cr) from screener.in."""
+    """Best-effort website, about, price, and market cap (₹ Cr) from screener.in."""
     url = screener_url(ticker, market)
     if not url or url.rstrip("/").endswith("screener.in"):
         return {}
@@ -102,6 +102,32 @@ def fetch_screener_profile(ticker: str, market: str | None = None) -> dict:
         except ValueError:
             pass
 
+    # e.g. Current Price … ₹ <span class="number">162</span>
+    price_match = re.search(
+        r"Current\s*Price[\s\S]{0,240}?₹\s*<span class=\"number\">\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*</span>",
+        html,
+        flags=re.I,
+    )
+    if not price_match:
+        price_match = re.search(
+            r"Current\s*Price[\s\S]{0,120}?₹\s*([0-9][0-9,]*(?:\.[0-9]+)?)",
+            html,
+            flags=re.I,
+        )
+    if not price_match:
+        price_match = re.search(
+            r'class="name">\s*Current\s*Price\s*</span>\s*<span class="number">\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*</span>',
+            html,
+            flags=re.I,
+        )
+    if price_match:
+        try:
+            px = round(float(price_match.group(1).replace(",", "")), 2)
+            if px > 0:
+                out["current_price"] = px
+        except ValueError:
+            pass
+
     # Screener peer bar: Broad Sector / Sector / Industry links.
     broad = re.search(
         r'title="Broad Sector">\s*([^<]+?)\s*</a>',
@@ -135,6 +161,18 @@ def fetch_screener_profile(ticker: str, market: str | None = None) -> dict:
 def fetch_screener_market_cap_cr(ticker: str, market: str | None = None) -> float | None:
     """Market cap in ₹ Cr from screener.in, or None."""
     raw = fetch_screener_profile(ticker, market).get("market_cap_cr")
+    try:
+        if raw is None:
+            return None
+        val = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return val if val > 0 else None
+
+
+def fetch_screener_current_price(ticker: str, market: str | None = None) -> float | None:
+    """Last close / current price from screener.in, or None."""
+    raw = fetch_screener_profile(ticker, market).get("current_price")
     try:
         if raw is None:
             return None

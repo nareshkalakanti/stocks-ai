@@ -472,11 +472,12 @@ def hydrate_early_edge_missing(
                     need_mcap = False
                     mcap_known.add(ticker)
 
-            # Force screener classification when sub-sector/industry missing
-            # (merge alone may skip scrape if website+about+sector already cached).
+            # Force screener when price / sector / mcap still missing (Yahoo often
+            # omits BSE SME symbols like TRUECOLORS even with numeric .BO code).
             scraped_industry = ""
             scraped_sector = ""
-            if need_sector:
+            scraped: dict = {}
+            if need_sector or need_price or need_mcap:
                 scraped = fetch_screener_profile(ticker, market) or {}
                 scraped_sector = safe_str(scraped.get("company_sector"))
                 scraped_industry = safe_str(scraped.get("company_industry"))
@@ -491,6 +492,18 @@ def hydrate_early_edge_missing(
                         stats["mcap"] += 1
                         need_mcap = False
                         mcap_known.add(ticker)
+                if need_price and ticker not in price_known:
+                    raw_px = scraped.get("current_price")
+                    if raw_px is not None:
+                        try:
+                            px = float(raw_px)
+                        except (TypeError, ValueError):
+                            px = 0.0
+                        if px > 0:
+                            save_stock_price_to_db(ticker, px, market=market)
+                            price_known[ticker] = px
+                            stats["price"] += 1
+                            need_price = False
 
             if need_web or need_sector or need_mcap or need_price:
                 merged = merge_company_profile({}, ticker, market)
@@ -708,6 +721,23 @@ def enrich_watching_board(
                 save_stock_price_to_db(key, float(px), market=market_by.get(key))
             except (TypeError, ValueError):
                 continue
+
+        still_missing = [
+            t for t in missing_price if safe_str(t).upper() not in price_map
+        ]
+        if still_missing:
+            from stocks.market.screener_profile import fetch_screener_current_price
+
+            for t in still_missing:
+                key = safe_str(t).upper()
+                px = fetch_screener_current_price(key, market_by.get(key))
+                if px is None:
+                    continue
+                try:
+                    price_map[key] = float(px)
+                    save_stock_price_to_db(key, float(px), market=market_by.get(key))
+                except (TypeError, ValueError):
+                    continue
 
     out["price"] = out["ticker"].map(lambda t: price_map.get(safe_str(t).upper()))
 
