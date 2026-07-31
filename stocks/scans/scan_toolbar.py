@@ -22,8 +22,8 @@ if TYPE_CHECKING:
 
     from stocks.scans.stock_filters import StockFilters
 
-# Market, sector, sub-sector filter columns.
-FILTER_COL_WIDTHS = [0.78, 1.05, 1.05]
+# Market, sector, list, sub-sector filter columns.
+FILTER_COL_WIDTHS = [0.78, 1.05, 0.82, 1.05]
 
 CAP_TIER_COL_WIDTH = 0.82
 SCAN_BTN_COL_WIDTH = 0.44
@@ -36,10 +36,11 @@ BB_TIMEFRAME_COL_WIDTH = 0.68
 # Indices after FILTER_COL_WIDTHS in every scan toolbar row.
 IDX_MARKET = 0
 IDX_SECTOR = 1
-IDX_INDUSTRY = 2  # Sub sector (fine industry / sub_sector tags)
-IDX_CAP_TIER = 3
+IDX_LIST = 2
+IDX_INDUSTRY = 3  # Sub sector (fine industry / sub_sector tags)
+IDX_CAP_TIER = 4
 # First column index for page-specific controls (Scan, Strategy, etc.).
-IDX_PAGE_START = 4
+IDX_PAGE_START = 5
 
 _CAP_HELP = (
     "Optional cap filter · default **All caps** (no minimum) · "
@@ -142,12 +143,12 @@ def render_base_scan_filters(
     cap_tier_key: str,
     share_quant_market: bool = True,
 ) -> tuple["StockFilters", str]:
-    """Render Market / Sector / Sub sector / Market cap in one toolbar row."""
+    """Render Market / Sector / List / Sub sector / Market cap in one toolbar row."""
     from stocks.scans.stock_filters import render_stock_filters
 
     filters = render_stock_filters(
         stocks,
-        cols=(row[IDX_MARKET], row[IDX_SECTOR], row[IDX_INDUSTRY]),
+        cols=(row[IDX_MARKET], row[IDX_SECTOR], row[IDX_LIST], row[IDX_INDUSTRY]),
         key_prefix=key_prefix,
         share_quant_market=share_quant_market,
     )

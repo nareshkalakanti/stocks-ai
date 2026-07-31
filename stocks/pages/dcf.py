@@ -47,6 +47,7 @@ def _filter_key(
 ) -> tuple:
     return (
         filters.market,
+        filters.list_name,
         tuple(filters.sectors),
         tuple(filters.industries),
         filters.search,

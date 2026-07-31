@@ -45,6 +45,7 @@ def _inject_css() -> None:
 def _filter_key(filters, *, cap_tier_id: str) -> tuple:
     return (
         filters.market,
+        filters.list_name,
         tuple(filters.sectors),
         tuple(filters.industries),
         filters.search,
@@ -104,7 +105,7 @@ def render_distress(*, show_title: bool = True) -> None:
                 ),
             )
 
-    holdings_view = is_holdings_playlist(filters.market)
+    holdings_view = is_holdings_playlist(filters.list_name)
     seed_n = len(load_distress_seed_tickers())
     if not universe.empty and "source" in universe.columns:
         src_counts = universe["source"].fillna("?").astype(str).value_counts().to_dict()

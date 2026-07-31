@@ -279,7 +279,34 @@ def filter_stocks(
     *,
     industry: str | list[str] = "All",
     sub_sector: str | list[str] = "All",
+    list_name: str = "All",
 ) -> pd.DataFrame:
+    from stocks.scans.list_playlist import LIST_ALL_LABEL, is_list_playlist, list_playlist_listings
+
+    list_label = safe_str(list_name) or LIST_ALL_LABEL
+    if list_label != LIST_ALL_LABEL and is_list_playlist(list_label):
+        if is_scan_playlist(market):
+            base = scan_playlist_listings(
+                stocks,
+                market,
+                sector="All",
+                search="",
+                industry="All",
+                sub_sector="All",
+            )
+        elif market != "All":
+            base = apply_market_column_filter(stocks.copy(), market)
+        else:
+            base = stocks
+        return list_playlist_listings(
+            base,
+            list_label,
+            sector=sector,
+            search=search,
+            industry=industry,
+            sub_sector=sub_sector,
+        )
+
     sectors = normalize_sectors(sector)
     if is_scan_playlist(market):
         return scan_playlist_listings(

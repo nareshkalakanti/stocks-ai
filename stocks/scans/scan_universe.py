@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from stocks.scans.scan_playlists import is_ds_playlist, is_holdings_playlist
+from stocks.scans.scan_playlists import is_ds_playlist
 
 
 def resolve_cap_tier_id(market: str, cap_tier_id: str) -> str:

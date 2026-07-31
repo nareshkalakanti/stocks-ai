@@ -81,6 +81,7 @@ def _ht_filter_key(
 ) -> tuple:
     return (
         filters.market,
+        filters.list_name,
         tuple(filters.sectors),
         tuple(filters.industries),
         filters.search,

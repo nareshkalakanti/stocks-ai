@@ -133,17 +133,26 @@ def _build_universe(
     cap_tier_id: str = "all",
 ) -> pd.DataFrame:
     market_key = safe_str(market)
+    list_name = "All"
+    if market_key == HOLDINGS_PLAYLIST_LABEL:
+        list_name = HOLDINGS_PLAYLIST_LABEL
+        market_key = "All"
 
-    filters = StockFilters(market=market, sectors=[], industries=[], search="")
+    filters = StockFilters(
+        market=market_key,
+        list_name=list_name,
+        sectors=[],
+        industries=[],
+        search="",
+    )
     filtered = apply_stock_filters(stocks, filters)
     # apply_stock_filters already expands Market=NSE → NSE + NSE SME.
     # For All / index playlists, keep DIN-eligible NSE family only (skip BSE).
     if "market" in filtered.columns:
         mk = filtered["market"].astype(str).str.upper()
         if is_scan_playlist(market_key):
-            if market_key != HOLDINGS_PLAYLIST_LABEL:
-                filtered = filtered[mk.isin(_NSE_GOV_MARKETS)]
-        elif market_key.upper() in ("ALL", ""):
+            filtered = filtered[mk.isin(_NSE_GOV_MARKETS)]
+        elif market_key.upper() in ("ALL", "") or list_name == HOLDINGS_PLAYLIST_LABEL:
             filtered = filtered[mk.isin(_NSE_GOV_MARKETS)]
         elif market_key.upper() == "BSE":
             filtered = filtered[mk == "BSE"]
