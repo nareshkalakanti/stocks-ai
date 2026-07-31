@@ -952,6 +952,75 @@ def load_metrics_from_db(tickers: list[str]) -> pd.DataFrame:
     return df
 
 
+def save_stock_price_to_db(
+    ticker: str,
+    price: float,
+    *,
+    market: str | None = None,
+    yf_symbol: str | None = None,
+) -> None:
+    """Persist last price on ``stock_metrics`` (keeps existing mcap / PE when present)."""
+    init_db()
+    now = _utc_now()
+    ticker = str(ticker).strip().upper()
+    try:
+        price_f = float(price)
+    except (TypeError, ValueError):
+        return
+    if price_f != price_f or price_f <= 0:
+        return
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO stock_metrics (
+                ticker, market, yf_symbol, price, pe, market_cap_cr,
+                w52_high, w52_low, return_1y_pct, fetched_at
+            ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, ?)
+            ON CONFLICT(ticker) DO UPDATE SET
+                market=COALESCE(excluded.market, stock_metrics.market),
+                yf_symbol=COALESCE(excluded.yf_symbol, stock_metrics.yf_symbol),
+                price=excluded.price,
+                fetched_at=excluded.fetched_at
+            """,
+            (ticker, market, yf_symbol, price_f, now),
+        )
+
+
+def load_stock_prices_from_db(
+    tickers: list[str],
+    *,
+    allow_stale: bool = True,
+) -> dict[str, float]:
+    """Latest cached prices keyed by ticker."""
+    if not tickers:
+        return {}
+    init_db()
+    keys = [str(t).strip().upper() for t in tickers if str(t).strip()]
+    if not keys:
+        return {}
+    placeholders = ",".join("?" * len(keys))
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT ticker, price, fetched_at
+            FROM stock_metrics
+            WHERE ticker IN ({placeholders}) AND price IS NOT NULL
+            """,
+            keys,
+        ).fetchall()
+    out: dict[str, float] = {}
+    for row in rows:
+        if not allow_stale and not _is_fresh(row["fetched_at"], METRICS_CACHE_HOURS):
+            continue
+        try:
+            val = float(row["price"])
+        except (TypeError, ValueError):
+            continue
+        if val == val and val > 0:
+            out[str(row["ticker"]).upper()] = val
+    return out
+
+
 def load_market_cap_from_db(
     tickers: list[str] | None = None,
     *,
@@ -1036,6 +1105,56 @@ def save_market_cap_to_db(
             """,
             (market_cap_cr, now, ticker),
         )
+
+
+def update_stock_classification(
+    ticker: str,
+    *,
+    market: str | None = None,
+    sector: str | None = None,
+    industry: str | None = None,
+    sub_sector: str | None = None,
+) -> bool:
+    """Patch sector / industry / sub_sector on an existing ``stocks`` row (no full replace)."""
+    init_db()
+    key = safe_str(ticker).upper()
+    if not key:
+        return False
+    sector_v = safe_str(sector) or None
+    industry_v = safe_str(industry) or None
+    sub_v = safe_str(sub_sector) or industry_v
+    if not any((sector_v, industry_v, sub_v)):
+        return False
+    now = _utc_now()
+    mkt = safe_str(market).upper() or None
+    with get_connection() as conn:
+        _ensure_stocks_columns(conn)
+        if mkt:
+            cur = conn.execute(
+                """
+                UPDATE stocks
+                SET sector = COALESCE(NULLIF(?, ''), sector),
+                    industry = COALESCE(NULLIF(?, ''), industry),
+                    sub_sector = COALESCE(NULLIF(?, ''), sub_sector),
+                    updated_at = ?
+                WHERE ticker = ? AND UPPER(market) = ?
+                """,
+                (sector_v or "", industry_v or "", sub_v or "", now, key, mkt),
+            )
+            if cur.rowcount:
+                return True
+        cur = conn.execute(
+            """
+            UPDATE stocks
+            SET sector = COALESCE(NULLIF(?, ''), sector),
+                industry = COALESCE(NULLIF(?, ''), industry),
+                sub_sector = COALESCE(NULLIF(?, ''), sub_sector),
+                updated_at = ?
+            WHERE ticker = ?
+            """,
+            (sector_v or "", industry_v or "", sub_v or "", now, key),
+        )
+        return bool(cur.rowcount)
 
 
 def save_metrics_to_db(metrics: pd.DataFrame, markets: list[str | None]) -> None:

@@ -87,7 +87,7 @@ def _save_profile_if_needed(
 
 
 def _fetch_yfinance_profile(ticker: str, market: str | None) -> dict:
-    """Best-effort website + about from Yahoo when screener omits them."""
+    """Best-effort website + about + sector from Yahoo when screener omits them."""
     symbol = to_yfinance_symbol(ticker, market)
     try:
         info = call_throttled(
@@ -105,6 +105,20 @@ def _fetch_yfinance_profile(ticker: str, market: str | None) -> dict:
     about = safe_str(info.get("longBusinessSummary")).strip()
     if about:
         out["long_description"] = about
+    sector = safe_str(info.get("sector")).strip()
+    if sector:
+        out["company_sector"] = sector
+    industry = safe_str(info.get("industry")).strip()
+    if industry:
+        out["company_industry"] = industry
+    raw_mcap = info.get("marketCap")
+    try:
+        if raw_mcap is not None:
+            val = float(raw_mcap)
+            if val > 0:
+                out["market_cap_cr"] = round(val / 1e7, 1)
+    except (TypeError, ValueError):
+        pass
     return out
 
 
@@ -162,9 +176,19 @@ def merge_company_profile(
     if _profile_incomplete(out):
         yf_profile = _fetch_yfinance_profile(ticker_key, market)
         if yf_profile:
+            yf_mcap = yf_profile.pop("market_cap_cr", None)
             out = _apply_stored_row(out, yf_profile)
             if source != "screener":
                 source = "yfinance"
+            if yf_mcap is not None:
+                try:
+                    save_market_cap_to_db(
+                        ticker_key,
+                        float(yf_mcap),
+                        market=market,
+                    )
+                except Exception:
+                    pass
 
     if override_web and not sanitize_website(out.get("website")):
         out["website"] = override_web

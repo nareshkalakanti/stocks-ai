@@ -93,6 +93,7 @@ def _rows_payload(df: pd.DataFrame) -> list[dict]:
                 or safe_str(row.get("industry"))
                 or "",
                 "industry": safe_str(row.get("industry")) or "",
+                "price": json_safe_scalar(row.get("price")),
                 "market_cap_cr": json_safe_scalar(row.get("market_cap_cr")),
                 "cap_code": safe_str(row.get("cap_code")) or "",
                 "cap_label": safe_str(row.get("cap_label")) or "",
@@ -100,6 +101,7 @@ def _rows_payload(df: pd.DataFrame) -> list[dict]:
                 "is_sme": market == "NSE SME",
                 "sc": safe_str(row.get("sc")) or "",
                 "tv": safe_str(row.get("tv")) or "",
+                "website": safe_str(row.get("website")) or "",
                 "matched_from": safe_str(row.get("holding_entity")) or "",
             }
         )
@@ -160,11 +162,10 @@ def build_early_edge_html(
   const SECTORS = {sectors_json};
   const COLS = [
     {{ id: "company", label: "Company", sort: "name" }},
+    {{ id: "price", label: "Price", sort: "price", num: true }},
     {{ id: "sector", label: "Sector", sort: "sector" }},
     {{ id: "sub_sector", label: "Sub-sector", sort: "sub_sector" }},
     {{ id: "market_cap_cr", label: "Mcap Cr", sort: "market_cap_cr", num: true }},
-    {{ id: "cap_code", label: "Cap", sort: "cap_code" }},
-    {{ id: "market", label: "Market", sort: "market" }},
     {{ id: "links", label: "Links", sort: null }},
   ];
   let searchQuery = "";
@@ -197,6 +198,11 @@ def build_early_edge_html(
     if (n == null) return '<span class="ee-muted">—</span>';
     return `<span class="ee-num">${{n.toLocaleString("en-IN", {{ maximumFractionDigits: 1 }})}}</span>`;
   }}
+  function fmtPrice(v) {{
+    const n = num(v);
+    if (n == null) return '<span class="ee-muted">—</span>';
+    return `<span class="ee-num">₹${{n.toLocaleString("en-IN", {{ minimumFractionDigits: 2, maximumFractionDigits: 2 }})}}</span>`;
+  }}
   function fmtCap(code, label) {{
     const c = String(code || "").toUpperCase();
     if (!c) return '<span class="ee-muted">—</span>';
@@ -214,6 +220,9 @@ def build_early_edge_html(
   }}
   function linksCell(r) {{
     const bits = [];
+    let web = r.website || "";
+    if (web && !/^https?:\\/\\//i.test(web)) web = "https://" + web;
+    if (web) bits.push(`<a href="${{esc(web)}}" target="_blank" rel="noopener noreferrer" title="Company website">Web</a>`);
     if (r.sc) bits.push(`<a href="${{esc(r.sc)}}" target="_blank" rel="noopener noreferrer">SC</a>`);
     if (r.tv) bits.push(`<a href="${{esc(r.tv)}}" target="_blank" rel="noopener noreferrer">TV</a>`);
     return bits.length ? `<span class="ee-links">${{bits.join("")}}</span>` : "—";
@@ -221,11 +230,10 @@ def build_early_edge_html(
   function cell(col, r) {{
     switch (col.id) {{
       case "company": return companyCell(r);
+      case "price": return fmtPrice(r.price);
       case "sector": return esc(r.sector) || '<span class="ee-muted">—</span>';
       case "sub_sector": return esc(r.sub_sector) || '<span class="ee-muted">—</span>';
       case "market_cap_cr": return fmtMcap(r.market_cap_cr);
-      case "cap_code": return fmtCap(r.cap_code, r.cap_label);
-      case "market": return esc(r.market) || "—";
       case "links": return linksCell(r);
       default: return "—";
     }}

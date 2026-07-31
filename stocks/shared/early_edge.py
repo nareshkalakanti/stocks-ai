@@ -310,9 +310,107 @@ def early_edge_count() -> int:
     return len(early_edge_tickers())
 
 
+def hydrate_early_edge_missing(
+    df: pd.DataFrame | None = None,
+    *,
+    progress_callback=None,
+) -> dict[str, int]:
+    """
+    Fetch missing mcap / website / sector from screener + Yahoo and persist to SQLite.
+
+    Returns counts: ``tried``, ``mcap``, ``website``, ``sector``.
+    """
+    from stocks.core.database import (
+        load_company_profiles_from_db,
+        load_market_cap_from_db,
+        save_market_cap_to_db,
+        update_stock_classification,
+    )
+    from stocks.core.text_utils import sanitize_website
+    from stocks.market.company_profile import merge_company_profile
+    from stocks.market.screener_profile import fetch_market_cap_cr
+
+    view = enrich_early_edge_display(df)
+    if view.empty:
+        return {"tried": 0, "mcap": 0, "website": 0, "sector": 0}
+
+    tickers = view["ticker"].astype(str).str.upper().tolist()
+    profiles = load_company_profiles_from_db(tickers)
+    mcap_known: set[str] = set()
+    try:
+        mcap_df = load_market_cap_from_db(tickers, allow_stale=True)
+        if mcap_df is not None and not mcap_df.empty:
+            mcap_known = {
+                safe_str(t).upper()
+                for t in mcap_df["ticker"]
+                if safe_str(t)
+            }
+    except Exception:
+        pass
+
+    pending: list[tuple[str, str, bool, bool, bool]] = []
+    for _, row in view.iterrows():
+        ticker = safe_str(row.get("ticker")).upper()
+        if not ticker:
+            continue
+        market = safe_str(row.get("market")).upper() or "NSE"
+        need_mcap = ticker not in mcap_known
+        prof = profiles.get(ticker) or {}
+        need_web = not sanitize_website(prof.get("website"))
+        need_sector = not safe_str(row.get("sector"))
+        if need_mcap or need_web or need_sector:
+            pending.append((ticker, market, need_mcap, need_web, need_sector))
+
+    stats = {"tried": len(pending), "mcap": 0, "website": 0, "sector": 0}
+    total = len(pending)
+    for i, (ticker, market, need_mcap, need_web, need_sector) in enumerate(pending, start=1):
+        if progress_callback:
+            try:
+                progress_callback(i - 1, total, ticker)
+            except Exception:
+                pass
+        try:
+            if need_mcap:
+                mcap = fetch_market_cap_cr(ticker, market)
+                if mcap is not None and mcap > 0:
+                    save_market_cap_to_db(ticker, float(mcap), market=market)
+                    stats["mcap"] += 1
+                    need_mcap = False
+            if need_web or need_sector or need_mcap:
+                merged = merge_company_profile({}, ticker, market)
+                if sanitize_website(merged.get("website")):
+                    if need_web:
+                        stats["website"] += 1
+                sector = safe_str(merged.get("company_sector"))
+                industry = safe_str(merged.get("company_industry"))
+                if need_sector and (sector or industry):
+                    if update_stock_classification(
+                        ticker,
+                        market=market,
+                        sector=sector or None,
+                        industry=industry or None,
+                        sub_sector=industry or None,
+                    ):
+                        stats["sector"] += 1
+                # Profile path may also have saved mcap from screener/Yahoo.
+                if need_mcap:
+                    mcap_df = load_market_cap_from_db([ticker], allow_stale=True)
+                    if mcap_df is not None and not mcap_df.empty:
+                        stats["mcap"] += 1
+        except Exception:
+            continue
+    if progress_callback:
+        try:
+            progress_callback(total, total, "")
+        except Exception:
+            pass
+    return stats
+
+
 def enrich_early_edge_display(df: pd.DataFrame | None = None) -> pd.DataFrame:
-    """Watchlist rows + listing sector/sub_sector + SQLite mcap / Cap code."""
-    from stocks.core.database import load_market_cap_from_db
+    """Watchlist rows + listing sector/sub_sector + SQLite mcap / Cap code / website."""
+    from stocks.core.database import load_company_profiles_from_db, load_market_cap_from_db
+    from stocks.core.text_utils import sanitize_website
     from stocks.governance.score import mcap_cap_code, mcap_cap_label
     from stocks.listings.classification_service import (
         load_classification_maps,
@@ -367,6 +465,22 @@ def enrich_early_edge_display(df: pd.DataFrame | None = None) -> pd.DataFrame:
             if not safe_str(row.get("sub_sector")) and subsector:
                 out.at[idx, "sub_sector"] = subsector
 
+    tickers = out["ticker"].tolist()
+    profiles = load_company_profiles_from_db(tickers)
+    websites: list[str | None] = []
+    for _, row in out.iterrows():
+        ticker = safe_str(row.get("ticker")).upper()
+        prof = profiles.get(ticker) or {}
+        web = sanitize_website(prof.get("website"))
+        websites.append(web)
+        if not safe_str(row.get("sector")) and safe_str(prof.get("company_sector")):
+            out.at[row.name, "sector"] = safe_str(prof.get("company_sector"))
+        if not safe_str(row.get("industry")) and safe_str(prof.get("company_industry")):
+            out.at[row.name, "industry"] = safe_str(prof.get("company_industry"))
+        if not safe_str(row.get("sub_sector")) and safe_str(prof.get("company_industry")):
+            out.at[row.name, "sub_sector"] = safe_str(prof.get("company_industry"))
+    out["website"] = websites
+
     # Prefer industry as sub_sector display when sub_sector blank.
     out["sub_sector"] = out.apply(
         lambda r: safe_str(r.get("sub_sector"))
@@ -381,7 +495,6 @@ def enrich_early_edge_display(df: pd.DataFrame | None = None) -> pd.DataFrame:
         axis=1,
     )
 
-    tickers = out["ticker"].tolist()
     mcap_map: dict[str, float] = {}
     try:
         mcap_df = load_market_cap_from_db(tickers, allow_stale=True)
@@ -401,6 +514,38 @@ def enrich_early_edge_display(df: pd.DataFrame | None = None) -> pd.DataFrame:
     out["cap_code"] = out["market_cap_cr"].map(mcap_cap_code)
     out["cap_label"] = out["market_cap_cr"].map(mcap_cap_label)
     out["is_edge"] = True
+
+    # Prices: SQLite first, then Yahoo batch for gaps (saved back for next open).
+    from stocks.core.database import load_stock_prices_from_db, save_stock_price_to_db
+    from stocks.market.price_service import fetch_current_prices
+
+    price_map = load_stock_prices_from_db(tickers, allow_stale=True)
+    missing_price = [
+        safe_str(t).upper()
+        for t in tickers
+        if safe_str(t).upper() and safe_str(t).upper() not in price_map
+    ]
+    if missing_price:
+        market_by = {
+            safe_str(r.get("ticker")).upper(): safe_str(r.get("market")).upper() or "NSE"
+            for _, r in out.iterrows()
+            if safe_str(r.get("ticker"))
+        }
+        fetched = fetch_current_prices(
+            missing_price,
+            [market_by.get(t) for t in missing_price],
+        )
+        for t, px in fetched.items():
+            key = safe_str(t).upper()
+            if px is None:
+                continue
+            try:
+                price_map[key] = float(px)
+                save_stock_price_to_db(key, float(px), market=market_by.get(key))
+            except (TypeError, ValueError):
+                continue
+
+    out["price"] = out["ticker"].map(lambda t: price_map.get(safe_str(t).upper()))
 
     sc_list: list[str] = []
     tv_list: list[str] = []

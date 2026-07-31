@@ -18,9 +18,15 @@ def to_yfinance_symbol(ticker: str, market: str | None = None) -> str:
     ticker = safe_str(ticker).upper()
     if ticker.endswith((".NS", ".BO")):
         return ticker
+    # Yahoo SME symbols are often TICKER-SM.NS
+    if ticker.endswith("-SM"):
+        return f"{ticker}.NS"
 
     market_key = safe_str(market).upper()
-    if market_key in {"NSE", "NSE SME", "NATIONAL STOCK EXCHANGE"}:
+    if market_key in {"NSE SME", "SME", "EMERGE"}:
+        base = ticker[:-3] if ticker.endswith("-SM") else ticker
+        return f"{base}-SM.NS"
+    if market_key in {"NSE", "NATIONAL STOCK EXCHANGE"}:
         return f"{ticker}.NS"
     if market_key in {"BSE", "BOMBAY STOCK EXCHANGE"}:
         return f"{ticker}.BO"
