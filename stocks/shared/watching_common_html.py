@@ -15,68 +15,86 @@ _COMMON_CSS = """
   .wc-wrap {
     font-family: "IBM Plex Sans", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
     color: #1f2937;
-    padding: 2px 0 10px;
+    padding: 0 0 4px;
+    overflow: visible;
   }
   .wc-head {
     display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
-    margin: 0 0 8px; font-size: 11px; font-weight: 700; letter-spacing: .04em;
+    margin: 0 0 6px; font-size: 11px; font-weight: 700; letter-spacing: .04em;
     text-transform: uppercase; color: #64748b;
   }
   .wc-head span { font-weight: 500; text-transform: none; letter-spacing: 0; color: #94a3b8; }
   .wc-gaps {
-    margin: 0 0 8px; font-size: 11px; color: #64748b; line-height: 1.35;
+    margin: 0 0 6px; font-size: 11px; color: #64748b; line-height: 1.35;
   }
   .wc-gaps b { color: #b45309; font-weight: 700; }
   .wc-gaps.ok { color: #15803d; }
   .wc-picks {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(152px, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 8px;
+    width: 100%;
+  }
+  @media (max-width: 1100px) {
+    .wc-picks { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  }
+  @media (max-width: 720px) {
+    .wc-picks { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   }
   .wc-pick {
     background: #fff;
     border: 1px solid #e2e8f0;
     border-radius: 10px;
-    padding: 9px 10px 8px;
+    padding: 8px 9px 7px;
     box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
-    min-height: 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .wc-pick-top {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 6px;
+    min-width: 0;
   }
   .wc-pick-ticker {
-    color: #0f172a; font-weight: 800; font-size: 13px; letter-spacing: -0.02em;
-    line-height: 1.2;
-  }
-  .wc-pick-name {
-    color: #64748b; font-size: 10.5px; margin-top: 2px; line-height: 1.25;
+    color: #0f172a; font-weight: 800; font-size: 12px; letter-spacing: -0.02em;
+    line-height: 1.15; min-width: 0;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .wc-pick-price {
-    margin-top: 5px; font-size: 14px; font-weight: 800; color: #0f172a;
-    font-variant-numeric: tabular-nums;
+    font-size: 12px; font-weight: 800; color: #0f172a;
+    font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0;
   }
-  .wc-pick-price.wc-muted { font-size: 11px; font-weight: 600; color: #94a3b8; }
+  .wc-pick-price.wc-muted { font-size: 10px; font-weight: 600; color: #94a3b8; }
+  .wc-pick-name {
+    color: #64748b; font-size: 10px; line-height: 1.2;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
   .wc-pick-meta {
-    display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px;
+    display: flex; flex-wrap: wrap; gap: 3px; align-items: center;
+    min-height: 18px;
   }
   .wc-chip {
-    display: inline-block; padding: 2px 6px; border-radius: 999px;
-    background: #f1f5f9; color: #475569; font-size: 9px; font-weight: 700;
+    display: inline-block; padding: 1px 5px; border-radius: 999px;
+    background: #f1f5f9; color: #475569; font-size: 8.5px; font-weight: 700;
     border: 1px solid #e2e8f0; max-width: 100%;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .wc-chip-list { background: #fff7ed; border-color: #fed7aa; color: #c2410c; }
-  .wc-chip-sector { background: #f8fafc; color: #64748b; max-width: 88px; }
-  .wc-links {
-    display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px;
+  .wc-chip-sector { background: #f8fafc; color: #64748b; max-width: 72px; }
+  .wc-pick-foot {
+    display: flex; flex-wrap: wrap; gap: 3px; align-items: center; margin-top: 1px;
   }
-  .wc-links a {
-    display: inline-block; padding: 2px 6px; border-radius: 6px;
-    background: #f1f5f9; color: #334155; font-size: 9px; font-weight: 700;
+  .wc-pick-foot a {
+    display: inline-block; padding: 1px 5px; border-radius: 5px;
+    background: #f1f5f9; color: #334155; font-size: 8.5px; font-weight: 700;
     text-decoration: none; border: 1px solid #e2e8f0;
   }
-  .wc-links a:hover { background: #e2e8f0; color: #0f172a; }
-  .wc-links a.wc-web { background: #ecfeff; border-color: #a5f3fc; color: #0e7490; }
-  .wc-links a.wc-tv { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
-  .wc-links a.wc-sc { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+  .wc-pick-foot a:hover { background: #e2e8f0; color: #0f172a; }
+  .wc-pick-foot a.wc-web { background: #ecfeff; border-color: #a5f3fc; color: #0e7490; }
+  .wc-pick-foot a.wc-tv { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+  .wc-pick-foot a.wc-sc { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+  .cap-badge { font-size: 8.5px !important; padding: 1px 5px !important; }
 </style>
 """
 
@@ -88,15 +106,14 @@ _LIST_CHIP_SHORT = {
 }
 
 
-def _fmt_price(val) -> str:
+def _fmt_price_inline(val) -> str:
     try:
         n = float(val)
     except (TypeError, ValueError):
         return '<span class="wc-pick-price wc-muted">—</span>'
     if n != n:
         return '<span class="wc-pick-price wc-muted">—</span>'
-    txt = f"₹{n:,.2f}"
-    return f'<div class="wc-pick-price">{html.escape(txt)}</div>'
+    return f'<span class="wc-pick-price">₹{n:,.2f}</span>'
 
 
 def _fmt_mcap(val) -> str:
@@ -159,9 +176,7 @@ def _links_html(row: pd.Series) -> str:
             f'<a class="wc-sc" href="{html.escape(sc)}" target="_blank" '
             f'rel="noopener noreferrer" title="screener.in">SC</a>'
         )
-    if not bits:
-        return ""
-    return f'<div class="wc-links">{"".join(bits)}</div>'
+    return "".join(bits)
 
 
 def _pick_card(row: pd.Series) -> str:
@@ -181,14 +196,16 @@ def _pick_card(row: pd.Series) -> str:
             f"{html.escape(sector)}</span>"
         )
     meta.append(_list_chips(safe_str(row.get("on_lists"))))
-    meta_html = "".join(meta)
+    links = _links_html(row)
     return (
         f'<div class="wc-pick">'
-        f'<div class="wc-pick-ticker">{ticker}</div>'
+        f'<div class="wc-pick-top">'
+        f'<span class="wc-pick-ticker">{ticker}</span>'
+        f"{_fmt_price_inline(row.get('price'))}"
+        f"</div>"
         f'<div class="wc-pick-name">{name}</div>'
-        f"{_fmt_price(row.get('price'))}"
-        f'<div class="wc-pick-meta">{meta_html}</div>'
-        f"{_links_html(row)}"
+        f'<div class="wc-pick-meta">{"".join(meta)}</div>'
+        f'<div class="wc-pick-foot">{links}</div>'
         f"</div>"
     )
 
@@ -197,7 +214,7 @@ def _gaps_html(gap_counts: dict[str, int] | None) -> str:
     if not gap_counts or not gap_counts.get("total"):
         return ""
     if not gap_counts.get("any_rows"):
-        return '<div class="wc-gaps ok">No gaps in these tiles.</div>'
+        return ""
     bits: list[str] = []
     for key, label in (("price", "price"), ("sector", "sector"), ("mcap", "mcap"), ("web", "web")):
         n = int(gap_counts.get(key) or 0)
@@ -233,10 +250,3 @@ def build_watching_common_html(
         f'<div class="wc-picks">{picks_html}</div>'
         f"</div>"
     )
-
-
-def watching_common_iframe_height(card_count: int) -> int:
-    if card_count <= 0:
-        return 0
-    rows = (card_count + 5) // 6
-    return min(280, 72 + rows * 118)

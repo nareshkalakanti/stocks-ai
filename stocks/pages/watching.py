@@ -39,10 +39,7 @@ from stocks.shared.portfolio import (
     seed_default_holdings,
 )
 
-from stocks.shared.watching_common_html import (
-    build_watching_common_html,
-    watching_common_iframe_height,
-)
+from stocks.shared.watching_common_html import build_watching_common_html
 
 _WATCHING_LIST_KEY = "watching_list"
 _COMMON_TILES_MAX = 12
@@ -149,11 +146,7 @@ def _render_common_tiles() -> None:
     )
     if not html:
         return
-    embed_html_iframe(
-        html,
-        height=watching_common_iframe_height(len(view)),
-        key="watching_common_tiles",
-    )
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def _board_stats_caption(view) -> None:
