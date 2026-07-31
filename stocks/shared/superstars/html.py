@@ -12,7 +12,7 @@ SUPERSTARS_JS_COLS = [
     {"id": "investor", "label": "Investor", "fmt": "text"},
     {"id": "sector", "label": "Sector", "fmt": "text"},
     {"id": "market_cap_cr", "label": "Mcap Cr", "fmt": "num1"},
-    {"id": "cap_code", "label": "Cap", "fmt": "text"},
+    {"id": "cap_code", "label": "Cap", "fmt": "cap_code"},
     {"id": "change_display", "label": "Change", "fmt": "ss_change"},
 ]
 

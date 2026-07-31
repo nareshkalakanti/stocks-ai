@@ -8,6 +8,7 @@ import json
 import pandas as pd
 
 from stocks.dashboards.expand_panel_html import EXPAND_PANEL_CSS, EXPAND_PANEL_JS
+from stocks.shared.cap_colors import CAP_FMT_JS
 from stocks.dashboards.report_html import _REPORT_CSS
 from stocks.shared.corp_tags import corp_tags_dict_for_ticker
 from stocks.shared.links import attach_research_links, research_links, resolve_listing_market
@@ -502,6 +503,7 @@ def build_interactive_section(
   function esc(s) {{
     return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
   }}
+  {CAP_FMT_JS}
   function fmtCompany(r) {{
     const name = r.name || r.ticker;
     const tags = fmtCorpTags(r);
@@ -540,6 +542,7 @@ def build_interactive_section(
           return `<span style="color:#dc2626;font-weight:600">${{label}}</span>`;
         return label;
       }}
+      case "cap_code": return fmtCapCode(v, r);
       case "text": return v != null ? esc(v) : "—";
       case "date": return v ? esc(String(v).slice(0, 10)) : "—";
       case "score":

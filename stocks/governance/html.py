@@ -118,20 +118,6 @@ GOVERNANCE_MAP_CSS = """
     flex-wrap: wrap;
     gap: 3px;
   }
-  .gov-cap-tag {
-    display: inline-block;
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    padding: 0 5px;
-    border-radius: 3px;
-    line-height: 1.4;
-  }
-  .gov-cap-nc { color: #6b7280; background: #f3f4f6; }
-  .gov-cap-mic { color: #9a3412; background: #ffedd5; }
-  .gov-cap-sc { color: #a16207; background: #fef9c3; }
-  .gov-cap-mc { color: #1d4ed8; background: #dbeafe; }
-  .gov-cap-lc { color: #047857; background: #d1fae5; }
   .gov-ticker-hold {
     color: #1d4ed8;
     font-weight: 700;
@@ -406,14 +392,8 @@ GOVERNANCE_MAP_CSS = """
     letter-spacing: 0.02em;
   }
   .gov-cap-filter button.active {
-    color: #111827;
+    font-weight: 800;
   }
-  .gov-cap-filter button[data-cap=""].active { background: #f3f4f6; }
-  .gov-cap-filter button[data-cap="NC"].active { background: #f3f4f6; color: #6b7280; }
-  .gov-cap-filter button[data-cap="MIC"].active { background: #ffedd5; color: #9a3412; }
-  .gov-cap-filter button[data-cap="SC"].active { background: #fef9c3; color: #a16207; }
-  .gov-cap-filter button[data-cap="MC"].active { background: #dbeafe; color: #1d4ed8; }
-  .gov-cap-filter button[data-cap="LC"].active { background: #d1fae5; color: #047857; }
   .gov-hold-filter {
     display: inline-flex;
     flex-wrap: wrap;
@@ -1107,7 +1087,7 @@ def build_governance_map_html(
         : "";
       const capCode = String(c.cap_code || "").toUpperCase();
       const capTag = capCode
-        ? `<span class="gov-co-tags"><span class="gov-cap-tag gov-cap-${{capCode.toLowerCase()}}" title="${{esc(c.cap_label || capCode)}}">${{esc(capCode)}}</span></span>`
+        ? `<span class="gov-co-tags"><span class="cap-badge cap-${{capCode.toLowerCase()}}" title="${{esc(c.cap_label || capCode)}}">${{esc(capCode)}}</span></span>`
         : "";
       const coCls = [
         "gov-co",
@@ -1159,8 +1139,7 @@ def build_governance_map_html(
         const code = String(c.cap_code || "").toUpperCase();
         if (code) {{
           const tip = esc(c.cap_label || code);
-          const cls = "gov-cap-" + code.toLowerCase();
-          tags.push(`<span class="gov-cap-tag ${{cls}}" title="${{tip}}">${{esc(code)}}</span>`);
+          tags.push(`<span class="cap-badge cap-${{code.toLowerCase()}}" title="${{tip}}">${{esc(code)}}</span>`);
         }}
         if (c.is_sme) {{
           tags.push(`<span class="gov-tag gov-tag-sme" title="NSE Emerge / SME listing">SME</span>`);

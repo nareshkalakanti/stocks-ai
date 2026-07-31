@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from stocks.shared.corp_tags import corp_tags_html
+from stocks.shared.cap_colors import cap_colors_css
 from stocks.core.config import MIN_MARKET_CAP_CR
 from stocks.scans.results_utils import dedupe_recommendations
 from stocks.shared.links import attach_research_links, screener_url, tradingview_url
@@ -380,7 +381,7 @@ _REPORT_CSS = """
   .hr-method strong { color: #374151; }
   .num { font-variant-numeric: tabular-nums; }
 </style>
-"""
+""" + cap_colors_css()
 
 
 def _cell(value) -> str:

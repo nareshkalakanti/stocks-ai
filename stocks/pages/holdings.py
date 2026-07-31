@@ -105,8 +105,9 @@ def _load_priced_holdings(holdings: pd.DataFrame) -> pd.DataFrame:
     return priced
 
 
-def render_holdings() -> None:
-    st.markdown("### Holdings")
+def render_holdings(*, show_title: bool = True) -> None:
+    if show_title:
+        st.markdown("### Holdings")
 
     holdings = load_holdings(seed_if_empty=True)
 

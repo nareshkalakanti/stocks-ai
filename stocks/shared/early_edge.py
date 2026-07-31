@@ -330,7 +330,7 @@ def hydrate_early_edge_missing(
     from stocks.market.company_profile import merge_company_profile
     from stocks.market.screener_profile import fetch_market_cap_cr
 
-    view = enrich_early_edge_display(df)
+    view = enrich_watching_board(df)
     if view.empty:
         return {"tried": 0, "mcap": 0, "website": 0, "sector": 0}
 
@@ -407,7 +407,16 @@ def hydrate_early_edge_missing(
     return stats
 
 
-def enrich_early_edge_display(df: pd.DataFrame | None = None) -> pd.DataFrame:
+hydrate_watching_missing = hydrate_early_edge_missing
+
+
+def enrich_watching_board(
+    df: pd.DataFrame | None = None,
+    *,
+    list_tag: str = "",
+    is_edge: bool = False,
+    is_holding: bool = False,
+) -> pd.DataFrame:
     """Watchlist rows + listing sector/sub_sector + SQLite mcap / Cap code / website."""
     from stocks.core.database import load_company_profiles_from_db, load_market_cap_from_db
     from stocks.core.text_utils import sanitize_website
@@ -513,7 +522,9 @@ def enrich_early_edge_display(df: pd.DataFrame | None = None) -> pd.DataFrame:
     out["market_cap_cr"] = out["ticker"].map(lambda t: mcap_map.get(safe_str(t).upper()))
     out["cap_code"] = out["market_cap_cr"].map(mcap_cap_code)
     out["cap_label"] = out["market_cap_cr"].map(mcap_cap_label)
-    out["is_edge"] = True
+    out["list_tag"] = safe_str(list_tag)
+    out["is_edge"] = bool(is_edge)
+    out["is_holding"] = bool(is_holding)
 
     # Prices: SQLite first, then Yahoo batch for gaps (saved back for next open).
     from stocks.core.database import load_stock_prices_from_db, save_stock_price_to_db
@@ -563,6 +574,10 @@ def enrich_early_edge_display(df: pd.DataFrame | None = None) -> pd.DataFrame:
     if sort_cols:
         out = out.sort_values(sort_cols, ascending=True, na_position="last")
     return out.reset_index(drop=True)
+
+
+def enrich_early_edge_display(df: pd.DataFrame | None = None) -> pd.DataFrame:
+    return enrich_watching_board(df, list_tag="Edge", is_edge=True)
 
 
 def is_early_edge_playlist(market: str) -> bool:

@@ -1,22 +1,40 @@
-"""List dropdown — Holdings + fund watchlists (not Market)."""
+"""Watching list — Early Edge, Holdings, fund watchlists."""
 
 from __future__ import annotations
 
 import pandas as pd
 
-from stocks.scans.list_playlist import LIST_ALL_LABEL, list_options
-from stocks.scans.scan_playlists import SCAN_PLAYLIST_LABELS, insert_scan_playlist_markets
+from stocks.scans.list_playlist import (
+    WATCHING_LIST_LABELS,
+    format_watching_list_option,
+    is_watching_list,
+)
 from stocks.scans.holdings_playlist import HOLDINGS_PLAYLIST_LABEL
+from stocks.scans.scan_playlists import WATCHING_ONLY_PLAYLIST_LABELS
+from stocks.shared.early_edge import EARLY_EDGE_PLAYLIST_LABEL
 from stocks.shared.fund_watchlists import FUND_WATCHLIST_PLAYLIST_LABELS
-from stocks.listings.stocks_data import filter_stocks, market_options
+from stocks.listings.stocks_data import market_options
 
 
-def test_list_options_include_holdings_and_funds():
-    opts = list_options()
-    assert opts[0] == LIST_ALL_LABEL
-    assert HOLDINGS_PLAYLIST_LABEL in opts
+def test_watching_list_labels():
+    assert WATCHING_LIST_LABELS[0] == EARLY_EDGE_PLAYLIST_LABEL
+    assert HOLDINGS_PLAYLIST_LABEL in WATCHING_LIST_LABELS
     for label in FUND_WATCHLIST_PLAYLIST_LABELS:
-        assert label in opts
+        assert label in WATCHING_LIST_LABELS
+
+
+def test_is_watching_list():
+    assert is_watching_list(EARLY_EDGE_PLAYLIST_LABEL)
+    assert is_watching_list(HOLDINGS_PLAYLIST_LABEL)
+    for label in FUND_WATCHLIST_PLAYLIST_LABELS:
+        assert is_watching_list(label)
+    assert not is_watching_list("NSE")
+    assert not is_watching_list("All")
+
+
+def test_format_watching_list_option_returns_label():
+    text = format_watching_list_option(EARLY_EDGE_PLAYLIST_LABEL)
+    assert EARLY_EDGE_PLAYLIST_LABEL in text
 
 
 def test_market_dropdown_excludes_holdings_and_funds():
@@ -29,14 +47,5 @@ def test_market_dropdown_excludes_holdings_and_funds():
         }
     )
     opts = market_options(stocks, include_scan_playlists=True)
-    assert HOLDINGS_PLAYLIST_LABEL not in opts
-    for label in FUND_WATCHLIST_PLAYLIST_LABELS:
+    for label in WATCHING_ONLY_PLAYLIST_LABELS:
         assert label not in opts
-    for label in SCAN_PLAYLIST_LABELS:
-        assert label in opts
-
-
-def test_insert_scan_playlist_markets_skips_list_playlists():
-    out = insert_scan_playlist_markets(["All", "NSE"])
-    assert HOLDINGS_PLAYLIST_LABEL not in out
-    assert "NSE" in out

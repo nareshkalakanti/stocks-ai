@@ -9,8 +9,6 @@ from functools import partial
 import pandas as pd
 import streamlit as st
 
-from stocks.core.text_utils import safe_str
-
 from stocks.scans.scan_playlists import (
     format_market_option,
     is_scan_playlist,
@@ -29,11 +27,9 @@ from stocks.listings.stocks_data import (
 
 # Default session key prefix — filters persist when switching sidebar pages.
 _DEFAULT_KEY_PREFIX = "sf"
-# Shared Market / List across Quant Tab / PEAD / H&T / Governance / Governance Map.
+# Shared Market across Quant Tab / PEAD / H&T / Governance / Governance Map.
 QUANT_SHARED_MARKET_KEY = "quant_market"
-QUANT_SHARED_LIST_KEY = "quant_list"
 _QUANT_MARKET_TRIGGER_KEY = "_quant_market_trigger"
-_QUANT_LIST_TRIGGER_KEY = "_quant_list_trigger"
 _LEGACY_MARKET_KEYS = (
     "pead2_market",
     "htf_market",
@@ -44,32 +40,28 @@ _LEGACY_MARKET_KEYS = (
 )
 
 
-def _migrate_list_playlists_from_market(key_market: str, key_list: str) -> None:
-    """Move legacy Market=Holdings / Negen / Niveshaay into the List dropdown."""
-    from stocks.scans.list_playlist import LIST_ALL_LABEL, LIST_PLAYLIST_LABELS
-
-    market = st.session_state.get(key_market)
-    if market not in LIST_PLAYLIST_LABELS:
-        return
-    if st.session_state.get(key_list, LIST_ALL_LABEL) == LIST_ALL_LABEL:
-        st.session_state[key_list] = market
-    st.session_state[key_market] = "All"
-
-
 def ensure_quant_shared_market(options: list[str]) -> None:
     """Keep one Market selection for all Quant strategy tabs."""
     from stocks.listings.stocks_data import NSE_FAMILY_LABEL
+    from stocks.scans.scan_playlists import WATCHING_ONLY_PLAYLIST_LABELS
 
     key = QUANT_SHARED_MARKET_KEY
+    watching_only = frozenset(WATCHING_ONLY_PLAYLIST_LABELS)
     if key not in st.session_state:
         for legacy in _LEGACY_MARKET_KEYS:
             val = st.session_state.get(legacy)
             if val in options:
                 st.session_state[key] = val
                 break
+            if val in watching_only:
+                st.session_state["watching_list"] = val
+                break
         else:
             st.session_state[key] = "All" if "All" in options else (options[0] if options else "All")
     elif st.session_state[key] not in options:
+        prev = st.session_state[key]
+        if prev in watching_only:
+            st.session_state["watching_list"] = prev
         st.session_state[key] = "All" if "All" in options else (options[0] if options else "All")
     if (
         not st.session_state.get("_market_nse_family_migrated")
@@ -78,50 +70,6 @@ def ensure_quant_shared_market(options: list[str]) -> None:
     ):
         st.session_state[key] = NSE_FAMILY_LABEL
         st.session_state["_market_nse_family_migrated"] = True
-    _migrate_list_playlists_from_market(key, QUANT_SHARED_LIST_KEY)
-
-
-def ensure_quant_shared_list(options: list[str]) -> None:
-    from stocks.scans.list_playlist import LIST_ALL_LABEL
-
-    key = QUANT_SHARED_LIST_KEY
-    if key not in st.session_state:
-        st.session_state[key] = LIST_ALL_LABEL
-    elif st.session_state[key] not in options:
-        st.session_state[key] = LIST_ALL_LABEL
-
-
-def render_quant_list_selectbox(
-    *,
-    widget_key: str,
-    on_change_extra: Callable[[], None] | None = None,
-) -> str:
-    from stocks.scans.list_playlist import format_list_option, list_options
-
-    list_opts = list_options()
-    ensure_quant_shared_list(list_opts)
-    shared = QUANT_SHARED_LIST_KEY
-    trigger = st.session_state.get(_QUANT_LIST_TRIGGER_KEY)
-    if trigger != widget_key or widget_key not in st.session_state:
-        st.session_state[widget_key] = st.session_state[shared]
-    if st.session_state[widget_key] not in list_opts:
-        st.session_state[widget_key] = st.session_state[shared]
-
-    def _sync() -> None:
-        st.session_state[shared] = st.session_state[widget_key]
-        st.session_state[_QUANT_LIST_TRIGGER_KEY] = widget_key
-        if on_change_extra is not None:
-            on_change_extra()
-
-    list_name = st.selectbox(
-        "List",
-        list_opts,
-        key=widget_key,
-        format_func=format_list_option,
-        on_change=_sync,
-    )
-    st.session_state[shared] = list_name
-    return list_name
 
 
 def render_quant_market_selectbox(
@@ -159,14 +107,13 @@ def render_quant_market_selectbox(
     return market
 
 
-def _filter_session_keys(prefix: str) -> tuple[str, str, str, str, str]:
+def _filter_session_keys(prefix: str) -> tuple[str, str, str, str]:
     p = prefix.strip() or _DEFAULT_KEY_PREFIX
     return (
         f"{p}_market",
         f"{p}_industries",
         f"{p}_sectors",
         f"{p}_search",
-        f"{p}_list",
     )
 
 
@@ -176,7 +123,6 @@ class StockFilters:
     sectors: list[str]
     industries: list[str]
     search: str = ""
-    list_name: str = "All"
 
     @property
     def nse_mode(self) -> bool:
@@ -221,24 +167,6 @@ def _multiselect(
     return [v for v in selected if v in options]
 
 
-def _universe_frame(stocks: pd.DataFrame, market: str, list_name: str = "All") -> pd.DataFrame:
-    from stocks.scans.list_playlist import LIST_ALL_LABEL, is_list_playlist, list_playlist_listings
-
-    frame = _market_frame(stocks, market)
-    list_label = safe_str(list_name) or LIST_ALL_LABEL
-    if list_label != LIST_ALL_LABEL and is_list_playlist(list_label):
-        base = frame if (market != "All" or is_scan_playlist(market)) else stocks
-        return list_playlist_listings(
-            base,
-            list_label,
-            sector="All",
-            search="",
-            industry="All",
-            sub_sector="All",
-        )
-    return frame
-
-
 def _market_frame(stocks: pd.DataFrame, market: str) -> pd.DataFrame:
     if market == "All":
         return stocks
@@ -247,6 +175,7 @@ def _market_frame(stocks: pd.DataFrame, market: str) -> pd.DataFrame:
     from stocks.listings.stocks_data import apply_market_column_filter
 
     return apply_market_column_filter(stocks, market)
+
 
 def render_sector_selectbox(
     stocks: pd.DataFrame,
@@ -329,30 +258,21 @@ def render_stock_filters(
     key_prefix: str = _DEFAULT_KEY_PREFIX,
     share_quant_market: bool = False,
 ) -> StockFilters:
-    """Render Market · Sector · Sub sector filter row.
-
-    Sector is the parent: Sub sector options come only from stocks in the
-    selected display sector(s), so options stay aligned and nothing in that
-    sector is hidden from the parent filter.
-    """
-    key_market, key_industries, key_sectors, key_search, key_list = _filter_session_keys(key_prefix)
+    """Render Market · Sector · Sub sector filter row."""
+    key_market, key_industries, key_sectors, key_search = _filter_session_keys(key_prefix)
 
     for key in (key_industries, key_sectors):
         if key not in st.session_state:
             st.session_state[key] = []
     if key_search not in st.session_state:
         st.session_state[key_search] = ""
-    if key_list not in st.session_state:
-        st.session_state[key_list] = "All"
-    _migrate_list_playlists_from_market(key_market, key_list)
-    # Drop legacy sub-sector session state (same values as industry for NSE).
     st.session_state.pop("sf_sub_sectors", None)
 
     if cols is None:
-        widths = [0.9, 1.2, 0.85, 1.2, 1.6] if include_search else [0.9, 1.2, 0.85, 1.2]
+        widths = [0.9, 1.2, 1.2, 1.6] if include_search else [0.9, 1.2, 1.2]
         cols = tuple(st.columns(widths))
     else:
-        need = 5 if include_search else 4
+        need = 4 if include_search else 3
         if len(cols) < need:
             raise ValueError(f"render_stock_filters cols needs {need} columns, got {len(cols)}")
 
@@ -382,7 +302,7 @@ def render_stock_filters(
                 on_change=partial(_clear_keys, key_sectors, key_industries),
             )
 
-    mframe = _universe_frame(stocks, market, list_name="All")
+    mframe = _market_frame(stocks, market)
     sector_opts = sector_options(stocks, mframe)[1:]
     sector_counts = sector_option_counts(mframe, sector_opts)
 
@@ -399,36 +319,14 @@ def render_stock_filters(
             on_change=partial(_clear_keys, key_industries),
         )
 
-    if share_quant_market:
-        with cols[2]:
-            list_name = render_quant_list_selectbox(
-                widget_key=key_list,
-                on_change_extra=partial(_clear_keys, key_sectors, key_industries),
-            )
+    if sectors and "sector" in mframe.columns:
+        industry_scope = mframe[mframe["sector"].astype(str).str.strip().isin(sectors)]
     else:
-        from stocks.scans.list_playlist import format_list_option, list_options
-
-        list_opts = list_options()
-        if st.session_state.get(key_list) not in list_opts:
-            st.session_state[key_list] = "All"
-        with cols[2]:
-            list_name = st.selectbox(
-                "List",
-                list_opts,
-                key=key_list,
-                format_func=format_list_option,
-                on_change=partial(_clear_keys, key_sectors, key_industries),
-            )
-
-    uframe = _universe_frame(stocks, market, list_name)
-    if sectors and "sector" in uframe.columns:
-        industry_scope = uframe[uframe["sector"].astype(str).str.strip().isin(sectors)]
-    else:
-        industry_scope = uframe
+        industry_scope = mframe
     industry_opts = industry_options(stocks, industry_scope)[1:]
     industry_counts = industry_option_counts(industry_scope, industry_opts)
 
-    with cols[3]:
+    with cols[2]:
         industries = _multiselect(
             "Sub sector",
             industry_opts,
@@ -445,7 +343,7 @@ def render_stock_filters(
 
     search = ""
     if include_search:
-        with cols[4]:
+        with cols[3]:
             search = st.text_input(
                 "Search",
                 placeholder="Ticker or company name",
@@ -457,7 +355,6 @@ def render_stock_filters(
         sectors=sectors,
         industries=industries,
         search=search,
-        list_name=list_name,
     )
 
 
@@ -468,7 +365,6 @@ def apply_stock_filters(stocks: pd.DataFrame, filters: StockFilters) -> pd.DataF
         filters.sectors or "All",
         filters.search,
         industry=filters.industries or "All",
-        list_name=filters.list_name,
     )
 
 
@@ -479,12 +375,11 @@ def filter_caption_suffix(
 ) -> str:
     """Short human-readable suffix for scan captions."""
     from stocks.listings.stocks_data import classifier_filter_label
+    from stocks.core.text_utils import safe_str
 
     parts: list[str] = []
     if filters.market != "All":
         parts.append(filters.market)
-    if filters.list_name and filters.list_name != "All":
-        parts.append(filters.list_name)
     sector_lbl = classifier_filter_label("sectors", filters.sectors)
     if sector_lbl:
         parts.append(sector_lbl)

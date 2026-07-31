@@ -57,7 +57,6 @@ def _pead_filter_key(
 ) -> tuple:
     return (
         filters.market,
-        filters.list_name,
         tuple(filters.sectors),
         tuple(filters.industries),
         filters.search,
@@ -257,7 +256,7 @@ def render_pead2(*, show_title: bool = True) -> None:
                 ),
             )
 
-    holdings_view = is_holdings_playlist(filters.list_name)
+    holdings_view = is_holdings_playlist(filters.market)
 
     if st.query_params.get("pead2_refresh") == "1":
         _clear_pead2_refresh_query()

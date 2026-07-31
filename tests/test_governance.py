@@ -475,8 +475,8 @@ def test_governance_map_rows(tmp_path, monkeypatch):
     assert "Dir Score" in html_out
     assert "Swaminathan" in html_out
     assert "govmap-body" in html_out
-    assert "gov-cap-tag" in html_out
-    assert "gov-cap-mc" in html_out or "gov-cap-mic" in html_out
+    assert "cap-badge" in html_out
+    assert "cap-mc" in html_out or "cap-mic" in html_out
     assert "govmap-cap-filter" in html_out
     assert 'data-cap="SC"' in html_out
     assert "govmap-hold-filter" in html_out

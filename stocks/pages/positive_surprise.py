@@ -39,7 +39,6 @@ def _inject_css() -> None:
 def _filter_key(filters, *, cap_tier_id: str, lookback_days: int) -> tuple:
     return (
         filters.market,
-        filters.list_name,
         tuple(filters.sectors),
         tuple(filters.industries),
         filters.search,

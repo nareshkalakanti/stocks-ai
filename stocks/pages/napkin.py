@@ -43,7 +43,6 @@ def _inject_css() -> None:
 def _filter_key(filters, *, cap_tier_id: str) -> tuple:
     return (
         filters.market,
-        filters.list_name,
         tuple(filters.sectors),
         tuple(filters.industries),
         filters.search,
@@ -100,7 +99,7 @@ def render_napkin(*, show_title: bool = True) -> None:
                 ),
             )
 
-    holdings_view = is_holdings_playlist(filters.list_name)
+    holdings_view = is_holdings_playlist(filters.market)
 
     if run_clicked:
         if universe.empty:

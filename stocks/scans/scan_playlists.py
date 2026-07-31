@@ -42,16 +42,24 @@ from stocks.scans.nifty_index_playlist import (
 )
 from stocks.core.text_utils import safe_str
 
-SCAN_PLAYLIST_LABELS = (
+# Personal / fund lists — Watching page only (not Quant Market dropdown).
+WATCHING_ONLY_PLAYLIST_LABELS = (
     HOLDINGS_PLAYLIST_LABEL,
-    EARLY_EDGE_PLAYLIST_LABEL,
     *FUND_WATCHLIST_PLAYLIST_LABELS,
+)
+
+# Index / curated universes still available on Strategy scans.
+SCAN_MARKET_PLAYLIST_LABELS = (
+    EARLY_EDGE_PLAYLIST_LABEL,
     *NIFTY_PLAYLIST_LABELS,
     DS_PLAYLIST_LABEL,
     BUSINESS_GROUPS_PLAYLIST_LABEL,
 )
 
+SCAN_PLAYLIST_LABELS = WATCHING_ONLY_PLAYLIST_LABELS + SCAN_MARKET_PLAYLIST_LABELS
+
 _LEGACY_PLAYLIST_LABELS = frozenset({"Parents", "Spinoffs"})
+_WATCHING_ONLY_SET = frozenset(WATCHING_ONLY_PLAYLIST_LABELS)
 
 
 def is_scan_playlist(market: str) -> bool:
@@ -71,9 +79,9 @@ def cap_tier_select_disabled(market: str) -> bool:
 
 
 def insert_scan_playlist_markets(markets: list[str]) -> list[str]:
-    """Insert playlist labels after 'All' in the market dropdown."""
+    """Insert scan playlist labels after 'All' in the market dropdown."""
     result = ["All"]
-    for label in SCAN_PLAYLIST_LABELS:
+    for label in SCAN_MARKET_PLAYLIST_LABELS:
         if label not in result:
             result.append(label)
     for market in markets:
@@ -81,6 +89,7 @@ def insert_scan_playlist_markets(markets: list[str]) -> list[str]:
             market != "All"
             and market not in result
             and market not in _LEGACY_PLAYLIST_LABELS
+            and market not in _WATCHING_ONLY_SET
         ):
             result.append(market)
     return result

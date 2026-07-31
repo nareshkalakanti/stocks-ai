@@ -30,8 +30,6 @@ _EDGE_CSS = """
     border: 1px solid #d1d5db; background: #fff; color: #374151; border-radius: 999px;
     padding: 4px 10px; font-size: 12px; font-weight: 600; cursor: pointer; line-height: 1.3;
   }
-  .ee-chip:hover { border-color: #9f1239; color: #9f1239; }
-  .ee-chip.active { background: #9f1239; border-color: #9f1239; color: #fff; }
   .ee-sector-select {
     padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 12px; background: #fff; max-width: 220px;
   }
@@ -55,21 +53,14 @@ _EDGE_CSS = """
     color: #9f1239; background: #ffe4e6; text-transform: uppercase; letter-spacing: 0.04em;
   }
   .ee-tag-sme { color: #9a3412; background: #ffedd5; }
+  .ee-tag-hold { color: #1d4ed8; background: #dbeafe; }
+  .ee-tag-fund { color: #5b21b6; background: #ede9fe; }
   .ee-links a {
     display: inline-block; margin-right: 4px; padding: 2px 7px; border-radius: 4px;
     background: #f3f4f6; color: #1d4ed8; text-decoration: none; font-size: 11px; font-weight: 700;
   }
   .ee-links a:hover { background: #dbeafe; }
   .ee-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .ee-cap {
-    display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px;
-    background: #f3f4f6; color: #374151;
-  }
-  .ee-cap-nc { background: #fef3c7; color: #92400e; }
-  .ee-cap-mic { background: #ffedd5; color: #9a3412; }
-  .ee-cap-sc { background: #dbeafe; color: #1d4ed8; }
-  .ee-cap-mc { background: #ede9fe; color: #5b21b6; }
-  .ee-cap-lc { background: #d1fae5; color: #065f46; }
   .ee-muted { color: #9ca3af; }
   .ee-empty { padding: 28px; text-align: center; color: #6b7280; font-size: 13px; }
 </style>
@@ -97,7 +88,9 @@ def _rows_payload(df: pd.DataFrame) -> list[dict]:
                 "market_cap_cr": json_safe_scalar(row.get("market_cap_cr")),
                 "cap_code": safe_str(row.get("cap_code")) or "",
                 "cap_label": safe_str(row.get("cap_label")) or "",
-                "is_edge": True,
+                "is_edge": bool(row.get("is_edge")),
+                "is_holding": bool(row.get("is_holding")),
+                "list_tag": safe_str(row.get("list_tag")) or "",
                 "is_sme": market == "NSE SME",
                 "sc": safe_str(row.get("sc")) or "",
                 "tv": safe_str(row.get("tv")) or "",
@@ -134,12 +127,12 @@ def build_early_edge_html(
     <input type="search" class="ee-search" id="ee-search" placeholder="Search ticker, name, sector…" autocomplete="off" />
     <div class="ee-filter-group" id="ee-cap-filter" role="group" aria-label="Cap filter">
       <span class="ee-filter-label">Cap</span>
-      <button type="button" class="ee-chip active" data-cap="">All</button>
-      <button type="button" class="ee-chip" data-cap="NC" title="Nano Cap (&lt; 100 Cr)">NC</button>
-      <button type="button" class="ee-chip" data-cap="MIC" title="Micro Cap (100–500 Cr)">MIC</button>
-      <button type="button" class="ee-chip" data-cap="SC" title="Small Cap (500–5,000 Cr)">SC</button>
-      <button type="button" class="ee-chip" data-cap="MC" title="Mid Cap (5,000–20,000 Cr)">MC</button>
-      <button type="button" class="ee-chip" data-cap="LC" title="Large Cap (≥ 20,000 Cr)">LC</button>
+      <button type="button" class="cap-chip active" data-cap="" title="All cap bands">All</button>
+      <button type="button" class="cap-chip" data-cap="NC" title="Nano Cap (&lt; 100 Cr)">NC</button>
+      <button type="button" class="cap-chip" data-cap="MIC" title="Micro Cap (100–500 Cr)">MIC</button>
+      <button type="button" class="cap-chip" data-cap="SC" title="Small Cap (500–5,000 Cr)">SC</button>
+      <button type="button" class="cap-chip" data-cap="MC" title="Mid Cap (5,000–20,000 Cr)">MC</button>
+      <button type="button" class="cap-chip" data-cap="LC" title="Large Cap (≥ 20,000 Cr)">LC</button>
     </div>
     <div class="ee-filter-group">
       <span class="ee-filter-label">Sector</span>
@@ -207,14 +200,19 @@ def build_early_edge_html(
     const c = String(code || "").toUpperCase();
     if (!c) return '<span class="ee-muted">—</span>';
     const tip = esc(label || c);
-    return `<span class="ee-cap ee-cap-${{c.toLowerCase()}}" title="${{tip}}">${{esc(c)}}</span>`;
+    return `<span class="cap-badge cap-${{c.toLowerCase()}}" title="${{tip}}">${{esc(c)}}</span>`;
   }}
   function companyCell(r) {{
-    const tags = ['<span class="ee-tag" title="Early Edge watchlist">Edge</span>'];
+    const tags = [];
+    if (r.is_edge) tags.push('<span class="ee-tag" title="Early Edge watchlist">Edge</span>');
+    if (r.is_holding) tags.push('<span class="ee-tag ee-tag-hold" title="In your Holdings portfolio">Holding</span>');
+    if (r.list_tag && !r.is_edge && !r.is_holding) {{
+      tags.push(`<span class="ee-tag ee-tag-fund" title="${{esc(r.list_tag)}}">${{esc(r.list_tag)}}</span>`);
+    }}
     if (r.is_sme) tags.push('<span class="ee-tag ee-tag-sme" title="NSE Emerge / SME">SME</span>');
+    const tagHtml = tags.length ? `<span class="ee-tags">${{tags.join("")}}</span>` : "";
     return (
-      `<div class="ee-co">${{esc(r.name || r.ticker)}}` +
-      `<span class="ee-tags">${{tags.join("")}}</span></div>` +
+      `<div class="ee-co">${{esc(r.name || r.ticker)}}${{tagHtml}}</div>` +
       `<div class="ee-ticker">${{esc(r.ticker)}}</div>`
     );
   }}
@@ -273,7 +271,7 @@ def build_early_edge_html(
   }}
   function syncCapButtons() {{
     const on = capFilters.size > 0;
-    document.querySelectorAll("#ee-cap-filter .ee-chip").forEach(btn => {{
+    document.querySelectorAll("#ee-cap-filter .cap-chip").forEach(btn => {{
       const code = String(btn.getAttribute("data-cap") || "").toUpperCase();
       const active = code ? capFilters.has(code) : !on;
       btn.classList.toggle("active", active);
@@ -344,7 +342,7 @@ def build_early_edge_html(
       render();
     }};
   }}
-  document.querySelectorAll("#ee-cap-filter .ee-chip").forEach(btn => {{
+  document.querySelectorAll("#ee-cap-filter .cap-chip").forEach(btn => {{
     btn.onclick = () => {{
       const code = String(btn.getAttribute("data-cap") || "").toUpperCase();
       if (!code) {{

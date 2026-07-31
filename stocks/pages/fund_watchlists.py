@@ -62,12 +62,27 @@ def _render_list_table(df: pd.DataFrame) -> None:
     )
 
 
+def render_fund_watchlist_panel(list_key: str, *, show_title: bool = True) -> None:
+    """Single fund watchlist (Negen / Niveshaay)."""
+    _ensure_synced_if_empty()
+    label = fund_watchlist_label(list_key)
+    if show_title:
+        st.markdown(f"#### {label}")
+    meta = FUND_WATCHLIST_DEFS.get(list_key) or {}
+    inv = ", ".join(meta.get("investor_names") or [])
+    df = load_fund_watchlist_df(list_key)
+    st.caption(
+        f"{len(df):,} stocks · synced from SuperStars ({inv or 'refresh SuperStars first'})"
+    )
+    _render_list_table(df)
+
+
 def render_fund_watchlists(*, show_title: bool = True) -> None:
     if show_title:
         st.markdown("### Fund Watchlists")
     st.caption(
-        "**Separate from Holdings** · Negen & Niveshaay universes synced from SuperStars "
-        "(fund filings under each name). Use Market = **Negen** / **Niveshaay** on Strategy scans."
+        "**Separate from Holdings** · Negen & Niveshaay synced from SuperStars. "
+        "Open **Watching → List** to switch between fund lists."
     )
 
     _ensure_synced_if_empty()
@@ -79,6 +94,7 @@ def render_fund_watchlists(*, show_title: bool = True) -> None:
             type="primary",
             use_container_width=True,
             help="Replace watchlists from latest SuperStars Negen / Niveshaay holdings in DB.",
+            key="fund_watchlists_sync_all",
         )
     if sync:
         counts = sync_all_fund_watchlists()
@@ -93,11 +109,4 @@ def render_fund_watchlists(*, show_title: bool = True) -> None:
     tabs = st.tabs([fund_watchlist_label(k) for k in FUND_WATCHLIST_DEFS])
     for tab, key in zip(tabs, FUND_WATCHLIST_DEFS, strict=False):
         with tab:
-            meta = FUND_WATCHLIST_DEFS[key]
-            inv = ", ".join(meta.get("investor_names") or [])
-            df = load_fund_watchlist_df(key)
-            st.caption(
-                f"{len(df):,} stocks · source SuperStars: {inv} · "
-                f"playlist label **{fund_watchlist_label(key)}**"
-            )
-            _render_list_table(df)
+            render_fund_watchlist_panel(key, show_title=False)
