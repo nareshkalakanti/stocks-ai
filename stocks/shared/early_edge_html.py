@@ -34,6 +34,10 @@ _EDGE_CSS = """
     padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 12px; background: #fff; max-width: 220px;
   }
   .ee-count { font-size: 12px; color: #6b7280; margin-left: auto; white-space: nowrap; }
+  .ee-page-group { display: none; align-items: center; gap: 2px; }
+  .ee-page-group .ee-chip { min-width: 28px; padding: 4px 8px; }
+  .ee-page-group .ee-chip:disabled { opacity: 0.35; cursor: default; }
+  .ee-page-label { font-size: 11px; color: #6b7280; font-weight: 600; padding: 0 4px; white-space: nowrap; }
   .ee-table-wrap { overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; }
   .ee-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .ee-table th {
@@ -134,9 +138,11 @@ def build_early_edge_html(
     *,
     title: str = "Early Edge",
     standalone: bool = False,
+    client_page_size: int | None = None,
 ) -> str:
     work = df if df is not None else pd.DataFrame()
     payload = _rows_payload(work)
+    page_size = int(client_page_size) if client_page_size and int(client_page_size) > 0 else 0
     sectors = sorted(
         {
             safe_str(r.get("sector"))
@@ -170,6 +176,11 @@ def build_early_edge_html(
         <option value="">All sectors</option>
       </select>
     </div>
+    <div class="ee-filter-group ee-page-group" id="ee-page-group">
+      <button type="button" class="ee-chip" id="ee-page-prev" title="Previous page">‹</button>
+      <span class="ee-page-label" id="ee-page-label"></span>
+      <button type="button" class="ee-chip" id="ee-page-next" title="Next page">›</button>
+    </div>
     <span class="ee-count" id="ee-count"></span>
   </div>
   <div class="ee-table-wrap">
@@ -183,6 +194,7 @@ def build_early_edge_html(
 (function() {{
   const DATA = {data_json};
   const SECTORS = {sectors_json};
+  const PAGE_SIZE = {page_size};
   const COLS = [
     {{ id: "company", label: "Company", sort: "name" }},
     {{ id: "price", label: "Price", sort: "price", num: true }},
@@ -198,6 +210,11 @@ def build_early_edge_html(
   let sortDir = 1;
   let expanded = null;
   let collapsedManual = new Set(); // tickers user closed while search auto-opens About
+  let pageIndex = 0;
+
+  function resetPage() {{
+    pageIndex = 0;
+  }}
 
   const sectorEl = document.getElementById("ee-sector");
   if (sectorEl) {{
@@ -380,6 +397,26 @@ def build_early_edge_html(
     syncCapButtons();
     let rows = DATA.filter(r => capOk(r) && sectorOk(r) && searchOk(r));
     rows = rows.slice().sort(compare);
+    const totalFiltered = rows.length;
+    let pageRows = rows;
+    const pageGroup = document.getElementById("ee-page-group");
+    if (PAGE_SIZE > 0 && totalFiltered > PAGE_SIZE) {{
+      const totalPages = Math.max(1, Math.ceil(totalFiltered / PAGE_SIZE));
+      if (pageIndex >= totalPages) pageIndex = totalPages - 1;
+      if (pageIndex < 0) pageIndex = 0;
+      const start = pageIndex * PAGE_SIZE;
+      pageRows = rows.slice(start, start + PAGE_SIZE);
+      if (pageGroup) pageGroup.style.display = "inline-flex";
+      const lbl = document.getElementById("ee-page-label");
+      if (lbl) lbl.textContent = `${{pageIndex + 1}}/${{totalPages}}`;
+      const prevBtn = document.getElementById("ee-page-prev");
+      const nextBtn = document.getElementById("ee-page-next");
+      if (prevBtn) prevBtn.disabled = pageIndex <= 0;
+      if (nextBtn) nextBtn.disabled = pageIndex >= totalPages - 1;
+    }} else if (pageGroup) {{
+      pageGroup.style.display = "none";
+      pageIndex = 0;
+    }}
     const countEl = document.getElementById("ee-count");
     if (countEl) {{
       const bits = [];
@@ -390,19 +427,25 @@ def build_early_edge_html(
         bits.push(aboutHits ? `search (${{aboutHits}} in about)` : "search");
       }}
       const filterBit = bits.length ? ` · ${{bits.join(" · ")}}` : "";
-      countEl.textContent = `${{rows.length}} of ${{DATA.length}}${{filterBit}} · {title_esc}`;
+      if (PAGE_SIZE > 0 && totalFiltered > PAGE_SIZE) {{
+        const start = pageIndex * PAGE_SIZE + 1;
+        const end = Math.min((pageIndex + 1) * PAGE_SIZE, totalFiltered);
+        countEl.textContent = `${{start}}–${{end}} of ${{totalFiltered}}${{filterBit}} · {title_esc}`;
+      }} else {{
+        countEl.textContent = `${{totalFiltered}} of ${{DATA.length}}${{filterBit}} · {title_esc}`;
+      }}
     }}
     const tb = document.getElementById("ee-body");
     if (!tb) return;
     tb.innerHTML = "";
-    if (!rows.length) {{
+    if (!pageRows.length) {{
       const tr = document.createElement("tr");
       tr.innerHTML = `<td colspan="${{COLS.length}}"><div class="ee-empty">No names match these filters.</div></td>`;
       tb.appendChild(tr);
       return;
     }}
-    if (expanded && !rows.some(r => r.ticker === expanded)) expanded = null;
-    rows.forEach(r => {{
+    if (expanded && !pageRows.some(r => r.ticker === expanded)) expanded = null;
+    pageRows.forEach(r => {{
       const aboutHit = aboutMatch(r);
       const open = expanded === r.ticker
         || (aboutHit && !collapsedManual.has(r.ticker));
@@ -447,11 +490,13 @@ def build_early_edge_html(
   document.getElementById("ee-search").oninput = (e) => {{
     searchQuery = String(e.target.value || "").trim().toLowerCase();
     collapsedManual.clear();
+    resetPage();
     render();
   }};
   if (sectorEl) {{
     sectorEl.onchange = () => {{
       sectorFilter = String(sectorEl.value || "");
+      resetPage();
       render();
     }};
   }}
@@ -465,9 +510,28 @@ def build_early_edge_html(
       }} else {{
         capFilters.add(code);
       }}
+      resetPage();
       render();
     }};
   }});
+  const pagePrev = document.getElementById("ee-page-prev");
+  const pageNext = document.getElementById("ee-page-next");
+  if (pagePrev) {{
+    pagePrev.onclick = () => {{
+      if (pageIndex > 0) {{
+        pageIndex -= 1;
+        expanded = null;
+        render();
+      }}
+    }};
+  }}
+  if (pageNext) {{
+    pageNext.onclick = () => {{
+      pageIndex += 1;
+      expanded = null;
+      render();
+    }};
+  }}
   render();
 }})();
 </script>

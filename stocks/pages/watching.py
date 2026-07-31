@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import math
-
 import pandas as pd
 import streamlit as st
 
@@ -45,12 +43,10 @@ from stocks.shared.portfolio import (
 )
 
 from stocks.shared.watching_common_html import build_watching_common_html
-from stocks.shared.watching_pagination import render_watching_pagination
 
 _WATCHING_LIST_KEY = "watching_list"
-_WATCHING_LIST_PREV_KEY = "watching_list_prev"
 _COMMON_TILES_MAX = 12
-_WATCHING_PAGE_SIZE = 100
+_BOARD_PAGE_SIZE = 100
 _PAGINATED_LISTS = frozenset(MARKET_WATCHING_LIST_LABELS)
 
 _LABEL_TO_FUND_KEY = {
@@ -71,57 +67,6 @@ _LIST_CAPTIONS: dict[str, str] = {
     "NSE": "All **NSE mainboard** listings.",
     "NSE SME": "All **NSE Emerge / SME** listings.",
 }
-
-
-def _page_session_key(list_label: str) -> str:
-    return f"watching_page_{safe_str(list_label).lower().replace(' ', '_')}"
-
-
-def _reset_pagination_if_list_changed(selected: str) -> None:
-    prev = st.session_state.get(_WATCHING_LIST_PREV_KEY)
-    if prev == selected:
-        return
-    for label in MARKET_WATCHING_LIST_LABELS:
-        st.session_state[_page_session_key(label)] = 1
-    st.session_state[_WATCHING_LIST_PREV_KEY] = selected
-
-
-def _paginate_raw(
-    raw: pd.DataFrame,
-    list_label: str,
-) -> tuple[pd.DataFrame, int, int, int]:
-    """Return ``(page_slice, page, total_pages, total_rows)``."""
-    total_rows = len(raw) if raw is not None and not raw.empty else 0
-    if total_rows == 0 or list_label not in _PAGINATED_LISTS:
-        return raw, 1, 1, total_rows
-
-    total_pages = max(1, math.ceil(total_rows / _WATCHING_PAGE_SIZE))
-    page_key = _page_session_key(list_label)
-    page = int(st.session_state.get(page_key, 1) or 1)
-    page = max(1, min(page, total_pages))
-    st.session_state[page_key] = page
-    start = (page - 1) * _WATCHING_PAGE_SIZE
-    end = start + _WATCHING_PAGE_SIZE
-    return raw.iloc[start:end].copy(), page, total_pages, total_rows
-
-
-def _render_pagination_bar(
-    list_label: str,
-    *,
-    page: int,
-    total_pages: int,
-    total_rows: int,
-    position: str = "top",
-) -> None:
-    render_watching_pagination(
-        list_label,
-        page=page,
-        total_pages=total_pages,
-        total_rows=total_rows,
-        page_size=_WATCHING_PAGE_SIZE,
-        page_key=_page_session_key(list_label),
-        position=position,
-    )
 
 
 def _tickers_from_df(df: pd.DataFrame | None) -> set[str]:
@@ -235,20 +180,39 @@ def _board_stats_caption(view) -> None:
         st.caption(gap_txt)
 
 
-def _render_watching_board(view, *, title: str, iframe_key: str) -> None:
+def _render_watching_board(
+    view,
+    *,
+    title: str,
+    iframe_key: str,
+    client_page_size: int | None = None,
+) -> None:
     if view is None or view.empty:
         st.caption("No tickers in this list yet.")
         return
     _board_stats_caption(view)
-    html = build_early_edge_html(view, title=title, standalone=False)
+    display_rows = len(view)
+    if client_page_size:
+        display_rows = min(display_rows, client_page_size)
+    html = build_early_edge_html(
+        view,
+        title=title,
+        standalone=False,
+        client_page_size=client_page_size,
+    )
     embed_html_iframe(
         html,
-        height=early_edge_iframe_height(len(view)),
+        height=early_edge_iframe_height(display_rows),
         key=iframe_key,
     )
 
 
-def _run_fill_missing(raw: pd.DataFrame, *, list_label: str) -> None:
+def _run_fill_missing(
+    raw: pd.DataFrame,
+    *,
+    list_label: str,
+    max_tried: int | None = None,
+) -> None:
     if raw is None or raw.empty:
         st.warning("No tickers in this list to fill.")
         return
@@ -266,7 +230,11 @@ def _run_fill_missing(raw: pd.DataFrame, *, list_label: str) -> None:
             text=f"Filling gaps {done:,}/{total:,}{label}…",
         )
 
-    stats = hydrate_watching_missing(raw, progress_callback=_progress)
+    stats = hydrate_watching_missing(
+        raw,
+        progress_callback=_progress,
+        max_tried=max_tried,
+    )
     progress.empty()
     st.success(
         f"Filled · tried **{stats['tried']}** · "
@@ -277,11 +245,21 @@ def _run_fill_missing(raw: pd.DataFrame, *, list_label: str) -> None:
 
 
 def _enrich_for_list(selected: str, raw: pd.DataFrame) -> pd.DataFrame:
+    bulk = selected in _PAGINATED_LISTS
     if selected == EARLY_EDGE_PLAYLIST_LABEL:
         return enrich_early_edge_display(raw)
     if selected == HOLDINGS_PLAYLIST_LABEL:
-        return enrich_watching_board(raw, list_tag="Holding", is_holding=True)
-    return enrich_watching_board(raw, list_tag=selected)
+        return enrich_watching_board(
+            raw,
+            list_tag="Holding",
+            is_holding=True,
+            fetch_live_prices=not bulk,
+        )
+    return enrich_watching_board(
+        raw,
+        list_tag=selected,
+        fetch_live_prices=not bulk,
+    )
 
 
 def _render_early_edge_actions() -> bool:
@@ -414,30 +392,15 @@ def _render_selected_list(selected: str) -> None:
         st.info("No tickers in this list yet.")
         return
 
-    page_raw = raw
-    page, total_pages, total_rows = 1, 1, len(raw)
-    if selected in _PAGINATED_LISTS:
-        page_raw, page, total_pages, total_rows = _paginate_raw(raw, selected)
-        _render_pagination_bar(
-            selected,
-            page=page,
-            total_pages=total_pages,
-            total_rows=total_rows,
-            position="top",
-        )
-
-    view = _enrich_for_list(selected, page_raw)
-    iframe_key = f"watching_board_{selected.lower().replace(' ', '_')}_p{page}"
-    _render_watching_board(view, title=selected, iframe_key=iframe_key)
-
-    if selected in _PAGINATED_LISTS and total_rows > 0:
-        _render_pagination_bar(
-            selected,
-            page=page,
-            total_pages=total_pages,
-            total_rows=total_rows,
-            position="bottom",
-        )
+    view = _enrich_for_list(selected, raw)
+    page_size = _BOARD_PAGE_SIZE if selected in _PAGINATED_LISTS else None
+    iframe_key = f"watching_board_{selected.lower().replace(' ', '_')}"
+    _render_watching_board(
+        view,
+        title=selected,
+        iframe_key=iframe_key,
+        client_page_size=page_size,
+    )
 
 
 def render_watching(*, show_title: bool = True) -> None:
@@ -459,7 +422,7 @@ def render_watching(*, show_title: bool = True) -> None:
                 format_func=format_watching_list_option,
                 help=(
                     "Early Edge, Holdings, Negen, Niveshaay, NSE, NSE SME — "
-                    "same board and Fill missing (NSE / SME: current page only)."
+                    "same board; NSE / SME page with ‹ › inside the table toolbar."
                 ),
             )
         with row[1]:
@@ -468,19 +431,14 @@ def render_watching(*, show_title: bool = True) -> None:
                 use_container_width=True,
                 help=(
                     "Fetch missing price, mcap, website, sector, and sub-sector "
-                    "from screener + Yahoo. NSE / NSE SME: current page only."
+                    "from screener + Yahoo. NSE / NSE SME: up to 100 names per run."
                 ),
                 key="watching_fill",
             )
 
-    _reset_pagination_if_list_changed(selected)
-
     raw_selected = _raw_for_list(selected)
-    gap_raw = raw_selected
-    if selected in _PAGINATED_LISTS and not raw_selected.empty:
-        gap_raw, _, _, _ = _paginate_raw(raw_selected, selected)
-    if not gap_raw.empty:
-        gap_view = _enrich_for_list(selected, gap_raw)
+    if not raw_selected.empty:
+        gap_view = _enrich_for_list(selected, raw_selected)
         gap_line = format_watching_gaps(watching_gap_counts(gap_view))
         if gap_line:
             st.caption(gap_line)
@@ -488,13 +446,9 @@ def render_watching(*, show_title: bool = True) -> None:
     _render_common_tiles()
 
     if fill:
-        fill_raw = raw_selected
-        if selected in _PAGINATED_LISTS and not raw_selected.empty:
-            fill_raw, page, total_pages, total_rows = _paginate_raw(raw_selected, selected)
-            st.info(
-                f"Filling gaps for **page {page}** only "
-                f"({total_rows:,} stocks in {selected} — use Next / Previous to fill other pages)."
-            )
-        _run_fill_missing(fill_raw, list_label=selected)
+        max_tried = _BOARD_PAGE_SIZE if selected in _PAGINATED_LISTS else None
+        if max_tried:
+            st.info(f"Fill missing runs on up to **{max_tried}** names with gaps per click.")
+        _run_fill_missing(raw_selected, list_label=selected, max_tried=max_tried)
 
     _render_selected_list(selected)

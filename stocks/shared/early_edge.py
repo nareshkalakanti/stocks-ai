@@ -362,6 +362,7 @@ def hydrate_early_edge_missing(
     df: pd.DataFrame | None = None,
     *,
     progress_callback=None,
+    max_tried: int | None = None,
 ) -> dict[str, int]:
     """
     Fill missing price / mcap / website / sector+sub-sector from screener + Yahoo
@@ -427,6 +428,9 @@ def hydrate_early_edge_missing(
             )
 
     stats = {"tried": len(pending), "price": 0, "mcap": 0, "website": 0, "sector": 0}
+    if max_tried is not None and max_tried > 0 and len(pending) > max_tried:
+        pending = pending[:max_tried]
+        stats["tried"] = len(pending)
     if not pending:
         if progress_callback:
             try:
@@ -570,6 +574,7 @@ def enrich_watching_board(
     list_tag: str = "",
     is_edge: bool = False,
     is_holding: bool = False,
+    fetch_live_prices: bool = True,
 ) -> pd.DataFrame:
     """Watchlist rows + listing sector/sub_sector + SQLite mcap / Cap code / website."""
     from stocks.core.database import load_company_profiles_from_db, load_market_cap_from_db
@@ -697,40 +702,24 @@ def enrich_watching_board(
     from stocks.market.price_service import fetch_current_prices
 
     price_map = load_stock_prices_from_db(tickers, allow_stale=True)
-    missing_price = [
-        safe_str(t).upper()
-        for t in tickers
-        if safe_str(t).upper() and safe_str(t).upper() not in price_map
-    ]
-    if missing_price:
-        market_by = {
-            safe_str(r.get("ticker")).upper(): safe_str(r.get("market")).upper() or "NSE"
-            for _, r in out.iterrows()
-            if safe_str(r.get("ticker"))
-        }
-        fetched = fetch_current_prices(
-            missing_price,
-            [market_by.get(t) for t in missing_price],
-        )
-        for t, px in fetched.items():
-            key = safe_str(t).upper()
-            if px is None:
-                continue
-            try:
-                price_map[key] = float(px)
-                save_stock_price_to_db(key, float(px), market=market_by.get(key))
-            except (TypeError, ValueError):
-                continue
-
-        still_missing = [
-            t for t in missing_price if safe_str(t).upper() not in price_map
+    if fetch_live_prices:
+        missing_price = [
+            safe_str(t).upper()
+            for t in tickers
+            if safe_str(t).upper() and safe_str(t).upper() not in price_map
         ]
-        if still_missing:
-            from stocks.market.screener_profile import fetch_screener_current_price
-
-            for t in still_missing:
+        if missing_price:
+            market_by = {
+                safe_str(r.get("ticker")).upper(): safe_str(r.get("market")).upper() or "NSE"
+                for _, r in out.iterrows()
+                if safe_str(r.get("ticker"))
+            }
+            fetched = fetch_current_prices(
+                missing_price,
+                [market_by.get(t) for t in missing_price],
+            )
+            for t, px in fetched.items():
                 key = safe_str(t).upper()
-                px = fetch_screener_current_price(key, market_by.get(key))
                 if px is None:
                     continue
                 try:
@@ -738,6 +727,23 @@ def enrich_watching_board(
                     save_stock_price_to_db(key, float(px), market=market_by.get(key))
                 except (TypeError, ValueError):
                     continue
+
+            still_missing = [
+                t for t in missing_price if safe_str(t).upper() not in price_map
+            ]
+            if still_missing:
+                from stocks.market.screener_profile import fetch_screener_current_price
+
+                for t in still_missing:
+                    key = safe_str(t).upper()
+                    px = fetch_screener_current_price(key, market_by.get(key))
+                    if px is None:
+                        continue
+                    try:
+                        price_map[key] = float(px)
+                        save_stock_price_to_db(key, float(px), market=market_by.get(key))
+                    except (TypeError, ValueError):
+                        continue
 
     out["price"] = out["ticker"].map(lambda t: price_map.get(safe_str(t).upper()))
 
