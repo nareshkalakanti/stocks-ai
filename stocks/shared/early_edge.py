@@ -580,6 +580,66 @@ def enrich_early_edge_display(df: pd.DataFrame | None = None) -> pd.DataFrame:
     return enrich_watching_board(df, list_tag="Edge", is_edge=True)
 
 
+def watching_gap_counts(view: pd.DataFrame | None) -> dict[str, int]:
+    """How many rows are missing price / sector / mcap / website (Fill-missing targets)."""
+    base = {"total": 0, "price": 0, "sector": 0, "mcap": 0, "web": 0, "any_rows": 0}
+    if view is None or view.empty:
+        return base
+    n = len(view)
+    missing_price = (
+        int(pd.Series(view["price"]).isna().sum()) if "price" in view.columns else n
+    )
+    missing_sector = (
+        int(view["sector"].astype(str).str.strip().eq("").sum())
+        if "sector" in view.columns
+        else n
+    )
+    missing_mcap = (
+        int(view["market_cap_cr"].isna().sum()) if "market_cap_cr" in view.columns else n
+    )
+    missing_web = (
+        int(view["website"].astype(str).str.strip().eq("").sum())
+        if "website" in view.columns
+        else n
+    )
+    gap_rows = 0
+    for _, row in view.iterrows():
+        if (
+            (pd.isna(row.get("price")) if "price" in view.columns else True)
+            or not safe_str(row.get("sector"))
+            or (pd.isna(row.get("market_cap_cr")) if "market_cap_cr" in view.columns else True)
+            or not safe_str(row.get("website"))
+        ):
+            gap_rows += 1
+    return {
+        "total": n,
+        "price": missing_price,
+        "sector": missing_sector,
+        "mcap": missing_mcap,
+        "web": missing_web,
+        "any_rows": gap_rows,
+    }
+
+
+def format_watching_gaps(counts: dict[str, int]) -> str:
+    if not counts.get("total"):
+        return ""
+    if not counts.get("any_rows"):
+        return "No gaps — price, sector, mcap, and web filled for every name."
+    bits: list[str] = []
+    for key, label in (
+        ("price", "price"),
+        ("sector", "sector"),
+        ("mcap", "mcap"),
+        ("web", "web"),
+    ):
+        n = int(counts.get(key) or 0)
+        if n:
+            bits.append(f"{label} **{n}**")
+    head = f"**{counts['any_rows']}** names need Fill missing"
+    return f"{head} · " + " · ".join(bits) if bits else head
+
+
 def is_early_edge_playlist(market: str) -> bool:
     return safe_str(market) == EARLY_EDGE_PLAYLIST_LABEL
 

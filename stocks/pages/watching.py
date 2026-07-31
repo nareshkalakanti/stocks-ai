@@ -22,6 +22,8 @@ from stocks.shared.early_edge import (
     load_early_edge_df,
     resolve_early_edge_queries,
     seed_early_edge,
+    watching_gap_counts,
+    format_watching_gaps,
 )
 from stocks.shared.early_edge_html import build_early_edge_html, early_edge_iframe_height
 from stocks.shared.fund_watchlists import (
@@ -37,9 +39,13 @@ from stocks.shared.portfolio import (
     seed_default_holdings,
 )
 
+from stocks.shared.watching_common_html import (
+    build_watching_common_html,
+    watching_common_iframe_height,
+)
+
 _WATCHING_LIST_KEY = "watching_list"
-_COMMON_TILES_PER_ROW = 6
-_COMMON_TILES_MAX = 30
+_COMMON_TILES_MAX = 12
 
 _LABEL_TO_FUND_KEY = {
     NEGEN_PLAYLIST_LABEL: "negen",
@@ -94,38 +100,75 @@ def _common_stocks() -> list[tuple[str, list[str]]]:
     return common
 
 
-def _render_common_tiles() -> None:
+def _lookup_ticker_row(ticker: str) -> dict:
+    key = safe_str(ticker).upper()
+    for label in WATCHING_LIST_LABELS:
+        raw = _raw_for_list(label)
+        if raw is None or raw.empty or "ticker" not in raw.columns:
+            continue
+        match = raw[raw["ticker"].astype(str).str.upper() == key]
+        if not match.empty:
+            row = match.iloc[0].to_dict()
+            row["ticker"] = key
+            return row
+    return {"ticker": key, "name": key, "market": "NSE"}
+
+
+def _build_common_enriched(limit: int = _COMMON_TILES_MAX) -> tuple[pd.DataFrame, int]:
     common = _common_stocks()
     if not common:
+        return pd.DataFrame(), 0
+
+    total = len(common)
+    rows: list[dict] = []
+    for ticker, lists in common[:limit]:
+        row = _lookup_ticker_row(ticker)
+        row["on_lists"] = "|".join(lists)
+        rows.append(row)
+
+    if not rows:
+        return pd.DataFrame(), total
+
+    lists_map = {safe_str(r["ticker"]).upper(): r["on_lists"] for r in rows}
+    enriched = enrich_watching_board(pd.DataFrame(rows))
+    enriched["on_lists"] = enriched["ticker"].astype(str).str.upper().map(lists_map).fillna("")
+    return enriched, total
+
+
+def _render_common_tiles() -> None:
+    view, total = _build_common_enriched(limit=_COMMON_TILES_MAX)
+    if view.empty:
         return
 
-    st.markdown("##### On 2+ lists")
-    shown = common[:_COMMON_TILES_MAX]
-    for i in range(0, len(shown), _COMMON_TILES_PER_ROW):
-        row = st.columns(_COMMON_TILES_PER_ROW, gap="small")
-        for col, (ticker, lists) in zip(row, shown[i : i + _COMMON_TILES_PER_ROW], strict=False):
-            with col:
-                with st.container(border=True):
-                    st.markdown(f"**{ticker}**")
-                    st.caption(" · ".join(lists))
-
-    if len(common) > _COMMON_TILES_MAX:
-        st.caption(f"Showing {_COMMON_TILES_MAX} of **{len(common):,}** common tickers.")
+    gaps = watching_gap_counts(view)
+    html = build_watching_common_html(
+        view,
+        total_common=total,
+        limit=_COMMON_TILES_MAX,
+        gap_counts=gaps,
+    )
+    if not html:
+        return
+    embed_html_iframe(
+        html,
+        height=watching_common_iframe_height(len(view)),
+        key="watching_common_tiles",
+    )
 
 
 def _board_stats_caption(view) -> None:
-    with_sector = int(view["sector"].astype(str).str.strip().ne("").sum()) if "sector" in view.columns else 0
-    with_mcap = int(view["market_cap_cr"].notna().sum()) if "market_cap_cr" in view.columns else 0
-    with_web = (
-        int(view["website"].astype(str).str.strip().ne("").sum())
-        if "website" in view.columns
-        else 0
-    )
-    with_price = int(view["price"].notna().sum()) if "price" in view.columns else 0
+    gaps = watching_gap_counts(view)
+    with_sector = gaps["total"] - gaps["sector"]
+    with_mcap = gaps["total"] - gaps["mcap"]
+    with_web = gaps["total"] - gaps["web"]
+    with_price = gaps["total"] - gaps["price"]
     st.caption(
-        f"{len(view):,} stocks · price **{with_price}** · sector **{with_sector}** · "
+        f"{gaps['total']:,} stocks · price **{with_price}** · sector **{with_sector}** · "
         f"mcap **{with_mcap}** · web **{with_web}** · filter Cap / Sector in the board"
     )
+    gap_txt = format_watching_gaps(gaps)
+    if gap_txt:
+        st.caption(gap_txt)
 
 
 def _render_watching_board(view, *, title: str, iframe_key: str) -> None:
@@ -335,6 +378,13 @@ def render_watching(*, show_title: bool = True) -> None:
                 help="Fetch missing mcap / website / sector from screener + Yahoo for the current list.",
                 key="watching_fill",
             )
+
+    raw_selected = _raw_for_list(selected)
+    if not raw_selected.empty:
+        gap_view = _enrich_for_list(selected, raw_selected)
+        gap_line = format_watching_gaps(watching_gap_counts(gap_view))
+        if gap_line:
+            st.caption(gap_line)
 
     _render_common_tiles()
 
