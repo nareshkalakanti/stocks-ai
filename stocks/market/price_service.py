@@ -57,6 +57,7 @@ def fetch_current_prices(
             group_by="ticker",
             progress=False,
             threads=True,
+            auto_adjust=True,
         )
     except Exception as exc:
         for ticker, symbol in symbol_map.items():
