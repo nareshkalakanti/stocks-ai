@@ -14,6 +14,8 @@ from stocks.pages.valuepickr import render_valuepickr
 from stocks.pages.demerger import render_demerger
 from stocks.pages.earningsq import render_earningsq
 from stocks.pages.fund_watchlists import render_fund_watchlists
+from stocks.pages.watching import render_watching
+from stocks.shared.early_edge import ensure_early_edge_seeded
 
 st.set_page_config(
     page_title="AI",
@@ -23,6 +25,7 @@ st.set_page_config(
 
 ensure_db()
 init_governance_db()
+ensure_early_edge_seeded()
 
 _SIDEBAR_PAGES = [
     "Strategy",
@@ -30,12 +33,13 @@ _SIDEBAR_PAGES = [
     "Sector Landscape",
     "SuperStars",
     "Holdings",
+    "Watching",
     "Fund Watchlists",
     "ValuePickr",
     "Demergers",
 ]
-# v6: Fund Watchlists (Negen / Niveshaay)
-_SIDEBAR_KEY = "app_sidebar_page_v6"
+# v7: Watching · Early Edge
+_SIDEBAR_KEY = "app_sidebar_page_v7"
 
 normalize_radio_session_state(_SIDEBAR_KEY, _SIDEBAR_PAGES)
 
@@ -57,6 +61,8 @@ elif page == "SuperStars":
     render_superstars()
 elif page == "Holdings":
     render_holdings()
+elif page == "Watching":
+    render_watching()
 elif page == "Fund Watchlists":
     render_fund_watchlists()
 elif page == "ValuePickr":

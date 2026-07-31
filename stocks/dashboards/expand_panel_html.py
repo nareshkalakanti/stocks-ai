@@ -350,6 +350,7 @@ EXPAND_PANEL_CSS = """
   }
   .corp-tag-bg { color: #5b21b6; background: #ede9fe; }
   .corp-tag-hold { color: #1d4ed8; background: #dbeafe; }
+  .corp-tag-edge { color: #9f1239; background: #ffe4e6; }
   .corp-tag-sme { color: #9a3412; background: #ffedd5; }
   .corp-tag-dem { color: #92400e; background: #fef3c7; }
   .corp-tag-spin { color: #0e7490; background: #cffafe; }
@@ -674,6 +675,7 @@ function fmtCorpTags(r) {
   const parts = [];
   if (r.business_group) parts.push(`<div class="corp-tag corp-tag-bg" title="${esc(r.business_group)}">${esc(r.business_group)}</div>`);
   if (r.is_holding) parts.push('<div class="corp-tag corp-tag-hold" title="In your Holdings portfolio">Holding</div>');
+  if (r.is_edge) parts.push('<div class="corp-tag corp-tag-edge" title="Early Edge watchlist">Edge</div>');
   if (r.is_sme) parts.push('<div class="corp-tag corp-tag-sme" title="NSE Emerge / SME listing">SME</div>');
   if (r.demerger) parts.push('<div class="corp-tag corp-tag-dem">Demerger</div>');
   if (r.spin_off) parts.push('<div class="corp-tag corp-tag-spin">Spin off</div>');

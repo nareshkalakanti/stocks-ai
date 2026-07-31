@@ -22,6 +22,7 @@ from stocks.market.company_profile import _WEBSITE_OVERRIDES, merge_company_prof
 from stocks.market.screener_profile import fetch_market_cap_cr
 from stocks.shared.corp_tags import (
     clear_corp_tags_cache,
+    early_edge_ticker_set,
     holdings_ticker_set,
     nse_sme_ticker_set,
 )
@@ -454,6 +455,7 @@ def build_governance_map_rows(
     profiles = _apply_profile_overrides(load_company_profiles_from_db(tickers))
     clear_corp_tags_cache()
     holding_tickers = holdings_ticker_set()
+    edge_tickers = early_edge_ticker_set()
     sme_tickers = nse_sme_ticker_set()
     ss_by = superstar_pead_map(tickers)
 
@@ -490,6 +492,7 @@ def build_governance_map_rows(
                     "website": website,
                     "about": about,
                     "is_holding": ticker in holding_tickers,
+                    "is_edge": ticker in edge_tickers,
                     "is_sme": ticker in sme_tickers,
                     "is_main": ticker not in sme_tickers
                     and safe_str(seat.get("market")).upper() == "NSE",

@@ -78,6 +78,10 @@ GOVERNANCE_MAP_CSS = """
     color: #1d4ed8;
     background: #dbeafe;
   }
+  .gov-tag-edge {
+    color: #9f1239;
+    background: #ffe4e6;
+  }
   .gov-tag-sme {
     color: #9a3412;
     background: #ffedd5;
@@ -464,6 +468,11 @@ GOVERNANCE_MAP_CSS = """
     color: #fff;
     box-shadow: 0 1px 2px rgba(29, 78, 216, 0.35);
   }
+  .gov-hold-filter button[data-hold="EDGE"].active {
+    background: #9f1239;
+    color: #fff;
+    box-shadow: 0 1px 2px rgba(159, 18, 57, 0.35);
+  }
   .gov-role-tag {
     display: inline-block;
     font-size: 9px;
@@ -562,10 +571,11 @@ def build_governance_map_html(
         <button type="button" data-cap="MC" title="With Holding: highlights MC seats on the board">MC</button>
         <button type="button" data-cap="LC" title="With Holding: highlights LC seats on the board">LC</button>
       </div>
-      <div class="gov-hold-filter" role="group" aria-label="Holdings filter" id="govmap-hold-filter">
-        <span class="gov-cap-filter-label">Holdings</span>
+      <div class="gov-hold-filter" role="group" aria-label="Holdings / Early Edge filter" id="govmap-hold-filter">
+        <span class="gov-cap-filter-label">Watch</span>
         <button type="button" class="active" data-hold="" title="Show all companies">All</button>
         <button type="button" data-hold="HOLD" title="Directors on your holdings; Cap then highlights matching seats (full board still shown)">Holding</button>
+        <button type="button" data-hold="EDGE" title="Directors on Early Edge watchlist; Cap then highlights matching seats">Edge</button>
       </div>
       <span class="gov-search-meta" id="govmap-count"></span>
     </div>
@@ -589,7 +599,7 @@ def build_governance_map_html(
   let searchQuery = {initial}.trim().toLowerCase();
   let viewMode = "director"; // director | company | role
   let capFilters = new Set(); // empty = all; else NC|MIC|SC|MC|LC (multi-select)
-  let holdFilter = ""; // "" | HOLD
+  let holdFilter = ""; // "" | HOLD | EDGE
   let sortCol = "dir_score";
   let sortDir = -1; // -1 = high→low (top), +1 = low→high
   const ROLE_FAMILIES = [
@@ -743,6 +753,7 @@ def build_governance_map_html(
   }}
   function companyMatchesHold(c) {{
     if (!holdFilter) return true;
+    if (holdFilter === "EDGE") return !!c.is_edge;
     return !!c.is_holding;
   }}
   function shortHolderName(name, maxLen) {{
@@ -796,11 +807,12 @@ def build_governance_map_html(
   }}
   /** Blue outline: holdings stay highlighted; Cap adds highlight on matching cap tags too. */
   function companyHighlightFilter(c) {{
-    if (holdFilter === "HOLD") {{
+    if (holdFilter === "HOLD" || holdFilter === "EDGE") {{
+      const flagged = holdFilter === "EDGE" ? !!c.is_edge : !!c.is_holding;
       if (capHighlightActive()) {{
-        return !!c.is_holding || companyMatchesCap(c);
+        return flagged || companyMatchesCap(c);
       }}
-      return !!c.is_holding;
+      return flagged;
     }}
     return companyRowFilter(c);
   }}
@@ -824,6 +836,9 @@ def build_governance_map_html(
     if (holdFilter === "HOLD") {{
       return (r.companies || []).some(c => c.is_holding);
     }}
+    if (holdFilter === "EDGE") {{
+      return (r.companies || []).some(c => c.is_edge);
+    }}
     return (r.companies || []).some(companyRowFilter);
   }}
   function activeFilters() {{
@@ -831,10 +846,11 @@ def build_governance_map_html(
   }}
   function filterBits() {{
     const bits = [];
-    if (holdFilter) bits.push("Holding");
+    if (holdFilter === "HOLD") bits.push("Holding");
+    if (holdFilter === "EDGE") bits.push("Edge");
     if (capHighlightActive()) {{
       const selected = CAP_BANDS.filter(c => capFilters.has(c));
-      if (holdFilter === "HOLD") {{
+      if (holdFilter === "HOLD" || holdFilter === "EDGE") {{
         bits.push(`+ highlight ${{selected.join("+")}}`);
       }} else {{
         bits.push(`Cap ${{selected.join("+")}}`);
@@ -993,6 +1009,9 @@ def build_governance_map_html(
     const holdTag = hub.is_holding
       ? `<span class="gov-co-tags"><span class="gov-tag gov-tag-hold">Holding</span></span>`
       : "";
+    const edgeTag = hub.is_edge
+      ? `<span class="gov-co-tags"><span class="gov-tag gov-tag-edge" title="Early Edge watchlist">Edge</span></span>`
+      : "";
     const smeTag = hub.is_sme
       ? `<span class="gov-co-tags"><span class="gov-tag gov-tag-sme" title="NSE Emerge / SME listing">SME</span></span>`
       : "";
@@ -1009,7 +1028,7 @@ def build_governance_map_html(
       : "—";
     el.innerHTML =
       `<div class="govhub-hero"><div class="govhub-hero-top"><div>` +
-      `<div class="govhub-name">${{esc(hub.name || hub.ticker)}}${{holdTag}}${{smeTag}}${{breakoutTag}}</div>` +
+      `<div class="govhub-name">${{esc(hub.name || hub.ticker)}}${{holdTag}}${{edgeTag}}${{smeTag}}${{breakoutTag}}</div>` +
       `<p class="govhub-sub">${{esc(hub.ticker)}} · ${{esc(hub.market || "")}} · board hub</p>` +
       `<div class="gov-co-links" style="margin-top:8px">` +
       `<a href="${{esc(hub.sc || "#")}}" target="_blank" rel="noopener noreferrer">SC</a>` +
@@ -1031,9 +1050,9 @@ def build_governance_map_html(
     const matchN = matchingCompanies(r).length;
     const filterNote = filterBits().length
       ? ` · filter <strong>${{esc(filterBits().join(" · "))}}</strong>` +
-        (holdFilter === "HOLD" && capHighlightActive()
+        ((holdFilter === "HOLD" || holdFilter === "EDGE") && capHighlightActive()
           ? ` · ${{matchN}} highlighted`
-          : holdFilter === "HOLD"
+          : (holdFilter === "HOLD" || holdFilter === "EDGE")
             ? ""
             : ` hit ${{matchN}}/${{cosList.length}}`) +
         ` (all boards shown)`
@@ -1078,6 +1097,9 @@ def build_governance_map_html(
       const holdTag = c.is_holding
         ? `<span class="gov-co-tags"><span class="gov-tag gov-tag-hold" title="In your Holdings portfolio">Holding</span></span>`
         : "";
+      const edgeTag = c.is_edge
+        ? `<span class="gov-co-tags"><span class="gov-tag gov-tag-edge" title="Early Edge watchlist">Edge</span></span>`
+        : "";
       const brk = breakoutTagPills(c);
       const brkTag = brk.length ? `<span class="gov-co-tags">${{brk.join("")}}</span>` : "";
       const smeTag = c.is_sme
@@ -1100,7 +1122,7 @@ def build_governance_map_html(
         `<div class="${{coCls}}"${{coStyle}}>` +
         `<div class="gov-co-top">` +
         `<div>` +
-        `<div class="gov-co-name">${{esc(c.name || c.ticker)}}${{capTag}}${{smeTag}}${{brkTag}}${{holdTag}}</div>` +
+        `<div class="gov-co-name">${{esc(c.name || c.ticker)}}${{capTag}}${{smeTag}}${{brkTag}}${{holdTag}}${{edgeTag}}</div>` +
         `<div class="gov-co-sub">${{esc(c.ticker)}} · ${{esc(c.market || "")}} · ${{esc(c.designation || "Director")}}</div>` +
         `</div>` +
         `<div class="gov-co-mcap">${{fmtMcap(c.market_cap_cr)}}</div>` +
@@ -1132,6 +1154,7 @@ def build_governance_map_html(
         let name = t;
         if (isHub) name = `<span class="gov-ticker-focus" title="Hub ticker">${{t}}</span>`;
         else if (c.is_holding) name = `<span class="gov-ticker-hold" title="In your Holdings">${{t}}</span>`;
+        else if (c.is_edge) name = `<span class="gov-ticker-hold" title="Early Edge">${{t}}</span>`;
         const tags = [];
         const code = String(c.cap_code || "").toUpperCase();
         if (code) {{
@@ -1144,6 +1167,9 @@ def build_governance_map_html(
         }}
         if (c.is_holding) {{
           tags.push(`<span class="gov-tag gov-tag-hold" title="In your Holdings">Holding</span>`);
+        }}
+        if (c.is_edge) {{
+          tags.push(`<span class="gov-tag gov-tag-edge" title="Early Edge watchlist">Edge</span>`);
         }}
         tags.push(...breakoutTagPills(c));
         const tagHtml = tags.length
@@ -1201,11 +1227,11 @@ def build_governance_map_html(
   function syncHoldFilterButtons() {{
     const holdFilterEl = document.getElementById("govmap-hold-filter");
     if (!holdFilterEl) return;
-    const on = holdFilter === "HOLD";
+    const on = !!holdFilter;
     holdFilterEl.classList.toggle("gov-hold-filter-on", on);
     holdFilterEl.querySelectorAll("button[data-hold]").forEach(b => {{
       const code = String(b.getAttribute("data-hold") || "").toUpperCase();
-      const active = code ? on : !on;
+      const active = code ? (holdFilter === code) : !holdFilter;
       b.classList.toggle("active", active);
       b.setAttribute("aria-pressed", active ? "true" : "false");
     }});
@@ -1389,7 +1415,7 @@ def build_governance_map_html(
       btn.onclick = (e) => {{
         e.stopPropagation();
         const code = String(btn.getAttribute("data-hold") || "").toUpperCase();
-        holdFilter = code === "HOLD" ? "HOLD" : "";
+        holdFilter = (code === "HOLD" || code === "EDGE") ? code : "";
         syncHoldFilterButtons();
         render();
       }};

@@ -16,6 +16,12 @@ from stocks.scans.ds_playlist import (
     ds_playlist_listings,
     is_ds_playlist,
 )
+from stocks.scans.early_edge_playlist import (
+    EARLY_EDGE_PLAYLIST_LABEL,
+    early_edge_playlist_count,
+    early_edge_playlist_listings,
+    is_early_edge_playlist,
+)
 from stocks.scans.fund_watchlist_playlist import (
     FUND_WATCHLIST_PLAYLIST_LABELS,
     fund_watchlist_playlist_count,
@@ -38,6 +44,7 @@ from stocks.core.text_utils import safe_str
 
 SCAN_PLAYLIST_LABELS = (
     HOLDINGS_PLAYLIST_LABEL,
+    EARLY_EDGE_PLAYLIST_LABEL,
     *FUND_WATCHLIST_PLAYLIST_LABELS,
     *NIFTY_PLAYLIST_LABELS,
     DS_PLAYLIST_LABEL,
@@ -50,6 +57,7 @@ _LEGACY_PLAYLIST_LABELS = frozenset({"Parents", "Spinoffs"})
 def is_scan_playlist(market: str) -> bool:
     return (
         is_holdings_playlist(market)
+        or is_early_edge_playlist(market)
         or is_fund_watchlist_playlist(market)
         or is_ds_playlist(market)
         or is_business_groups_playlist(market)
@@ -89,6 +97,14 @@ def scan_playlist_listings(
 ) -> pd.DataFrame:
     if is_holdings_playlist(market):
         return holdings_playlist_listings(
+            stocks,
+            sector=sector,
+            search=search,
+            industry=industry,
+            sub_sector=sub_sector,
+        )
+    if is_early_edge_playlist(market):
+        return early_edge_playlist_listings(
             stocks,
             sector=sector,
             search=search,
@@ -135,6 +151,8 @@ def scan_playlist_listings(
 def scan_playlist_count(market: str) -> int:
     if is_holdings_playlist(market):
         return holdings_playlist_count()
+    if is_early_edge_playlist(market):
+        return early_edge_playlist_count(market)
     if is_fund_watchlist_playlist(market):
         return fund_watchlist_playlist_count(market)
     if is_nifty_index_playlist(market):
@@ -176,6 +194,8 @@ def scan_playlist_note(market: str) -> str:
         return ""
     if is_holdings_playlist(market):
         label = HOLDINGS_PLAYLIST_LABEL
+    elif is_early_edge_playlist(market):
+        label = EARLY_EDGE_PLAYLIST_LABEL
     elif is_fund_watchlist_playlist(market):
         label = market
     elif is_nifty_index_playlist(market):
