@@ -33,6 +33,36 @@ def to_yfinance_symbol(ticker: str, market: str | None = None) -> str:
     return f"{ticker}.NS"
 
 
+def _last_close_from_download(data: pd.DataFrame, symbol: str) -> float | None:
+    """Parse last Close from ``yf.download`` (handles both MultiIndex layouts)."""
+    if data is None or getattr(data, "empty", True):
+        return None
+    close = None
+    try:
+        if isinstance(data.columns, pd.MultiIndex):
+            level0 = data.columns.get_level_values(0)
+            if symbol in level0:
+                close = data[symbol]["Close"].iloc[-1]
+            elif "Close" in level0:
+                sub = data["Close"]
+                if isinstance(sub, pd.DataFrame) and symbol in sub.columns:
+                    close = sub[symbol].iloc[-1]
+                else:
+                    close = sub.iloc[-1]
+            else:
+                close = data[symbol]["Close"].iloc[-1]
+        else:
+            close = data["Close"].iloc[-1]
+    except (KeyError, IndexError, TypeError, ValueError):
+        return None
+    if close is None or pd.isna(close):
+        return None
+    try:
+        return round(float(close), 2)
+    except (TypeError, ValueError):
+        return None
+
+
 def fetch_current_prices(
     tickers: list[str],
     markets: list[str | None] | None = None,
@@ -52,7 +82,7 @@ def fetch_current_prices(
     try:
         data = yf.download(
             unique_symbols,
-            period="1d",
+            period="5d",
             interval="1d",
             group_by="ticker",
             progress=False,
@@ -81,27 +111,15 @@ def fetch_current_prices(
         return prices
 
     for ticker, symbol in symbol_map.items():
-        try:
-            if len(unique_symbols) == 1:
-                close = data["Close"].iloc[-1]
-            else:
-                close = data[symbol]["Close"].iloc[-1]
-            if close is not None and not pd.isna(close):
-                prices[ticker] = round(float(close), 2)
-            else:
-                log_error(
-                    PRICE_ERROR,
-                    "Close price is empty or NaN",
-                    ticker=ticker,
-                    symbol=symbol,
-                )
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
+        close = _last_close_from_download(data, symbol)
+        if close is not None:
+            prices[ticker] = close
+        else:
             log_error(
                 PRICE_ERROR,
-                "Failed to parse price from yfinance response",
+                "Close price is empty or NaN",
                 ticker=ticker,
                 symbol=symbol,
-                error=str(exc),
             )
 
     return prices

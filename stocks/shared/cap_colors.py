@@ -73,6 +73,12 @@ def cap_colors_css(*, include_chip: bool = True, include_gov_filter: bool = True
             ]
         )
     if include_gov_filter:
+        # Idle tint so Cap chips show band colors even before selection;
+        # .active fills background (must come after govmap's transparent button rule).
+        gov_idle = [
+            f'  .gov-cap-filter button[data-cap="{code}"] {{ color: {c["fg"]}; }}'
+            for code, c in CAP_PALETTE.items()
+        ]
         gov_active = [
             f'  .gov-cap-filter button[data-cap="{code}"].active {{ '
             f'background: {c["bg"]}; color: {c["fg"]}; }}'
@@ -81,6 +87,7 @@ def cap_colors_css(*, include_chip: bool = True, include_gov_filter: bool = True
         parts.extend(
             [
                 '  .gov-cap-filter button[data-cap=""].active { background: #f3f4f6; color: #374151; }',
+                *gov_idle,
                 *gov_active,
             ]
         )

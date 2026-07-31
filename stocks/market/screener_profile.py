@@ -102,6 +102,33 @@ def fetch_screener_profile(ticker: str, market: str | None = None) -> dict:
         except ValueError:
             pass
 
+    # Screener peer bar: Broad Sector / Sector / Industry links.
+    broad = re.search(
+        r'title="Broad Sector">\s*([^<]+?)\s*</a>',
+        html,
+        flags=re.I,
+    )
+    sector_a = re.search(
+        r'title="Sector">\s*([^<]+?)\s*</a>',
+        html,
+        flags=re.I,
+    )
+    industry_a = re.search(
+        r'title="Industry">\s*([^<]+?)\s*</a>',
+        html,
+        flags=re.I,
+    )
+    sector = safe_str(broad.group(1) if broad else None) or safe_str(
+        sector_a.group(1) if sector_a else None
+    )
+    industry = safe_str(industry_a.group(1) if industry_a else None) or safe_str(
+        sector_a.group(1) if sector_a else None
+    )
+    if sector:
+        out["company_sector"] = unescape(sector).strip()
+    if industry:
+        out["company_industry"] = unescape(industry).strip()
+
     return out
 
 

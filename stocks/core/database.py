@@ -1111,11 +1111,12 @@ def update_stock_classification(
     ticker: str,
     *,
     market: str | None = None,
+    name: str | None = None,
     sector: str | None = None,
     industry: str | None = None,
     sub_sector: str | None = None,
 ) -> bool:
-    """Patch sector / industry / sub_sector on an existing ``stocks`` row (no full replace)."""
+    """Upsert sector / industry / sub_sector on ``stocks`` (insert stub row if missing)."""
     init_db()
     key = safe_str(ticker).upper()
     if not key:
@@ -1123,38 +1124,58 @@ def update_stock_classification(
     sector_v = safe_str(sector) or None
     industry_v = safe_str(industry) or None
     sub_v = safe_str(sub_sector) or industry_v
+    name_v = safe_str(name) or key
     if not any((sector_v, industry_v, sub_v)):
         return False
     now = _utc_now()
-    mkt = safe_str(market).upper() or None
+    mkt = safe_str(market).upper() or "NSE"
     with get_connection() as conn:
         _ensure_stocks_columns(conn)
-        if mkt:
-            cur = conn.execute(
-                """
-                UPDATE stocks
-                SET sector = COALESCE(NULLIF(?, ''), sector),
-                    industry = COALESCE(NULLIF(?, ''), industry),
-                    sub_sector = COALESCE(NULLIF(?, ''), sub_sector),
-                    updated_at = ?
-                WHERE ticker = ? AND UPPER(market) = ?
-                """,
-                (sector_v or "", industry_v or "", sub_v or "", now, key, mkt),
-            )
-            if cur.rowcount:
-                return True
         cur = conn.execute(
             """
             UPDATE stocks
             SET sector = COALESCE(NULLIF(?, ''), sector),
                 industry = COALESCE(NULLIF(?, ''), industry),
                 sub_sector = COALESCE(NULLIF(?, ''), sub_sector),
+                name = COALESCE(NULLIF(?, ''), name),
+                updated_at = ?
+            WHERE ticker = ? AND UPPER(COALESCE(market, '')) = ?
+            """,
+            (sector_v or "", industry_v or "", sub_v or "", name_v, now, key, mkt),
+        )
+        if cur.rowcount:
+            return True
+        cur = conn.execute(
+            """
+            UPDATE stocks
+            SET sector = COALESCE(NULLIF(?, ''), sector),
+                industry = COALESCE(NULLIF(?, ''), industry),
+                sub_sector = COALESCE(NULLIF(?, ''), sub_sector),
+                name = COALESCE(NULLIF(?, ''), name),
                 updated_at = ?
             WHERE ticker = ?
             """,
-            (sector_v or "", industry_v or "", sub_v or "", now, key),
+            (sector_v or "", industry_v or "", sub_v or "", name_v, now, key),
         )
-        return bool(cur.rowcount)
+        if cur.rowcount:
+            return True
+        conn.execute(
+            """
+            INSERT INTO stocks (
+                ticker, name, market, sector, source_sector, industry, sub_sector, updated_at
+            ) VALUES (?, ?, ?, ?, '', ?, ?, ?)
+            """,
+            (
+                key,
+                name_v,
+                mkt,
+                sector_v or "",
+                industry_v or "",
+                sub_v or "",
+                now,
+            ),
+        )
+        return True
 
 
 def save_metrics_to_db(metrics: pd.DataFrame, markets: list[str | None]) -> None:

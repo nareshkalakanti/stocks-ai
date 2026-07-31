@@ -159,12 +159,14 @@ def _render_common_tiles() -> None:
 def _board_stats_caption(view) -> None:
     gaps = watching_gap_counts(view)
     with_sector = gaps["total"] - gaps["sector"]
+    with_sub = gaps["total"] - int(gaps.get("sub_sector") or 0)
     with_mcap = gaps["total"] - gaps["mcap"]
     with_web = gaps["total"] - gaps["web"]
     with_price = gaps["total"] - gaps["price"]
     st.caption(
         f"{gaps['total']:,} stocks · price **{with_price}** · sector **{with_sector}** · "
-        f"mcap **{with_mcap}** · web **{with_web}** · filter Cap / Sector in the board"
+        f"sub-sector **{with_sub}** · mcap **{with_mcap}** · web **{with_web}** · "
+        f"filter Cap / Sector in the board"
     )
     gap_txt = format_watching_gaps(gaps)
     if gap_txt:
@@ -188,7 +190,9 @@ def _run_fill_missing(raw: pd.DataFrame, *, list_label: str) -> None:
     if raw is None or raw.empty:
         st.warning("No tickers in this list to fill.")
         return
-    progress = st.progress(0, text=f"{list_label} — filling missing mcap / website / sector…")
+    progress = st.progress(
+        0, text=f"{list_label} — filling price / mcap / website / sector / sub-sector…"
+    )
 
     def _progress(done: int, total: int, ticker: str) -> None:
         if total <= 0:
@@ -204,8 +208,9 @@ def _run_fill_missing(raw: pd.DataFrame, *, list_label: str) -> None:
     progress.empty()
     st.success(
         f"Filled · tried **{stats['tried']}** · "
+        f"price **{stats.get('price', 0)}** · "
         f"mcap **{stats['mcap']}** · website **{stats['website']}** · "
-        f"sector **{stats['sector']}** (saved to DB)"
+        f"sector/sub-sector **{stats['sector']}** (saved to DB)"
     )
 
 
@@ -375,7 +380,10 @@ def render_watching(*, show_title: bool = True) -> None:
             fill = st.button(
                 "Fill missing from web",
                 use_container_width=True,
-                help="Fetch missing mcap / website / sector from screener + Yahoo for the current list.",
+                help=(
+                    "Fetch missing price, mcap, website, sector, and sub-sector "
+                    "from screener + Yahoo for the current list (same as agent fixes)."
+                ),
                 key="watching_fill",
             )
 

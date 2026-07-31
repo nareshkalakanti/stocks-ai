@@ -116,6 +116,14 @@ _MANUAL_TICKERS: dict[str, str] = {
     "prospect": "PCL",
     "mindteck": "MINDTECK",
     "high green carbon": "HIGREEN",
+    "true colors": "TRUECOLORS",
+    "truecolours": "TRUECOLORS",
+    "true colours": "TRUECOLORS",
+}
+
+# Manual tickers not yet in ``stocks`` (BSE IPO / thin coverage) → market + display name.
+_MANUAL_LISTING: dict[str, dict[str, str]] = {
+    "TRUECOLORS": {"market": "BSE", "name": "True Colors Limited"},
 }
 
 # Display order seed queries (dedupe via ticker when seeding).
@@ -203,6 +211,7 @@ EARLY_EDGE_SEED_QUERIES: list[str] = [
     "prospect",
     "mindteck",
     "High green carbon",
+    "True Colors",
 ]
 
 
@@ -253,19 +262,31 @@ def resolve_early_edge_queries(
             guess = re.sub(r"[^A-Z0-9]", "", q.upper())
             if guess in by_ticker:
                 ticker = guess
-        if not ticker or ticker not in by_ticker:
+        if not ticker:
             unresolved.append(q)
             continue
         if ticker in seen:
             continue
+        hit = by_ticker.get(ticker)
+        if hit is not None:
+            market = safe_str(hit.get("market")).upper() or "NSE"
+            name = safe_str(hit.get("name")) or ticker
+            sector = safe_str(hit.get("sector")) or ""
+        else:
+            meta = _MANUAL_LISTING.get(ticker) or {}
+            if not meta:
+                unresolved.append(q)
+                continue
+            market = safe_str(meta.get("market")).upper() or "BSE"
+            name = safe_str(meta.get("name")) or ticker
+            sector = safe_str(meta.get("sector")) or ""
         seen.add(ticker)
-        hit = by_ticker[ticker]
         rows.append(
             {
                 "ticker": ticker,
-                "market": safe_str(hit.get("market")).upper() or "NSE",
-                "name": safe_str(hit.get("name")) or ticker,
-                "sector": safe_str(hit.get("sector")) or "",
+                "market": market,
+                "name": name,
+                "sector": sector,
                 "source_investor": "Early Edge",
                 "holding_entity": q,
             }
@@ -274,18 +295,45 @@ def resolve_early_edge_queries(
 
 
 def seed_early_edge(*, force: bool = False) -> dict[str, Any]:
-    """Write Early Edge tickers into DB. Skips if non-empty unless ``force``."""
+    """Write Early Edge tickers into DB. Merges new seed names unless ``force`` replaces."""
     existing = load_fund_watchlist(EARLY_EDGE_LIST_KEY)
-    if not force and not existing.empty:
+    df, unresolved = resolve_early_edge_queries()
+    if force or existing.empty:
+        n = replace_fund_watchlist(EARLY_EDGE_LIST_KEY, df)
+        clear_corp_tags_cache()
+        return {
+            "written": n,
+            "skipped": False,
+            "merged": 0,
+            "unresolved": unresolved,
+            "df": df,
+        }
+    have = {safe_str(t).upper() for t in existing["ticker"] if safe_str(t)}
+    if df is None or df.empty:
         return {
             "written": len(existing),
             "skipped": True,
-            "unresolved": [],
+            "merged": 0,
+            "unresolved": unresolved,
         }
-    df, unresolved = resolve_early_edge_queries()
-    n = replace_fund_watchlist(EARLY_EDGE_LIST_KEY, df)
+    missing = df[~df["ticker"].astype(str).str.upper().isin(have)].copy()
+    if missing.empty:
+        return {
+            "written": len(existing),
+            "skipped": True,
+            "merged": 0,
+            "unresolved": unresolved,
+        }
+    combined = pd.concat([existing, missing], ignore_index=True)
+    n = replace_fund_watchlist(EARLY_EDGE_LIST_KEY, combined)
     clear_corp_tags_cache()
-    return {"written": n, "skipped": False, "unresolved": unresolved, "df": df}
+    return {
+        "written": n,
+        "skipped": False,
+        "merged": int(len(missing)),
+        "unresolved": unresolved,
+        "df": combined,
+    }
 
 
 def ensure_early_edge_seeded() -> int:
@@ -316,26 +364,31 @@ def hydrate_early_edge_missing(
     progress_callback=None,
 ) -> dict[str, int]:
     """
-    Fetch missing mcap / website / sector from screener + Yahoo and persist to SQLite.
+    Fill missing price / mcap / website / sector+sub-sector from screener + Yahoo
+    and persist to SQLite (same path as manual Watching fixes).
 
-    Returns counts: ``tried``, ``mcap``, ``website``, ``sector``.
+    Returns counts: ``tried``, ``price``, ``mcap``, ``website``, ``sector``.
     """
     from stocks.core.database import (
         load_company_profiles_from_db,
         load_market_cap_from_db,
+        load_stock_prices_from_db,
         save_market_cap_to_db,
+        save_stock_price_to_db,
         update_stock_classification,
     )
     from stocks.core.text_utils import sanitize_website
     from stocks.market.company_profile import merge_company_profile
-    from stocks.market.screener_profile import fetch_market_cap_cr
+    from stocks.market.price_service import fetch_current_prices
+    from stocks.market.screener_profile import fetch_market_cap_cr, fetch_screener_profile
 
     view = enrich_watching_board(df)
     if view.empty:
-        return {"tried": 0, "mcap": 0, "website": 0, "sector": 0}
+        return {"tried": 0, "price": 0, "mcap": 0, "website": 0, "sector": 0}
 
     tickers = view["ticker"].astype(str).str.upper().tolist()
     profiles = load_company_profiles_from_db(tickers)
+    price_known = load_stock_prices_from_db(tickers, allow_stale=True)
     mcap_known: set[str] = set()
     try:
         mcap_df = load_market_cap_from_db(tickers, allow_stale=True)
@@ -348,55 +401,143 @@ def hydrate_early_edge_missing(
     except Exception:
         pass
 
-    pending: list[tuple[str, str, bool, bool, bool]] = []
+    pending: list[tuple[str, str, bool, bool, bool, bool]] = []
+    row_name_by: dict[str, str] = {}
+    market_by: dict[str, str] = {}
     for _, row in view.iterrows():
         ticker = safe_str(row.get("ticker")).upper()
         if not ticker:
             continue
         market = safe_str(row.get("market")).upper() or "NSE"
+        row_name_by[ticker] = safe_str(row.get("name")) or ticker
+        market_by[ticker] = market
+        need_price = ticker not in price_known
         need_mcap = ticker not in mcap_known
         prof = profiles.get(ticker) or {}
-        need_web = not sanitize_website(prof.get("website"))
-        need_sector = not safe_str(row.get("sector"))
-        if need_mcap or need_web or need_sector:
-            pending.append((ticker, market, need_mcap, need_web, need_sector))
+        need_web = not sanitize_website(prof.get("website")) and not sanitize_website(
+            row.get("website")
+        )
+        # Sector alone is not enough — Watching shows Sub-sector from industry.
+        need_sector = not safe_str(row.get("sector")) or not (
+            safe_str(row.get("sub_sector")) or safe_str(row.get("industry"))
+        )
+        if need_price or need_mcap or need_web or need_sector:
+            pending.append(
+                (ticker, market, need_price, need_mcap, need_web, need_sector)
+            )
 
-    stats = {"tried": len(pending), "mcap": 0, "website": 0, "sector": 0}
+    stats = {"tried": len(pending), "price": 0, "mcap": 0, "website": 0, "sector": 0}
+    if not pending:
+        if progress_callback:
+            try:
+                progress_callback(0, 0, "")
+            except Exception:
+                pass
+        return stats
+
+    # Batch Yahoo prices first (same as enrich / TRUECOLORS fix).
+    price_targets = [t for t, _, need_px, *_ in pending if need_px]
+    if price_targets:
+        fetched = fetch_current_prices(
+            price_targets,
+            [market_by.get(t) for t in price_targets],
+        )
+        for t, px in fetched.items():
+            key = safe_str(t).upper()
+            if px is None:
+                continue
+            try:
+                save_stock_price_to_db(key, float(px), market=market_by.get(key))
+                price_known[key] = float(px)
+                stats["price"] += 1
+            except (TypeError, ValueError):
+                continue
+
     total = len(pending)
-    for i, (ticker, market, need_mcap, need_web, need_sector) in enumerate(pending, start=1):
+    for i, (ticker, market, need_price, need_mcap, need_web, need_sector) in enumerate(
+        pending, start=1
+    ):
         if progress_callback:
             try:
                 progress_callback(i - 1, total, ticker)
             except Exception:
                 pass
         try:
+            need_price = need_price and ticker not in price_known
             if need_mcap:
                 mcap = fetch_market_cap_cr(ticker, market)
                 if mcap is not None and mcap > 0:
                     save_market_cap_to_db(ticker, float(mcap), market=market)
                     stats["mcap"] += 1
                     need_mcap = False
-            if need_web or need_sector or need_mcap:
+                    mcap_known.add(ticker)
+
+            # Force screener classification when sub-sector/industry missing
+            # (merge alone may skip scrape if website+about+sector already cached).
+            scraped_industry = ""
+            scraped_sector = ""
+            if need_sector:
+                scraped = fetch_screener_profile(ticker, market) or {}
+                scraped_sector = safe_str(scraped.get("company_sector"))
+                scraped_industry = safe_str(scraped.get("company_industry"))
+                scraped_mcap = scraped.get("market_cap_cr")
+                if need_mcap and scraped_mcap is not None:
+                    try:
+                        mcap_f = float(scraped_mcap)
+                    except (TypeError, ValueError):
+                        mcap_f = 0.0
+                    if mcap_f > 0:
+                        save_market_cap_to_db(ticker, mcap_f, market=market)
+                        stats["mcap"] += 1
+                        need_mcap = False
+                        mcap_known.add(ticker)
+
+            if need_web or need_sector or need_mcap or need_price:
                 merged = merge_company_profile({}, ticker, market)
-                if sanitize_website(merged.get("website")):
-                    if need_web:
-                        stats["website"] += 1
-                sector = safe_str(merged.get("company_sector"))
-                industry = safe_str(merged.get("company_industry"))
+                if sanitize_website(merged.get("website")) and need_web:
+                    stats["website"] += 1
+                sector = scraped_sector or safe_str(merged.get("company_sector"))
+                industry = scraped_industry or safe_str(merged.get("company_industry"))
                 if need_sector and (sector or industry):
+                    name = safe_str(row_name_by.get(ticker)) or ticker
                     if update_stock_classification(
                         ticker,
                         market=market,
+                        name=name,
                         sector=sector or None,
                         industry=industry or None,
                         sub_sector=industry or None,
                     ):
                         stats["sector"] += 1
-                # Profile path may also have saved mcap from screener/Yahoo.
                 if need_mcap:
                     mcap_df = load_market_cap_from_db([ticker], allow_stale=True)
                     if mcap_df is not None and not mcap_df.empty:
                         stats["mcap"] += 1
+                        need_mcap = False
+                        mcap_known.add(ticker)
+                # Yahoo metrics fallback for leftover price / mcap gaps.
+                if need_price or need_mcap:
+                    from stocks.market.price_service import _fetch_single_metrics
+
+                    metrics = _fetch_single_metrics(ticker, market)
+                    if need_price and metrics.get("price") is not None:
+                        try:
+                            px = float(metrics["price"])
+                            save_stock_price_to_db(ticker, px, market=market)
+                            price_known[ticker] = px
+                            stats["price"] += 1
+                            need_price = False
+                        except (TypeError, ValueError):
+                            pass
+                    if need_mcap and metrics.get("market_cap_cr") is not None:
+                        try:
+                            mcap_f = float(metrics["market_cap_cr"])
+                            if mcap_f > 0:
+                                save_market_cap_to_db(ticker, mcap_f, market=market)
+                                stats["mcap"] += 1
+                                mcap_known.add(ticker)
+                        except (TypeError, ValueError):
+                            pass
         except Exception:
             continue
     if progress_callback:
@@ -477,11 +618,13 @@ def enrich_watching_board(
     tickers = out["ticker"].tolist()
     profiles = load_company_profiles_from_db(tickers)
     websites: list[str | None] = []
+    abouts: list[str] = []
     for _, row in out.iterrows():
         ticker = safe_str(row.get("ticker")).upper()
         prof = profiles.get(ticker) or {}
         web = sanitize_website(prof.get("website"))
         websites.append(web)
+        abouts.append(safe_str(prof.get("long_description")) or "")
         if not safe_str(row.get("sector")) and safe_str(prof.get("company_sector")):
             out.at[row.name, "sector"] = safe_str(prof.get("company_sector"))
         if not safe_str(row.get("industry")) and safe_str(prof.get("company_industry")):
@@ -489,6 +632,7 @@ def enrich_watching_board(
         if not safe_str(row.get("sub_sector")) and safe_str(prof.get("company_industry")):
             out.at[row.name, "sub_sector"] = safe_str(prof.get("company_industry"))
     out["website"] = websites
+    out["about"] = abouts
 
     # Prefer industry as sub_sector display when sub_sector blank.
     out["sub_sector"] = out.apply(
@@ -582,7 +726,7 @@ def enrich_early_edge_display(df: pd.DataFrame | None = None) -> pd.DataFrame:
 
 def watching_gap_counts(view: pd.DataFrame | None) -> dict[str, int]:
     """How many rows are missing price / sector / mcap / website (Fill-missing targets)."""
-    base = {"total": 0, "price": 0, "sector": 0, "mcap": 0, "web": 0, "any_rows": 0}
+    base = {"total": 0, "price": 0, "sector": 0, "sub_sector": 0, "mcap": 0, "web": 0, "any_rows": 0}
     if view is None or view.empty:
         return base
     n = len(view)
@@ -594,6 +738,15 @@ def watching_gap_counts(view: pd.DataFrame | None) -> dict[str, int]:
         if "sector" in view.columns
         else n
     )
+    missing_sub = 0
+    if "sub_sector" in view.columns or "industry" in view.columns:
+        for _, row in view.iterrows():
+            if not (
+                safe_str(row.get("sub_sector")) or safe_str(row.get("industry"))
+            ):
+                missing_sub += 1
+    else:
+        missing_sub = n
     missing_mcap = (
         int(view["market_cap_cr"].isna().sum()) if "market_cap_cr" in view.columns else n
     )
@@ -607,6 +760,7 @@ def watching_gap_counts(view: pd.DataFrame | None) -> dict[str, int]:
         if (
             (pd.isna(row.get("price")) if "price" in view.columns else True)
             or not safe_str(row.get("sector"))
+            or not (safe_str(row.get("sub_sector")) or safe_str(row.get("industry")))
             or (pd.isna(row.get("market_cap_cr")) if "market_cap_cr" in view.columns else True)
             or not safe_str(row.get("website"))
         ):
@@ -615,6 +769,7 @@ def watching_gap_counts(view: pd.DataFrame | None) -> dict[str, int]:
         "total": n,
         "price": missing_price,
         "sector": missing_sector,
+        "sub_sector": missing_sub,
         "mcap": missing_mcap,
         "web": missing_web,
         "any_rows": gap_rows,
@@ -625,11 +780,12 @@ def format_watching_gaps(counts: dict[str, int]) -> str:
     if not counts.get("total"):
         return ""
     if not counts.get("any_rows"):
-        return "No gaps — price, sector, mcap, and web filled for every name."
+        return "No gaps — price, sector, sub-sector, mcap, and web filled for every name."
     bits: list[str] = []
     for key, label in (
         ("price", "price"),
         ("sector", "sector"),
+        ("sub_sector", "sub-sector"),
         ("mcap", "mcap"),
         ("web", "web"),
     ):

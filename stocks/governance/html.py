@@ -10,6 +10,7 @@ import pandas as pd
 from stocks.core.json_utils import json_dumps, json_safe_obj, json_safe_scalar
 from stocks.core.text_utils import safe_str
 from stocks.dashboards.report_html import _REPORT_CSS
+from stocks.shared.cap_colors import cap_colors_css
 
 
 GOVERNANCE_MAP_CSS = """
@@ -122,6 +123,13 @@ GOVERNANCE_MAP_CSS = """
     color: #1d4ed8;
     font-weight: 700;
     background: #dbeafe;
+    padding: 0 4px;
+    border-radius: 3px;
+  }
+  .gov-ticker-edge {
+    color: #9f1239;
+    font-weight: 700;
+    background: #ffe4e6;
     padding: 0 4px;
     border-radius: 3px;
   }
@@ -544,18 +552,18 @@ def build_governance_map_html(
       </div>
       <div class="gov-cap-filter" role="group" aria-label="Cap tag filter (multi-select)" id="govmap-cap-filter">
         <span class="gov-cap-filter-label">Cap</span>
-        <button type="button" class="active" data-cap="" title="All cap bands — with Holding, highlight holdings only">All</button>
-        <button type="button" data-cap="NC" title="With Holding: highlights NC seats on the board (rows stay all holdings)">NC</button>
-        <button type="button" data-cap="MIC" title="With Holding: highlights MIC seats on the board">MIC</button>
-        <button type="button" data-cap="SC" title="With Holding: keeps Holding highlight + highlights SC seats (e.g. UFLEX)">SC</button>
-        <button type="button" data-cap="MC" title="With Holding: highlights MC seats on the board">MC</button>
-        <button type="button" data-cap="LC" title="With Holding: highlights LC seats on the board">LC</button>
+        <button type="button" class="active" data-cap="" title="All cap bands — with Holding/Edge, highlight watchlist seats only">All</button>
+        <button type="button" data-cap="NC" title="With Holding/Edge: highlights NC seats (watchlist seats stay highlighted)">NC</button>
+        <button type="button" data-cap="MIC" title="With Holding/Edge: highlights MIC seats on the board">MIC</button>
+        <button type="button" data-cap="SC" title="With Holding/Edge: keeps watchlist highlight + highlights SC seats">SC</button>
+        <button type="button" data-cap="MC" title="With Holding/Edge: highlights MC seats on the board">MC</button>
+        <button type="button" data-cap="LC" title="With Holding/Edge: highlights LC seats on the board">LC</button>
       </div>
       <div class="gov-hold-filter" role="group" aria-label="Holdings / Early Edge filter" id="govmap-hold-filter">
         <span class="gov-cap-filter-label">Watch</span>
         <button type="button" class="active" data-hold="" title="Show all companies">All</button>
         <button type="button" data-hold="HOLD" title="Directors on your holdings; Cap then highlights matching seats (full board still shown)">Holding</button>
-        <button type="button" data-hold="EDGE" title="Directors on Early Edge watchlist; Cap then highlights matching seats">Edge</button>
+        <button type="button" data-hold="EDGE" title="Directors on Early Edge; Cap works the same as Holding (watchlist stay highlighted + Cap seats)">Edge</button>
       </div>
       <span class="gov-search-meta" id="govmap-count"></span>
     </div>
@@ -570,6 +578,7 @@ def build_governance_map_html(
   </div>
 </details>
 {GOVERNANCE_MAP_CSS}
+{cap_colors_css(include_chip=False, include_gov_filter=True)}
 <script>
 (function() {{
   const DATA = {data_json};
@@ -1134,7 +1143,7 @@ def build_governance_map_html(
         let name = t;
         if (isHub) name = `<span class="gov-ticker-focus" title="Hub ticker">${{t}}</span>`;
         else if (c.is_holding) name = `<span class="gov-ticker-hold" title="In your Holdings">${{t}}</span>`;
-        else if (c.is_edge) name = `<span class="gov-ticker-hold" title="Early Edge">${{t}}</span>`;
+        else if (c.is_edge) name = `<span class="gov-ticker-edge" title="Early Edge">${{t}}</span>`;
         const tags = [];
         const code = String(c.cap_code || "").toUpperCase();
         if (code) {{

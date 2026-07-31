@@ -63,6 +63,33 @@ _EDGE_CSS = """
   .ee-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
   .ee-muted { color: #9ca3af; }
   .ee-empty { padding: 28px; text-align: center; color: #6b7280; font-size: 13px; }
+  .ee-table tr.ee-row { cursor: pointer; }
+  .ee-table tr.ee-row.expanded td { background: #fff7f9; }
+  .ee-table tr.ee-about-row td {
+    padding: 0 12px 12px; background: #fff7f9; border-bottom: 2px solid #fecdd3;
+  }
+  .ee-about {
+    color: #4b5563; font-size: 12px; line-height: 1.5; max-width: 72rem;
+  }
+  .ee-about.collapsed {
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .ee-about-more {
+    border: 0; background: none; color: #9f1239; font-size: 11px; font-weight: 700;
+    padding: 6px 0 0; cursor: pointer;
+  }
+  .ee-about-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    color: #9f1239; margin: 0 0 4px;
+  }
+  .ee-about-hit {
+    display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700;
+    color: #9a3412; background: #ffedd5; padding: 1px 6px; border-radius: 4px;
+    text-transform: none; letter-spacing: 0;
+  }
+  .ee-about mark {
+    background: #fef08a; color: #854d0e; padding: 0 2px; border-radius: 2px;
+  }
 </style>
 """
 
@@ -95,6 +122,7 @@ def _rows_payload(df: pd.DataFrame) -> list[dict]:
                 "sc": safe_str(row.get("sc")) or "",
                 "tv": safe_str(row.get("tv")) or "",
                 "website": safe_str(row.get("website")) or "",
+                "about": safe_str(row.get("about")) or "",
                 "matched_from": safe_str(row.get("holding_entity")) or "",
             }
         )
@@ -124,7 +152,9 @@ def build_early_edge_html(
 {_EDGE_CSS}
 <div class="ee-wrap" id="ee-root">
   <div class="ee-toolbar">
-    <input type="search" class="ee-search" id="ee-search" placeholder="Search ticker, name, sector…" autocomplete="off" />
+    <input type="search" class="ee-search" id="ee-search"
+      placeholder="Search ticker, name, sector, or about (e.g. copper)…"
+      autocomplete="off" />
     <div class="ee-filter-group" id="ee-cap-filter" role="group" aria-label="Cap filter">
       <span class="ee-filter-label">Cap</span>
       <button type="button" class="cap-chip active" data-cap="" title="All cap bands">All</button>
@@ -166,6 +196,8 @@ def build_early_edge_html(
   let sectorFilter = "";
   let sortCol = "sector";
   let sortDir = 1;
+  let expanded = null;
+  let collapsedManual = new Set(); // tickers user closed while search auto-opens About
 
   const sectorEl = document.getElementById("ee-sector");
   if (sectorEl) {{
@@ -247,9 +279,54 @@ def build_early_edge_html(
   }}
   function searchOk(r) {{
     if (!searchQuery) return true;
-    const hay = [r.ticker, r.name, r.sector, r.sub_sector, r.industry, r.market, r.matched_from]
+    const hay = [r.ticker, r.name, r.sector, r.sub_sector, r.industry, r.market, r.matched_from, r.about]
       .map(v => String(v || "").toLowerCase()).join(" ");
     return hay.includes(searchQuery);
+  }}
+  function aboutMatch(r) {{
+    if (!searchQuery) return false;
+    return String(r.about || "").toLowerCase().includes(searchQuery);
+  }}
+  function highlightAbout(text) {{
+    const raw = String(text || "");
+    if (!searchQuery || !raw) return esc(raw);
+    const lower = raw.toLowerCase();
+    const q = searchQuery;
+    let out = "";
+    let i = 0;
+    while (i < raw.length) {{
+      const at = lower.indexOf(q, i);
+      if (at < 0) {{
+        out += esc(raw.slice(i));
+        break;
+      }}
+      out += esc(raw.slice(i, at));
+      out += "<mark>" + esc(raw.slice(at, at + q.length)) + "</mark>";
+      i = at + q.length;
+    }}
+    return out;
+  }}
+  function aboutPanel(r) {{
+    const about = String(r.about || "").trim();
+    const hit = aboutMatch(r);
+    const labelHit = hit
+      ? `<span class="ee-about-hit">matched “${{esc(searchQuery)}}”</span>`
+      : "";
+    if (!about) {{
+      return (
+        `<div class="ee-about-label">About${{labelHit}}</div>` +
+        `<div class="ee-about ee-muted">No about text yet — use Fill missing from web.</div>`
+      );
+    }}
+    const long = about.length > 280 && !hit;
+    const id = "ee-about-" + esc(r.ticker);
+    return (
+      `<div class="ee-about-label">About${{labelHit}}</div>` +
+      `<div class="ee-about${{long ? " collapsed" : ""}}" id="${{id}}">${{highlightAbout(about)}}</div>` +
+      (long
+        ? `<button type="button" class="ee-about-more" data-target="${{id}}">Show more</button>`
+        : "")
+    );
   }}
   function compare(a, b) {{
     const col = COLS.find(c => c.id === sortCol) || COLS[0];
@@ -308,7 +385,10 @@ def build_early_edge_html(
       const bits = [];
       if (capFilters.size) bits.push([...capFilters].join("+"));
       if (sectorFilter) bits.push(sectorFilter);
-      if (searchQuery) bits.push("search");
+      if (searchQuery) {{
+        const aboutHits = rows.filter(aboutMatch).length;
+        bits.push(aboutHits ? `search (${{aboutHits}} in about)` : "search");
+      }}
       const filterBit = bits.length ? ` · ${{bits.join(" · ")}}` : "";
       countEl.textContent = `${{rows.length}} of ${{DATA.length}}${{filterBit}} · {title_esc}`;
     }}
@@ -321,19 +401,52 @@ def build_early_edge_html(
       tb.appendChild(tr);
       return;
     }}
+    if (expanded && !rows.some(r => r.ticker === expanded)) expanded = null;
     rows.forEach(r => {{
+      const aboutHit = aboutMatch(r);
+      const open = expanded === r.ticker
+        || (aboutHit && !collapsedManual.has(r.ticker));
       const tr = document.createElement("tr");
+      tr.className = "ee-row" + (open ? " expanded" : "");
+      tr.title = "Click to show About";
       COLS.forEach(c => {{
         const td = document.createElement("td");
         td.innerHTML = cell(c, r);
         tr.appendChild(td);
       }});
+      tr.onclick = (e) => {{
+        if (e.target.closest("a, button")) return;
+        if (open) {{
+          expanded = null;
+          if (aboutHit) collapsedManual.add(r.ticker);
+        }} else {{
+          collapsedManual.delete(r.ticker);
+          expanded = r.ticker;
+        }}
+        render();
+      }};
       tb.appendChild(tr);
+      if (open) {{
+        const aboutTr = document.createElement("tr");
+        aboutTr.className = "ee-about-row";
+        aboutTr.innerHTML = `<td colspan="${{COLS.length}}">${{aboutPanel(r)}}</td>`;
+        tb.appendChild(aboutTr);
+      }}
+    }});
+    tb.querySelectorAll(".ee-about-more").forEach(btn => {{
+      btn.onclick = (e) => {{
+        e.stopPropagation();
+        const el = document.getElementById(btn.getAttribute("data-target"));
+        if (!el) return;
+        const collapsed = el.classList.toggle("collapsed");
+        btn.textContent = collapsed ? "Show more" : "Show less";
+      }};
     }});
   }}
 
   document.getElementById("ee-search").oninput = (e) => {{
     searchQuery = String(e.target.value || "").trim().toLowerCase();
+    collapsedManual.clear();
     render();
   }};
   if (sectorEl) {{
@@ -370,4 +483,4 @@ def build_early_edge_html(
 
 
 def early_edge_iframe_height(row_count: int) -> int:
-    return min(2200, max(520, 340 + min(row_count, 80) * 30))
+    return min(2600, max(560, 360 + min(row_count, 80) * 32))

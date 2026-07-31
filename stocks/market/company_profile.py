@@ -44,8 +44,11 @@ def _pick_profile(data: dict) -> dict:
 
 
 def _profile_incomplete(data: dict) -> bool:
-    return not safe_str(data.get("long_description")).strip() or not sanitize_website(
-        data.get("website")
+    return (
+        not safe_str(data.get("long_description")).strip()
+        or not sanitize_website(data.get("website"))
+        or not safe_str(data.get("company_sector")).strip()
+        or not safe_str(data.get("company_industry")).strip()
     )
 
 
