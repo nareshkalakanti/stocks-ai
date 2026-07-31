@@ -14,6 +14,21 @@ from stocks.core.config import YFINANCE_REQUEST_DELAY
 from stocks.core.text_utils import safe_str
 
 
+def _bse_yfinance_symbol(ticker: str) -> str | None:
+    """Yahoo uses numeric BSE scrip codes (``544531.BO``), not text symbols."""
+    sym = safe_str(ticker).upper()
+    if not sym:
+        return None
+    if sym.isdigit():
+        return f"{sym}.BO"
+    from stocks.shared.links import bse_code_by_ticker
+
+    code = bse_code_by_ticker().get(sym)
+    if code and code.isdigit():
+        return f"{code}.BO"
+    return None
+
+
 def to_yfinance_symbol(ticker: str, market: str | None = None) -> str:
     ticker = safe_str(ticker).upper()
     if ticker.endswith((".NS", ".BO")):
@@ -29,7 +44,14 @@ def to_yfinance_symbol(ticker: str, market: str | None = None) -> str:
     if market_key in {"NSE", "NATIONAL STOCK EXCHANGE"}:
         return f"{ticker}.NS"
     if market_key in {"BSE", "BOMBAY STOCK EXCHANGE"}:
-        return f"{ticker}.BO"
+        return _bse_yfinance_symbol(ticker) or f"{ticker}.BO"
+    # BSE-only names (no NSE listing) — Yahoo needs numeric .BO when market unknown.
+    from stocks.shared.links import bse_code_by_ticker, nse_listed_symbols
+
+    if ticker not in nse_listed_symbols():
+        bse_sym = _bse_yfinance_symbol(ticker)
+        if bse_sym:
+            return bse_sym
     return f"{ticker}.NS"
 
 

@@ -642,6 +642,15 @@ def enrich_watching_board(
         axis=1,
     )
     out["sector"] = out["sector"].map(lambda s: safe_str(s) or "")
+    for idx, row in out.iterrows():
+        ticker = safe_str(row.get("ticker")).upper()
+        meta = _MANUAL_LISTING.get(ticker)
+        if not meta:
+            continue
+        if meta.get("market"):
+            out.at[idx, "market"] = safe_str(meta["market"]).upper()
+        if meta.get("name") and not safe_str(row.get("name")):
+            out.at[idx, "name"] = safe_str(meta["name"])
     out["market"] = out["market"].map(lambda m: safe_str(m).upper() or "NSE")
     out["name"] = out.apply(
         lambda r: safe_str(r.get("name")) or safe_str(r.get("ticker")),

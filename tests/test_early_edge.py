@@ -7,10 +7,45 @@ import pandas as pd
 from stocks.shared.corp_tags import clear_corp_tags_cache, corp_tags_dict_for_ticker
 from stocks.shared.early_edge import (
     EARLY_EDGE_PLAYLIST_LABEL,
+    enrich_watching_board,
     resolve_early_edge_queries,
     seed_early_edge,
 )
 from stocks.scans.scan_playlists import is_scan_playlist, scan_playlist_count
+
+
+def test_enrich_watching_board_manual_bse_listing(monkeypatch):
+    monkeypatch.setattr(
+        "stocks.core.database.load_stocks_from_db",
+        lambda: pd.DataFrame(),
+    )
+    monkeypatch.setattr(
+        "stocks.core.database.load_company_profiles_from_db",
+        lambda _t: {},
+    )
+    monkeypatch.setattr(
+        "stocks.core.database.load_market_cap_from_db",
+        lambda _t, **kw: pd.DataFrame(),
+    )
+    monkeypatch.setattr(
+        "stocks.core.database.load_stock_prices_from_db",
+        lambda _t, **kw: {},
+    )
+    monkeypatch.setattr(
+        "stocks.market.price_service.fetch_current_prices",
+        lambda _t, _m: {},
+    )
+    monkeypatch.setattr(
+        "stocks.listings.classification_service.load_classification_maps",
+        lambda: None,
+    )
+
+    df = pd.DataFrame([{"ticker": "TRUECOLORS", "name": "", "market": "", "sector": ""}])
+    out = enrich_watching_board(df)
+    row = out.iloc[0]
+    assert row["market"] == "BSE"
+    assert row["name"] == "True Colors Limited"
+    assert "544531" in row["sc"]
 
 
 def test_resolve_early_edge_core_names():
