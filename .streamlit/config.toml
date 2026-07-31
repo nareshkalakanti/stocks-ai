@@ -1,0 +1,4 @@
+[server]
+# Large PEAD / dashboard HTML is cached under ./static and loaded via
+# /app/static/… (avoids blank iframes when multi-MB HTML goes over the websocket).
+enableStaticServing = true

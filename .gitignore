@@ -1,7 +1,6 @@
 .env
 venv/
 __pycache__/
-.streamlit/
 .pytest_cache/
 data/stocks_ai.db
 data/governance.db
@@ -97,10 +96,13 @@ coverage/
 ########################################################################
 # Streamlit
 ########################################################################
-.streamlit/
+.streamlit/*
+!.streamlit/config.toml
 !e2e_playwright/.streamlit/
 lib/streamlit/static
 streamlit-storage
+# Runtime-only large dashboard HTML (served at /app/static/…). Never commit.
+static/
 # Directory for temporary files (can be used by agents):
 work-tmp
 # Local checkout of streamlit.wiki for agent knowledge uploads:
