@@ -1,4 +1,4 @@
-"""Early Edge Watching — interactive HTML table with Cap / Sector filters."""
+"""Early Edge Watching — interactive HTML table with Cap / SME / Sector filters."""
 
 from __future__ import annotations
 
@@ -29,6 +29,13 @@ _EDGE_CSS = """
   .ee-chip {
     border: 1px solid #d1d5db; background: #fff; color: #374151; border-radius: 999px;
     padding: 4px 10px; font-size: 12px; font-weight: 600; cursor: pointer; line-height: 1.3;
+  }
+  .ee-chip.active, .ee-chip:hover {
+    background: #ffedd5; border-color: #fdba74; color: #9a3412;
+  }
+  #ee-sme-filter .ee-chip[data-sme="1"].active,
+  #ee-sme-filter .ee-chip[data-sme="1"]:hover {
+    background: #ffedd5; border-color: #f97316; color: #9a3412;
   }
   .ee-sector-select {
     padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 12px; background: #fff; max-width: 220px;
@@ -170,6 +177,11 @@ def build_early_edge_html(
       <button type="button" class="cap-chip" data-cap="MC" title="Mid Cap (5,000–20,000 Cr)">MC</button>
       <button type="button" class="cap-chip" data-cap="LC" title="Large Cap (≥ 20,000 Cr)">LC</button>
     </div>
+    <div class="ee-filter-group" id="ee-sme-filter" role="group" aria-label="SME filter">
+      <span class="ee-filter-label">Market</span>
+      <button type="button" class="ee-chip active" data-sme="" title="All markets">All</button>
+      <button type="button" class="ee-chip" data-sme="1" title="NSE Emerge / SME only">SME</button>
+    </div>
     <div class="ee-filter-group">
       <span class="ee-filter-label">Sector</span>
       <select class="ee-sector-select" id="ee-sector" aria-label="Sector filter">
@@ -205,6 +217,7 @@ def build_early_edge_html(
   ];
   let searchQuery = "";
   let capFilters = new Set();
+  let smeOnly = false;
   let sectorFilter = "";
   let sortCol = "sector";
   let sortDir = 1;
@@ -290,6 +303,10 @@ def build_early_edge_html(
     const c = String(r.cap_code || "").toUpperCase();
     return capFilters.has(c);
   }}
+  function smeOk(r) {{
+    if (!smeOnly) return true;
+    return !!r.is_sme || String(r.market || "").toUpperCase() === "NSE SME";
+  }}
   function sectorOk(r) {{
     if (!sectorFilter) return true;
     return String(r.sector || "") === sectorFilter;
@@ -371,6 +388,13 @@ def build_early_edge_html(
       btn.classList.toggle("active", active);
     }});
   }}
+  function syncSmeButtons() {{
+    document.querySelectorAll("#ee-sme-filter .ee-chip").forEach(btn => {{
+      const wantSme = String(btn.getAttribute("data-sme") || "") === "1";
+      const active = wantSme ? smeOnly : !smeOnly;
+      btn.classList.toggle("active", active);
+    }});
+  }}
   function renderHead() {{
     const th = document.getElementById("ee-head");
     if (!th) return;
@@ -395,7 +419,8 @@ def build_early_edge_html(
   function render() {{
     renderHead();
     syncCapButtons();
-    let rows = DATA.filter(r => capOk(r) && sectorOk(r) && searchOk(r));
+    syncSmeButtons();
+    let rows = DATA.filter(r => capOk(r) && smeOk(r) && sectorOk(r) && searchOk(r));
     rows = rows.slice().sort(compare);
     const totalFiltered = rows.length;
     let pageRows = rows;
@@ -421,6 +446,7 @@ def build_early_edge_html(
     if (countEl) {{
       const bits = [];
       if (capFilters.size) bits.push([...capFilters].join("+"));
+      if (smeOnly) bits.push("SME");
       if (sectorFilter) bits.push(sectorFilter);
       if (searchQuery) {{
         const aboutHits = rows.filter(aboutMatch).length;
@@ -510,6 +536,13 @@ def build_early_edge_html(
       }} else {{
         capFilters.add(code);
       }}
+      resetPage();
+      render();
+    }};
+  }});
+  document.querySelectorAll("#ee-sme-filter .ee-chip").forEach(btn => {{
+    btn.onclick = () => {{
+      smeOnly = String(btn.getAttribute("data-sme") || "") === "1";
       resetPage();
       render();
     }};

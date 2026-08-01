@@ -18,7 +18,7 @@ from stocks.core.database import (
 )
 from stocks.core.text_utils import safe_str, sanitize_website
 from stocks.shared.portfolio import load_holdings
-from stocks.shared.links import attach_research_links
+from stocks.shared.links import attach_research_links, screener_people_url
 from stocks.shared.fund_watchlists import sync_all_fund_watchlists
 from stocks.scans.scan_toolbar import default_cap_tier_label
 from stocks.governance.score import mcap_cap_code
@@ -737,6 +737,19 @@ def render_superstars() -> None:
     if ts_display:
         bits.append(str(ts_display))
     st.caption(" · ".join(bits) + " · set **Change = New** to see first-time buys")
+
+    screener_links = []
+    for fund in funds:
+        if not isinstance(fund, dict):
+            continue
+        pid = safe_str(fund.get("screener_people_id"))
+        if not pid:
+            continue
+        label = safe_str(fund.get("label")) or pid
+        url = screener_people_url(pid, safe_str(fund.get("screener_slug")))
+        screener_links.append(f"[{label}]({url})")
+    if screener_links:
+        st.caption("Screener · " + " · ".join(screener_links))
 
     _render_investor_section(
         investor,

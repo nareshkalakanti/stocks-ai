@@ -173,7 +173,7 @@ def _board_stats_caption(view) -> None:
     st.caption(
         f"{gaps['total']:,} stocks · price **{with_price}** · sector **{with_sector}** · "
         f"sub-sector **{with_sub}** · mcap **{with_mcap}** · web **{with_web}** · "
-        f"filter Cap / Sector in the board"
+        f"filter Cap / SME / Sector in the board"
     )
     gap_txt = format_watching_gaps(gaps)
     if gap_txt:

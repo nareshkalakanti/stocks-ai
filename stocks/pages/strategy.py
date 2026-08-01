@@ -105,8 +105,10 @@ STRATEGY_OPTIONS = (
 STRATEGY_SECTIONS = (
     "Quant Tab",
     "PEAD",
+    "EarningsQ",
     "H&T",
     "Governance",
+    "Watching",
 )
 
 
@@ -153,9 +155,13 @@ def _export_scan_csv(df: pd.DataFrame) -> bytes:
 
 
 def render_strategy() -> None:
-    _section_key = "strategy_section_v2"
+    _section_key = "strategy_section_v3"
     if _section_key not in st.session_state:
-        st.session_state[_section_key] = STRATEGY_SECTIONS[0]
+        # Prefer prior section key if still valid.
+        prev = st.session_state.get("strategy_section_v2")
+        st.session_state[_section_key] = (
+            prev if prev in STRATEGY_SECTIONS else STRATEGY_SECTIONS[0]
+        )
     normalize_radio_session_state(_section_key, list(STRATEGY_SECTIONS))
 
     section = st.radio(
@@ -172,6 +178,10 @@ def render_strategy() -> None:
         from stocks.pages.pead2 import render_pead2
 
         render_pead2(show_title=False)
+    elif section == "EarningsQ":
+        from stocks.pages.earningsq import render_earningsq
+
+        render_earningsq(show_title=False)
     elif section == "H&T":
         from stocks.pages.headwind_tailwind import render_headwind_tailwind
 
@@ -180,6 +190,10 @@ def render_strategy() -> None:
         from stocks.pages.governance import render_governance
 
         render_governance(show_title=False)
+    elif section == "Watching":
+        from stocks.pages.watching import render_watching
+
+        render_watching(show_title=False)
 
 def _price_change_has_expand(df: pd.DataFrame) -> bool:
     if df is None or df.empty:

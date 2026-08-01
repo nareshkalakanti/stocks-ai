@@ -50,7 +50,8 @@ _MANUAL_TICKERS: dict[str, str] = {
     "alpex solar": "ALPEXSOLAR",
     "mold-tek": "MOLDTKPAC",
     "mold tek": "MOLDTKPAC",
-    "jash industries": "JASH",
+    "jasch industries": "JASCH",
+    "jash industries": "JASCH",  # Early Edge title typo; logo is Jasch
     "ecos mobility": "ECOSMOBLTY",
     "vision infra": "VIESL",
     "lehar footwear": "LEHAR",
@@ -119,6 +120,15 @@ _MANUAL_TICKERS: dict[str, str] = {
     "true colors": "TRUECOLORS",
     "truecolours": "TRUECOLORS",
     "true colours": "TRUECOLORS",
+    "fonebox retail": "FONEBOX",
+    "fonebox": "FONEBOX",
+    "united van der horst": "UVDRHOR",
+    "van der horst": "UVDRHOR",
+    "sai silks": "KALAMANDIR",
+    "kalamandir": "KALAMANDIR",
+    "acutaas": "ACUTAAS",
+    "thangamayil": "THANGAMAYL",
+    "balaji amines": "BALAMINES",
 }
 
 # Manual tickers not yet in ``stocks`` (BSE IPO / thin coverage) → market + display name.
@@ -156,7 +166,7 @@ EARLY_EDGE_SEED_QUERIES: list[str] = [
     "arrow greentech",
     "alpex solar",
     "mold-tek",
-    "jash industries",
+    "jasch industries",
     "ECOS mobility",
     "vision infra",
     "lehar footwear",
@@ -212,6 +222,12 @@ EARLY_EDGE_SEED_QUERIES: list[str] = [
     "mindteck",
     "High green carbon",
     "True Colors",
+    "Fonebox Retail",
+    "United Van Der Horst",
+    "Sai Silks",
+    "Acutaas",
+    "Thangamayil",
+    "Balaji Amines",
 ]
 
 

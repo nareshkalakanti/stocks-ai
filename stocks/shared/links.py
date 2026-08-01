@@ -185,6 +185,17 @@ def screener_url(
     return f"https://www.screener.in/company/{slug}/"
 
 
+def screener_people_url(people_id: str, slug: str = "") -> str:
+    """Screener.in shareholder / fund people page."""
+    pid = safe_str(people_id)
+    if not pid:
+        return "https://www.screener.in/"
+    slug_part = safe_str(slug).strip("/")
+    if slug_part:
+        return f"https://www.screener.in/people/{pid}/{slug_part}/"
+    return f"https://www.screener.in/people/{pid}/"
+
+
 def _listing_markets(df: pd.DataFrame) -> list[str | None]:
     if "market" in df.columns:
         return df["market"].tolist()

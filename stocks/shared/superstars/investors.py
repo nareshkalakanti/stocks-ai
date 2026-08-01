@@ -219,8 +219,18 @@ SUPERSTAR_INVESTORS = [
         "name": 'Negen Capital / Negen Undiscovered Value Fund',
         "query": 'NEGEN',
         "funds": [
-            {"label": 'Negen Undiscovered Value Fund', "query": 'NEGEN UNDISCOVERED VALUE FUND'},
-            {"label": 'Negen Capital Services Pvt Ltd', "query": 'negen capital services pvt ltd'},
+            {
+                "label": 'Negen Undiscovered Value Fund',
+                "query": 'NEGEN UNDISCOVERED VALUE FUND',
+                "screener_people_id": "187659",
+                "screener_slug": "negen-undiscovered-value-fund",
+            },
+            {
+                "label": 'Negen Negen Undiscovered Value Fund',
+                "query": 'NEGEN NEGEN UNDISCOVERED VALUE FUND',
+                "screener_people_id": "144524",
+                "screener_slug": "negen-negen-undiscovered-value-fund",
+            },
         ],
     },
     {
