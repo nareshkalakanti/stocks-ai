@@ -151,7 +151,7 @@ def render_dcf(*, show_title: bool = True) -> None:
             run_clicked = st.button(
                 "Scan",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
                 key="dcf_scan",
                 help=(
                     "Fetch FCF via yfinance and run two-stage DCF "

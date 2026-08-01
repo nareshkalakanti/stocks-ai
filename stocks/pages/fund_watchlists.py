@@ -53,7 +53,7 @@ def _render_list_table(df: pd.DataFrame) -> None:
     show = pd.DataFrame(rows)
     st.dataframe(
         show,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "SC": st.column_config.LinkColumn("SC", display_text="SC"),
@@ -92,7 +92,7 @@ def render_fund_watchlists(*, show_title: bool = True) -> None:
         sync = st.button(
             "Sync from SuperStars",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             help="Replace watchlists from latest SuperStars Negen / Niveshaay holdings in DB.",
             key="fund_watchlists_sync_all",
         )

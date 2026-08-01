@@ -647,11 +647,11 @@ def render_superstars() -> None:
             help="New = first-time holding this quarter (green rows).",
         )
     with t5:
-        refresh = st.button("Refresh", type="primary", use_container_width=True)
+        refresh = st.button("Refresh", type="primary", width="stretch")
     with t6:
         fill = st.button(
             "Fill gaps",
-            use_container_width=True,
+            width="stretch",
             help="Fill missing Sector / Mcap / Web from local SQLite (no live fetch).",
         )
 

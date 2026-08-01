@@ -97,7 +97,7 @@ def render_micro_value(*, show_title: bool = True) -> None:
             run_clicked = st.button(
                 "Scan",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
                 key="microv_scan",
                 help=(
                     "Scan ₹20–200 Cr names with Market cap/Sales < 1 "

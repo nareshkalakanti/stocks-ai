@@ -267,7 +267,7 @@ def _render_early_edge_actions() -> bool:
     if st.button(
         "Re-seed from names",
         type="primary",
-        use_container_width=False,
+        width="content",
         help="Replace DB list from the built-in Early Edge name list.",
         key="watching_ee_reseed",
     ):
@@ -312,7 +312,7 @@ def _render_holdings_actions() -> bool:
         with add_c3:
             st.write("")
             st.write("")
-            add_clicked = st.button("Add holding", type="primary", use_container_width=True)
+            add_clicked = st.button("Add holding", type="primary", width="stretch")
 
         if add_clicked:
             ticker = safe_str(ticker_in).upper()
@@ -353,7 +353,7 @@ def _render_holdings_actions() -> bool:
                 options=options,
                 key="watching_holdings_remove_pick",
             )
-            if st.button("Remove selected", use_container_width=True, disabled=not pick):
+            if st.button("Remove selected", width="stretch", disabled=not pick):
                 tickers = [safe_str(p.split(" — ")[0]).upper() for p in pick]
                 n = remove_holdings(tickers)
                 st.success(f"Removed {n} holding(s).") if n else st.info("Nothing removed.")
@@ -428,7 +428,7 @@ def render_watching(*, show_title: bool = True) -> None:
         with row[1]:
             fill = st.button(
                 "Fill missing from web",
-                use_container_width=True,
+                width="stretch",
                 help=(
                     "Fetch missing price, mcap, website, sector, and sub-sector "
                     "from screener + Yahoo. NSE / NSE SME: up to 100 names per run."

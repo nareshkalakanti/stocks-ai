@@ -103,7 +103,7 @@ def render_governance_map(*, show_title: bool = True) -> None:
         with fill_cols[0]:
             if st.button(
                 f"Fill missing about/web ({len(missing)})",
-                use_container_width=True,
+                width="stretch",
                 disabled=not missing,
                 help=(
                     "Slow screener.in + Yahoo backfill for companies still missing website "
@@ -128,7 +128,7 @@ def render_governance_map(*, show_title: bool = True) -> None:
         with fill_cols[1]:
             if st.button(
                 f"Fill missing mcap ({len(missing_mcap)})",
-                use_container_width=True,
+                width="stretch",
                 disabled=not missing_mcap,
                 help=(
                     "Fetch all missing caps (screener.in → Yahoo) and save to SQLite. "

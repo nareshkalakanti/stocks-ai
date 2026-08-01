@@ -227,7 +227,7 @@ def render_headwind_tailwind() -> None:
             cap_tier_key="ht_cap_tier",
         )
         with row[4]:
-            run_clicked = st.button("Run scan", type="primary", use_container_width=True)
+            run_clicked = st.button("Run scan", type="primary", width="stretch")
 
     filtered = apply_stock_filters(stocks, filters)
 

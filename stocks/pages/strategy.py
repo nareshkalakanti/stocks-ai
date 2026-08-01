@@ -1031,9 +1031,9 @@ def render_strategy_scan() -> None:
                 help="Parallel workers for **TQ** and throttled scans (PEAD, Earnings, Turtle). Max 32.",
             )
         with row[7]:
-            run_clicked = st.button("Scan", type="primary", use_container_width=True, key="strat_scan")
+            run_clicked = st.button("Scan", type="primary", width="stretch", key="strat_scan")
         with row[8]:
-            stop_clicked = st.button("Stop", use_container_width=True, key="strat_stop")
+            stop_clicked = st.button("Stop", width="stretch", key="strat_stop")
 
     whatif_amount = float(st.session_state.get("strat_whatif_invest") or 5000)
     if strategy_choice == "Price Change":

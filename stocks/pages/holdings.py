@@ -134,7 +134,7 @@ def render_holdings(*, show_title: bool = True) -> None:
         with add_c3:
             st.write("")
             st.write("")
-            add_clicked = st.button("Add holding", type="primary", use_container_width=True)
+            add_clicked = st.button("Add holding", type="primary", width="stretch")
 
         if add_clicked:
             ticker = safe_str(ticker_in).upper()
@@ -182,7 +182,7 @@ def render_holdings(*, show_title: bool = True) -> None:
                 options=options,
                 key="holdings_remove_pick",
             )
-            if st.button("Remove selected", use_container_width=True, disabled=not pick):
+            if st.button("Remove selected", width="stretch", disabled=not pick):
                 tickers = [safe_str(p.split(" — ")[0]).upper() for p in pick]
                 n = remove_holdings(tickers)
                 _clear_holdings_view_cache()
@@ -202,7 +202,7 @@ def render_holdings(*, show_title: bool = True) -> None:
 
     btn_refresh, btn_pead = st.columns(2)
     with btn_refresh:
-        if st.button("Refresh prices", type="primary", use_container_width=True):
+        if st.button("Refresh prices", type="primary", width="stretch"):
             _clear_holdings_view_cache()
             st.rerun()
     with btn_pead:
@@ -213,7 +213,7 @@ def render_holdings(*, show_title: bool = True) -> None:
         )
         if st.button(
             pead_label,
-            use_container_width=True,
+            width="stretch",
             disabled=pead_pending == 0,
             help="Fetch quarterly earnings and compute PEAD scores for holdings not yet scanned.",
         ):

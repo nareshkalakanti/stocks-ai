@@ -102,7 +102,7 @@ def render_positive_surprise(*, show_title: bool = True) -> None:
             run_clicked = st.button(
                 "Scan NSE",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
                 key="psq_scan",
                 help=(
                     "Pull NSE result announcements, then Integrated Filing Ind-AS XBRL "

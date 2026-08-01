@@ -86,7 +86,7 @@ def render_peg_aware(*, show_title: bool = True) -> None:
             run_clicked = st.button(
                 "Scan",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
                 key="peg_aware_scan",
                 help=(
                     f"Load PEAD 2 fundamentals (cache ≤ {PEAD2_CACHE_HOURS}h), "

@@ -257,9 +257,9 @@ def _render_governance_scan(*, show_title: bool = True) -> None:
     with row[2]:
         st.metric("Pending", pending_n)
     with row[3]:
-        run_clicked = st.button("Scan", type="primary", use_container_width=True)
+        run_clicked = st.button("Scan", type="primary", width="stretch")
     with row[4]:
-        stop_clicked = st.button("Stop", use_container_width=True)
+        stop_clicked = st.button("Stop", width="stretch")
 
     if safe_str(market_label).upper() == "BSE":
         st.warning(
@@ -326,7 +326,7 @@ def _render_governance_scan(*, show_title: bool = True) -> None:
             show_n = min(len(pending_df), 500)
             st.dataframe(
                 pending_df.head(show_n),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 height=min(420, 36 + show_n * 35),
             )
@@ -360,7 +360,7 @@ def _render_governance_scan(*, show_title: bool = True) -> None:
                     key="gov_workers",
                 )
             )
-            if st.button("Refresh indexes", use_container_width=True):
+            if st.button("Refresh indexes", width="stretch"):
                 with st.spinner("Fetching Nifty lists…"):
                     results = ensure_all_nifty_indexes(force=True)
                 bits = [
@@ -370,7 +370,7 @@ def _render_governance_scan(*, show_title: bool = True) -> None:
                 st.success(" · ".join(bits))
                 st.rerun()
         with m2:
-            if st.button("Scan holdings", use_container_width=True):
+            if st.button("Scan holdings", width="stretch"):
                 cov = holdings_governance_coverage()
                 missing = list(cov.get("missing") or [])
                 if missing:
@@ -393,23 +393,23 @@ def _render_governance_scan(*, show_title: bool = True) -> None:
                     }
                     st.session_state.gov_holdings_scan = True
                     st.rerun()
-            if st.button("Load DIN seed", use_container_width=True):
+            if st.button("Load DIN seed", width="stretch"):
                 n = seed_curated_boards(force=False)
                 st.success(f"Added {n}.") if n else st.info("Already loaded.")
                 st.rerun()
         with m3:
-            if st.button("Enrich sectors", use_container_width=True):
+            if st.button("Enrich sectors", width="stretch"):
                 n = enrich_governance_company_classification(only_missing=True)
                 st.success(f"Updated {n:,}.")
                 st.rerun()
-            if st.button("Clear DB", use_container_width=True):
+            if st.button("Clear DB", width="stretch"):
                 cleared = clear_all_governance_data()
                 st.success(
                     f"Cleared {cleared['companies']:,} companies. "
                     "Pick an index and Scan."
                 )
                 st.rerun()
-            if st.button("Retry empties", use_container_width=True):
+            if st.button("Retry empties", width="stretch"):
                 n = clear_scan_log(only_empty_failed=True)
                 st.info(f"Cleared {n:,} empty/failed attempts.")
                 st.rerun()
@@ -593,7 +593,7 @@ def _render_company_tab(
                 "board_count": "Boards",
             }
         )[["DIN", "Director", "Role", "Category", "As of", "Boards", "Source"]],
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
@@ -637,7 +637,7 @@ def _render_company_tab(
                     "also_as": "There",
                 }
             )[["DIN", "Director", "Here", "Ticker", "Company", "There", "Tag"]],
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -690,7 +690,7 @@ def _render_shared_tab(
                 "tickers": "Tickers",
             }
         )[["DIN", "Director", "Boards", "Tickers", "Tags"]],
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
@@ -726,7 +726,7 @@ def _render_shared_tab(
                 "as_of": "As of",
             }
         )[["Ticker", "Company", "Tag", "Role", "Category", "As of", "Source"]],
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 

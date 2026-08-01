@@ -70,7 +70,7 @@ def _render_opportunities() -> None:
 
     c1, c2 = st.columns([1, 3])
     with c1:
-        refresh = st.button("Fetch / Refresh", type="primary", use_container_width=True)
+        refresh = st.button("Fetch / Refresh", type="primary", width="stretch")
     with c2:
         subcat = st.selectbox(
             "Subcategory",
@@ -124,7 +124,7 @@ def _render_opportunities() -> None:
 
     st.dataframe(
         _format_df_for_display(work),
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "URL": st.column_config.LinkColumn("VP link", display_text="Open"),
