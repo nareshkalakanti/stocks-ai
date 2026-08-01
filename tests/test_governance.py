@@ -19,6 +19,69 @@ from stocks.governance.service import (
 )
 
 
+def test_ensure_governance_db_seeded_copies_bundled_snapshot(tmp_path, monkeypatch):
+    import sqlite3
+
+    from stocks.governance.db import ensure_governance_db_seeded, init_governance_db
+
+    seed_dir = tmp_path / "seeds"
+    seed_dir.mkdir()
+    seed_path = seed_dir / "governance.db"
+    runtime_path = tmp_path / "governance.db"
+
+    with sqlite3.connect(seed_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE companies (
+                ticker TEXT PRIMARY KEY,
+                market TEXT NOT NULL DEFAULT 'NSE',
+                name TEXT NOT NULL,
+                cin TEXT,
+                isin TEXT,
+                notes TEXT,
+                sector TEXT,
+                industry TEXT,
+                sub_sector TEXT,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE directors (
+                person_id TEXT PRIMARY KEY,
+                din TEXT UNIQUE,
+                name TEXT NOT NULL,
+                name_key TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE board_seats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticker TEXT NOT NULL,
+                person_id TEXT NOT NULL,
+                designation TEXT NOT NULL,
+                category TEXT,
+                source TEXT NOT NULL,
+                as_of TEXT,
+                fetched_at TEXT NOT NULL,
+                UNIQUE (ticker, person_id)
+            );
+            INSERT INTO companies VALUES (
+                'TESTCO', 'NSE', 'Test Co', NULL, NULL, NULL,
+                'IT & Technology', NULL, NULL, '2026-01-01T00:00:00+00:00'
+            );
+            """
+        )
+
+    monkeypatch.setattr("stocks.governance.db.GOVERNANCE_SEED_DB_PATH", seed_path)
+    monkeypatch.setattr("stocks.governance.db.GOVERNANCE_DB_PATH", runtime_path)
+    monkeypatch.setattr("stocks.governance.db.DATA_DIR", tmp_path)
+
+    assert not runtime_path.is_file()
+    assert ensure_governance_db_seeded() is True
+    assert runtime_path.is_file()
+    init_governance_db()
+    stats = governance_stats()
+    assert stats["companies"] == 1
+    assert ensure_governance_db_seeded() is False
+
+
 def test_seed_20microns_and_shared_person(tmp_path, monkeypatch):
     db_path = tmp_path / "governance_test.db"
     monkeypatch.setattr("stocks.governance.db.GOVERNANCE_DB_PATH", db_path)

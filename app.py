@@ -5,7 +5,7 @@ from stocks.market.yfinance_utils import install_yfinance_noise_filters
 
 install_yfinance_noise_filters()
 from stocks.core.database import ensure_db, init_db
-from stocks.governance.db import init_governance_db
+from stocks.governance.db import init_governance_db, ensure_governance_db_seeded
 from stocks.pages.sector_landscape import render_sector_landscape
 from stocks.pages.strategy import render_strategy
 from stocks.pages.superstars import render_superstars
@@ -28,6 +28,7 @@ st.set_page_config(
 
 ensure_db()
 init_governance_db()
+ensure_governance_db_seeded()
 ensure_early_edge_seeded()
 
 _SIDEBAR_PAGES = [

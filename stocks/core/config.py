@@ -10,6 +10,8 @@ LOGS_DIR = DATA_DIR / "logs"
 DB_PATH = DATA_DIR / "stocks_ai.db"
 # Separate SQLite for board / director graph (NSE governance — quality over breadth).
 GOVERNANCE_DB_PATH = DATA_DIR / "governance.db"
+# Bundled snapshot copied into GOVERNANCE_DB_PATH when the local DB is missing/empty.
+GOVERNANCE_SEED_DB_PATH = DATA_DIR / "seeds" / "governance.db"
 STOCK_NOTES_PATH = DATA_DIR / "stock_notes.json"
 ERROR_LOG_FILE = LOGS_DIR / "errors.log"
 

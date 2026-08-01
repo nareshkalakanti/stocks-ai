@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import shutil
 import sqlite3
 import threading
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
-
-from stocks.core.config import DATA_DIR, GOVERNANCE_DB_PATH
 from pathlib import Path
+
+from stocks.core.config import DATA_DIR, GOVERNANCE_DB_PATH, GOVERNANCE_SEED_DB_PATH
 
 _SQLITE_TIMEOUT = 30.0
 _governance_init_lock = threading.Lock()
@@ -139,6 +140,49 @@ def _init_governance_schema() -> None:
             """
         )
         _purge_bse_data(conn)
+
+
+def _governance_company_count() -> int:
+    init_governance_db()
+    with get_governance_connection() as conn:
+        row = conn.execute("SELECT COUNT(*) FROM companies").fetchone()
+    return int(row[0] or 0) if row else 0
+
+
+def ensure_governance_db_seeded() -> bool:
+    """
+    Copy ``data/seeds/governance.db`` into ``data/governance.db`` when the
+    runtime DB is missing or has no companies (fresh clone / new machine).
+
+    The seed file is tracked in git; the runtime DB stays gitignored.
+    """
+    global _governance_initialized_path
+    seed = GOVERNANCE_SEED_DB_PATH
+    if not seed.is_file():
+        return False
+
+    target = GOVERNANCE_DB_PATH
+    need_copy = not target.is_file()
+    if not need_copy:
+        try:
+            need_copy = target.stat().st_size == 0
+        except OSError:
+            need_copy = True
+    if not need_copy:
+        need_copy = _governance_company_count() == 0
+
+    if not need_copy:
+        return False
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(seed, target)
+    for suffix in ("-wal", "-shm"):
+        sidecar = Path(f"{target}{suffix}")
+        if sidecar.is_file():
+            sidecar.unlink(missing_ok=True)
+    _governance_initialized_path = None
+    init_governance_db()
+    return True
 
 
 def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:

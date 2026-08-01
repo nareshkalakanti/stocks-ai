@@ -26,10 +26,21 @@ streamlit run app.py
 
 | Path | Purpose |
 |------|---------|
-| `stocks_ai.db` | SQLite cache |
+| `stocks_ai.db` | SQLite cache (local; not in git) |
+| `governance.db` | Governance Map boards/directors (local; not in git) |
+| `seeds/governance.db` | **Bundled GovMap snapshot** — copied to `governance.db` on first run |
 | `bse_codes.csv` | BSE screener symbols |
 | `models/` | Optional model weights |
 | `logs/errors.log` | Error log |
+
+**Governance Map on a fresh clone:** commit `data/seeds/governance.db` on `dev` (or `main`). On startup, `ensure_governance_db_seeded()` copies it to `data/governance.db` if that file is missing or empty. Your local `governance.db` stays gitignored so scans and hydrates do not dirty the repo.
+
+To refresh the seed after a big scan:
+
+```bash
+cp data/governance.db data/seeds/governance.db
+git add data/seeds/governance.db
+```
 
 Listings dataset: Hugging Face `kjhq/India-Stock-Symbols-and-Metadata` (cached in DB).
 
