@@ -82,6 +82,56 @@ def test_ensure_governance_db_seeded_copies_bundled_snapshot(tmp_path, monkeypat
     assert ensure_governance_db_seeded() is False
 
 
+def test_ensure_governance_db_seeded_replaces_stale_smaller_runtime(tmp_path, monkeypatch):
+    import sqlite3
+
+    from stocks.governance.db import ensure_governance_db_seeded
+
+    seed_dir = tmp_path / "seeds"
+    seed_dir.mkdir()
+    seed_path = seed_dir / "governance.db"
+    runtime_path = tmp_path / "governance.db"
+
+    schema = """
+        CREATE TABLE companies (
+            ticker TEXT PRIMARY KEY,
+            market TEXT NOT NULL DEFAULT 'NSE',
+            name TEXT NOT NULL,
+            cin TEXT,
+            isin TEXT,
+            notes TEXT,
+            sector TEXT,
+            industry TEXT,
+            sub_sector TEXT,
+            updated_at TEXT NOT NULL
+        );
+    """
+    with sqlite3.connect(seed_path) as conn:
+        conn.executescript(schema)
+        conn.execute(
+            "INSERT INTO companies VALUES ('A','NSE','A',NULL,NULL,NULL,NULL,NULL,NULL,'t')"
+        )
+        conn.execute(
+            "INSERT INTO companies VALUES ('B','NSE','B',NULL,NULL,NULL,NULL,NULL,NULL,'t')"
+        )
+    with sqlite3.connect(runtime_path) as conn:
+        conn.executescript(schema)
+        conn.execute(
+            "INSERT INTO companies VALUES ('OLD','NSE','Old',NULL,NULL,NULL,NULL,NULL,NULL,'t')"
+        )
+
+    monkeypatch.setattr("stocks.governance.db.GOVERNANCE_SEED_DB_PATH", seed_path)
+    monkeypatch.setattr("stocks.governance.db.GOVERNANCE_DB_PATH", runtime_path)
+    monkeypatch.setattr("stocks.governance.db.DATA_DIR", tmp_path)
+
+    assert ensure_governance_db_seeded() is True
+    with sqlite3.connect(runtime_path) as conn:
+        n = conn.execute("SELECT COUNT(*) FROM companies").fetchone()[0]
+        tickers = {r[0] for r in conn.execute("SELECT ticker FROM companies")}
+    assert n == 2
+    assert tickers == {"A", "B"}
+
+
 def test_seed_20microns_and_shared_person(tmp_path, monkeypatch):
     db_path = tmp_path / "governance_test.db"
     monkeypatch.setattr("stocks.governance.db.GOVERNANCE_DB_PATH", db_path)

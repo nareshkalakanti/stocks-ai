@@ -27,8 +27,8 @@ st.set_page_config(
 )
 
 ensure_db()
-init_governance_db()
 ensure_governance_db_seeded()
+init_governance_db()
 ensure_early_edge_seeded()
 
 _SIDEBAR_PAGES = [

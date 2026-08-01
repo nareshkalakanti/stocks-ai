@@ -33,7 +33,7 @@ streamlit run app.py
 | `models/` | Optional model weights |
 | `logs/errors.log` | Error log |
 
-**Governance Map on a fresh clone:** commit `data/seeds/governance.db` on `dev` (or `main`). On startup, `ensure_governance_db_seeded()` copies it to `data/governance.db` if that file is missing or empty. Your local `governance.db` stays gitignored so scans and hydrates do not dirty the repo.
+**Governance Map on a fresh clone:** commit `data/seeds/governance.db` on `dev` (or `main`). On startup, `ensure_governance_db_seeded()` copies it to `data/governance.db` if that file is missing, empty, or has fewer companies than the seed (stale local DB). Your local `governance.db` stays gitignored so scans and hydrates do not dirty the repo.
 
 To refresh the seed after a big scan:
 

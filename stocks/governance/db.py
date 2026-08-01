@@ -142,19 +142,33 @@ def _init_governance_schema() -> None:
         _purge_bse_data(conn)
 
 
+def _company_count_in_db(path: Path) -> int:
+    if not path.is_file() or path.stat().st_size == 0:
+        return 0
+    try:
+        with sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5.0) as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='companies'"
+            ).fetchone()
+            if not row or int(row[0] or 0) == 0:
+                return 0
+            row = conn.execute("SELECT COUNT(*) FROM companies").fetchone()
+        return int(row[0] or 0) if row else 0
+    except (OSError, sqlite3.Error):
+        return 0
+
+
 def _governance_company_count() -> int:
-    init_governance_db()
-    with get_governance_connection() as conn:
-        row = conn.execute("SELECT COUNT(*) FROM companies").fetchone()
-    return int(row[0] or 0) if row else 0
+    return _company_count_in_db(GOVERNANCE_DB_PATH)
 
 
 def ensure_governance_db_seeded() -> bool:
     """
     Copy ``data/seeds/governance.db`` into ``data/governance.db`` when the
-    runtime DB is missing or has no companies (fresh clone / new machine).
+    runtime DB is missing, empty, or behind the bundled seed (stale local file).
 
     The seed file is tracked in git; the runtime DB stays gitignored.
+    Local DBs with *more* companies than the seed are left alone.
     """
     global _governance_initialized_path
     seed = GOVERNANCE_SEED_DB_PATH
@@ -162,14 +176,9 @@ def ensure_governance_db_seeded() -> bool:
         return False
 
     target = GOVERNANCE_DB_PATH
-    need_copy = not target.is_file()
-    if not need_copy:
-        try:
-            need_copy = target.stat().st_size == 0
-        except OSError:
-            need_copy = True
-    if not need_copy:
-        need_copy = _governance_company_count() == 0
+    seed_count = _company_count_in_db(seed)
+    live_count = _company_count_in_db(target)
+    need_copy = live_count == 0 or (seed_count > 0 and live_count < seed_count)
 
     if not need_copy:
         return False
