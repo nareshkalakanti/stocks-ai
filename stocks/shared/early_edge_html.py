@@ -13,91 +13,143 @@ from stocks.dashboards.report_html import _REPORT_CSS
 
 _EDGE_CSS = """
 <style>
-  .ee-wrap { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color: #111827; }
-  .ee-toolbar {
-    display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center;
-    margin: 0 0 12px; padding: 10px 12px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 10px;
+  .ee-wrap {
+    font-family: "Google Sans", "Product Sans", ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    color: #202124;
+  }
+  .ee-hero {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 18px 12px 8px; margin: 0 0 4px;
+  }
+  .ee-search-shell {
+    display: flex; align-items: center; gap: 14px;
+    width: min(720px, 100%);
+    min-height: 56px;
+    padding: 4px 20px 4px 22px;
+    background: #fff;
+    border: 1px solid #dfe1e5;
+    border-radius: 28px;
+    box-shadow: 0 1px 6px rgba(32, 33, 36, 0.08);
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
+  }
+  .ee-search-shell:hover {
+    box-shadow: 0 1px 8px rgba(32, 33, 36, 0.14);
+  }
+  .ee-search-shell:focus-within {
+    border-color: transparent;
+    box-shadow: 0 1px 8px rgba(32, 33, 36, 0.22);
+  }
+  .ee-search-icon {
+    flex: 0 0 auto; width: 22px; height: 22px; color: #9aa0a6;
   }
   .ee-search {
-    flex: 1 1 180px; min-width: 140px; max-width: 280px;
-    padding: 7px 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px;
+    flex: 1 1 auto; min-width: 0; width: 100%;
+    border: 0; outline: none; background: transparent;
+    font-size: 18px; line-height: 1.35; color: #202124;
+    padding: 12px 0;
+    -webkit-appearance: none; appearance: none;
+  }
+  .ee-search::placeholder { color: #80868b; font-size: 17px; }
+  .ee-search::-webkit-search-cancel-button { -webkit-appearance: none; }
+  .ee-search-hint {
+    margin-top: 10px; font-size: 12px; color: #70757a; letter-spacing: 0.01em;
+    text-align: center;
+  }
+  .ee-search-hint code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px; color: #5f6368; background: #f1f3f4;
+    padding: 1px 5px; border-radius: 4px;
+  }
+  .ee-count {
+    margin-top: 8px; font-size: 13px; color: #70757a; text-align: center;
+  }
+  .ee-toolbar {
+    display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: center;
+    margin: 0 0 14px; padding: 4px 8px 10px;
+    background: transparent; border: 0;
   }
   .ee-filter-group { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
   .ee-filter-label {
-    font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #6b7280; margin-right: 2px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #80868b; margin-right: 2px;
   }
   .ee-chip {
-    border: 1px solid #d1d5db; background: #fff; color: #374151; border-radius: 999px;
-    padding: 4px 10px; font-size: 12px; font-weight: 600; cursor: pointer; line-height: 1.3;
+    border: 1px solid #dadce0; background: #fff; color: #3c4043; border-radius: 999px;
+    padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; line-height: 1.3;
   }
   .ee-chip.active, .ee-chip:hover {
-    background: #ffedd5; border-color: #fdba74; color: #9a3412;
+    background: #e8f0fe; border-color: #aecbfa; color: #1967d2;
   }
   #ee-sme-filter .ee-chip[data-sme="1"].active,
   #ee-sme-filter .ee-chip[data-sme="1"]:hover {
     background: #ffedd5; border-color: #f97316; color: #9a3412;
   }
   .ee-sector-select {
-    padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 12px; background: #fff; max-width: 220px;
+    padding: 6px 10px; border: 1px solid #dadce0; border-radius: 999px; font-size: 12px; background: #fff; max-width: 220px;
+    color: #3c4043;
   }
-  .ee-count { font-size: 12px; color: #6b7280; margin-left: auto; white-space: nowrap; }
   .ee-page-group { display: none; align-items: center; gap: 2px; }
   .ee-page-group .ee-chip { min-width: 28px; padding: 4px 8px; }
   .ee-page-group .ee-chip:disabled { opacity: 0.35; cursor: default; }
-  .ee-page-label { font-size: 11px; color: #6b7280; font-weight: 600; padding: 0 4px; white-space: nowrap; }
-  .ee-table-wrap { overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; }
+  .ee-page-label { font-size: 11px; color: #70757a; font-weight: 600; padding: 0 4px; white-space: nowrap; }
+  .ee-table-wrap { overflow-x: auto; border: 1px solid #e8eaed; border-radius: 12px; background: #fff; }
   .ee-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .ee-table th {
-    text-align: left; padding: 9px 10px; background: #f9fafb; border-bottom: 1px solid #e5e7eb;
-    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280;
+    text-align: left; padding: 9px 10px; background: #f8f9fa; border-bottom: 1px solid #e8eaed;
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #70757a;
     position: sticky; top: 0; z-index: 1; cursor: pointer; user-select: none; white-space: nowrap;
   }
   .ee-table th .sort-ind { opacity: 0.35; margin-left: 4px; font-size: 10px; }
-  .ee-table th .sort-ind.active { opacity: 1; color: #9f1239; }
-  .ee-table td { padding: 8px 10px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
-  .ee-table tr:hover td { background: #fff7f9; }
-  .ee-co { font-weight: 650; color: #111827; }
-  .ee-ticker { font-size: 11px; color: #6b7280; margin-top: 2px; }
+  .ee-table th .sort-ind.active { opacity: 1; color: #1967d2; }
+  .ee-table td { padding: 8px 10px; border-bottom: 1px solid #f1f3f4; vertical-align: top; }
+  .ee-table tr:hover td { background: #f8f9fa; }
+  .ee-co { font-weight: 650; color: #202124; }
+  .ee-ticker { font-size: 11px; color: #70757a; margin-top: 2px; }
   .ee-tags { display: inline-flex; gap: 4px; margin-left: 6px; vertical-align: middle; }
   .ee-tag {
     display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px;
-    color: #9f1239; background: #ffe4e6; text-transform: uppercase; letter-spacing: 0.04em;
+    color: #1967d2; background: #e8f0fe; text-transform: uppercase; letter-spacing: 0.04em;
   }
   .ee-tag-sme { color: #9a3412; background: #ffedd5; }
   .ee-tag-hold { color: #1d4ed8; background: #dbeafe; }
   .ee-tag-fund { color: #5b21b6; background: #ede9fe; }
   .ee-links a {
     display: inline-block; margin-right: 4px; padding: 2px 7px; border-radius: 4px;
-    background: #f3f4f6; color: #1d4ed8; text-decoration: none; font-size: 11px; font-weight: 700;
+    background: #f1f3f4; color: #1967d2; text-decoration: none; font-size: 11px; font-weight: 700;
   }
-  .ee-links a:hover { background: #dbeafe; }
+  .ee-links a:hover { background: #e8f0fe; }
   .ee-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .ee-muted { color: #9ca3af; }
-  .ee-empty { padding: 28px; text-align: center; color: #6b7280; font-size: 13px; }
+  .ee-muted { color: #9aa0a6; }
+  .ee-empty { padding: 36px 28px; text-align: center; color: #70757a; font-size: 14px; }
   .ee-table tr.ee-row { cursor: pointer; }
-  .ee-table tr.ee-row.expanded td { background: #fff7f9; }
+  .ee-table tr.ee-row.expanded td { background: #f8f9fa; }
   .ee-table tr.ee-about-row td {
-    padding: 0 12px 12px; background: #fff7f9; border-bottom: 2px solid #fecdd3;
+    padding: 0 12px 12px; background: #f8f9fa; border-bottom: 2px solid #e8eaed;
   }
   .ee-about {
-    color: #4b5563; font-size: 12px; line-height: 1.5; max-width: 72rem;
+    color: #3c4043; font-size: 12px; line-height: 1.5; max-width: 72rem;
   }
   .ee-about.collapsed {
     display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
   }
   .ee-about-more {
-    border: 0; background: none; color: #9f1239; font-size: 11px; font-weight: 700;
+    border: 0; background: none; color: #1967d2; font-size: 11px; font-weight: 700;
     padding: 6px 0 0; cursor: pointer;
   }
   .ee-about-label {
     font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
-    color: #9f1239; margin: 0 0 4px;
+    color: #5f6368; margin: 0 0 4px;
   }
   .ee-about-hit {
     display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700;
-    color: #9a3412; background: #ffedd5; padding: 1px 6px; border-radius: 4px;
+    color: #1967d2; background: #e8f0fe; padding: 1px 6px; border-radius: 4px;
     text-transform: none; letter-spacing: 0;
   }
+  .ee-about-meta {
+    font-size: 12px; color: #3c4043; line-height: 1.45; margin: 0 0 6px; max-width: 72rem;
+  }
+  .ee-about-meta b { color: #5f6368; font-weight: 700; margin-right: 4px; }
+  .ee-about-meta a { color: #1967d2; font-weight: 700; text-decoration: none; }
+  .ee-about-meta a:hover { text-decoration: underline; }
   .ee-about mark {
     background: #fef08a; color: #854d0e; padding: 0 2px; border-radius: 2px;
   }
@@ -134,6 +186,10 @@ def _rows_payload(df: pd.DataFrame) -> list[dict]:
                 "tv": safe_str(row.get("tv")) or "",
                 "website": safe_str(row.get("website")) or "",
                 "about": safe_str(row.get("about")) or "",
+                "products": safe_str(row.get("products")) or "",
+                "end_markets": safe_str(row.get("end_markets")) or "",
+                "theme_tags": safe_str(row.get("theme_tags")) or "",
+                "ir_url": safe_str(row.get("ir_url")) or "",
                 "matched_from": safe_str(row.get("holding_entity")) or "",
             }
         )
@@ -164,10 +220,21 @@ def build_early_edge_html(
     body = f"""
 {_EDGE_CSS}
 <div class="ee-wrap" id="ee-root">
+  <div class="ee-hero">
+    <div class="ee-search-shell">
+      <svg class="ee-search-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+      </svg>
+      <input type="search" class="ee-search" id="ee-search"
+        placeholder="Search companies"
+        autocomplete="off" spellcheck="false" />
+    </div>
+    <div class="ee-search-hint">
+      <code>+</code> AND &nbsp;·&nbsp; <code>|</code> OR &nbsp;·&nbsp; e.g. copper | aluminium | cobalt
+    </div>
+    <div class="ee-count" id="ee-count"></div>
+  </div>
   <div class="ee-toolbar">
-    <input type="search" class="ee-search" id="ee-search"
-      placeholder="Search ticker, name, sector, or about (e.g. copper)…"
-      autocomplete="off" />
     <div class="ee-filter-group" id="ee-cap-filter" role="group" aria-label="Cap filter">
       <span class="ee-filter-label">Cap</span>
       <button type="button" class="cap-chip active" data-cap="" title="All cap bands">All</button>
@@ -193,7 +260,6 @@ def build_early_edge_html(
       <span class="ee-page-label" id="ee-page-label"></span>
       <button type="button" class="ee-chip" id="ee-page-next" title="Next page">›</button>
     </div>
-    <span class="ee-count" id="ee-count"></span>
   </div>
   <div class="ee-table-wrap">
     <table class="ee-table">
@@ -216,6 +282,8 @@ def build_early_edge_html(
     {{ id: "links", label: "Links", sort: null }},
   ];
   let searchQuery = "";
+  let searchTerms = [];
+  let searchMode = "and"; // "and" (+) or "or" (| or ,)
   let capFilters = new Set();
   let smeOnly = false;
   let sectorFilter = "";
@@ -225,8 +293,50 @@ def build_early_edge_html(
   let collapsedManual = new Set(); // tickers user closed while search auto-opens About
   let pageIndex = 0;
 
+  // Common about-text spelling variants (Yahoo often uses US spelling).
+  const TERM_SYNONYMS = {{
+    aluminium: ["aluminium", "aluminum"],
+    aluminum: ["aluminium", "aluminum"],
+  }};
+
   function resetPage() {{
     pageIndex = 0;
+  }}
+
+  function parseSearch(raw) {{
+    // "copper + rods" → AND; "copper | aluminium | cobalt" or commas → OR.
+    const q = String(raw || "").toLowerCase().trim();
+    if (!q) return {{ mode: "and", terms: [] }};
+    let mode = "and";
+    let parts;
+    if (q.includes("|")) {{
+      mode = "or";
+      parts = q.split("|");
+    }} else if (q.includes(",")) {{
+      mode = "or";
+      parts = q.split(",");
+    }} else {{
+      parts = q.split("+");
+    }}
+    const terms = parts.map(t => t.trim()).filter(Boolean);
+    return {{ mode, terms }};
+  }}
+  function termVariants(term) {{
+    const t = String(term || "").trim().toLowerCase();
+    if (!t) return [];
+    return TERM_SYNONYMS[t] || [t];
+  }}
+  function hayHasTerm(hay, term) {{
+    return termVariants(term).some(v => hay.includes(v));
+  }}
+  function searchLabel() {{
+    const join = searchMode === "or" ? " | " : " + ";
+    return searchTerms.join(join);
+  }}
+  function rowHay(r) {{
+    return [r.ticker, r.name, r.sector, r.sub_sector, r.industry, r.market, r.matched_from,
+            r.about]
+      .map(v => String(v || "").toLowerCase()).join(" ");
   }}
 
   const sectorEl = document.getElementById("ee-sector");
@@ -312,44 +422,62 @@ def build_early_edge_html(
     return String(r.sector || "") === sectorFilter;
   }}
   function searchOk(r) {{
-    if (!searchQuery) return true;
-    const hay = [r.ticker, r.name, r.sector, r.sub_sector, r.industry, r.market, r.matched_from, r.about]
-      .map(v => String(v || "").toLowerCase()).join(" ");
-    return hay.includes(searchQuery);
+    if (!searchTerms.length) return true;
+    const hay = rowHay(r);
+    if (searchMode === "or") return searchTerms.some(t => hayHasTerm(hay, t));
+    return searchTerms.every(t => hayHasTerm(hay, t));
   }}
   function aboutMatch(r) {{
-    if (!searchQuery) return false;
-    return String(r.about || "").toLowerCase().includes(searchQuery);
+    if (!searchTerms.length) return false;
+    const about = String(r.about || "").toLowerCase();
+    return searchTerms.some(t => hayHasTerm(about, t));
   }}
   function highlightAbout(text) {{
     const raw = String(text || "");
-    if (!searchQuery || !raw) return esc(raw);
+    if (!searchTerms.length || !raw) return esc(raw);
     const lower = raw.toLowerCase();
-    const q = searchQuery;
+    const terms = [];
+    searchTerms.forEach(t => termVariants(t).forEach(v => terms.push(v)));
+    terms.sort((a, b) => b.length - a.length);
+    const marks = [];
+    for (const q of terms) {{
+      if (!q) continue;
+      let from = 0;
+      while (from < raw.length) {{
+        const at = lower.indexOf(q, from);
+        if (at < 0) break;
+        marks.push([at, at + q.length]);
+        from = at + q.length;
+      }}
+    }}
+    if (!marks.length) return esc(raw);
+    marks.sort((a, b) => a[0] - b[0] || b[1] - a[1]);
+    const merged = [];
+    for (const m of marks) {{
+      const last = merged[merged.length - 1];
+      if (last && m[0] <= last[1]) last[1] = Math.max(last[1], m[1]);
+      else merged.push(m.slice());
+    }}
     let out = "";
     let i = 0;
-    while (i < raw.length) {{
-      const at = lower.indexOf(q, i);
-      if (at < 0) {{
-        out += esc(raw.slice(i));
-        break;
-      }}
-      out += esc(raw.slice(i, at));
-      out += "<mark>" + esc(raw.slice(at, at + q.length)) + "</mark>";
-      i = at + q.length;
+    for (const [a, b] of merged) {{
+      out += esc(raw.slice(i, a));
+      out += "<mark>" + esc(raw.slice(a, b)) + "</mark>";
+      i = b;
     }}
+    out += esc(raw.slice(i));
     return out;
   }}
   function aboutPanel(r) {{
     const about = String(r.about || "").trim();
     const hit = aboutMatch(r);
     const labelHit = hit
-      ? `<span class="ee-about-hit">matched “${{esc(searchQuery)}}”</span>`
+      ? `<span class="ee-about-hit">matched “${{esc(searchLabel())}}”</span>`
       : "";
     if (!about) {{
       return (
         `<div class="ee-about-label">About${{labelHit}}</div>` +
-        `<div class="ee-about ee-muted">No about text yet — use Fill missing from web.</div>`
+        `<div class="ee-about ee-muted">No about text yet.</div>`
       );
     }}
     const long = about.length > 280 && !hit;
@@ -515,6 +643,9 @@ def build_early_edge_html(
 
   document.getElementById("ee-search").oninput = (e) => {{
     searchQuery = String(e.target.value || "").trim().toLowerCase();
+    const parsed = parseSearch(searchQuery);
+    searchMode = parsed.mode;
+    searchTerms = parsed.terms;
     collapsedManual.clear();
     resetPage();
     render();
@@ -580,4 +711,4 @@ def build_early_edge_html(
 
 
 def early_edge_iframe_height(row_count: int) -> int:
-    return min(2600, max(560, 360 + min(row_count, 80) * 32))
+    return min(2700, max(640, 440 + min(row_count, 80) * 32))

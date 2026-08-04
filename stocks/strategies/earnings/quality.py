@@ -55,7 +55,7 @@ def passes_earnings_quality(
 
 def cap_eps_yoy_pct(yoy_pct: float | None, *, cap: float | None = None) -> float | None:
     """Cap extreme YoY % used for PEG / growth scoring."""
-    if yoy_pct is None or (isinstance(yoy_pct, float) and pd.isna(yoy_pct)):
+    if yoy_pct is None or pd.isna(yoy_pct):
         return None
     limit = EARNINGS_MAX_EPS_YOY_PCT if cap is None else cap
     return round(min(float(yoy_pct), float(limit)), 2)
@@ -63,7 +63,7 @@ def cap_eps_yoy_pct(yoy_pct: float | None, *, cap: float | None = None) -> float
 
 def cap_growth_qoq_pct(qoq_pct: float | None, *, cap: float | None = None) -> float | None:
     """Cap extreme QoQ % (avoids near-zero-base spikes in percentile scoring)."""
-    if qoq_pct is None or (isinstance(qoq_pct, float) and pd.isna(qoq_pct)):
+    if qoq_pct is None or pd.isna(qoq_pct):
         return None
     limit = abs(float(EARNINGS_MAX_EPS_YOY_PCT if cap is None else cap))
     val = float(qoq_pct)

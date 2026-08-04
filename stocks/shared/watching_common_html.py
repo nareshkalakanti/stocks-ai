@@ -231,6 +231,7 @@ def build_watching_common_html(
     total_common: int | None = None,
     limit: int = 12,
     gap_counts: dict[str, int] | None = None,
+    include_heading: bool = True,
 ) -> str:
     work = df if df is not None else pd.DataFrame()
     if work.empty:
@@ -242,10 +243,15 @@ def build_watching_common_html(
     picks_html = "".join(_pick_card(row) for _, row in work.iterrows())
     cap_css = cap_colors_css(include_chip=False, include_gov_filter=False)
     gaps_html = _gaps_html(gap_counts)
+    head = (
+        f'<div class="wc-head">On 2+ lists<span>{html.escape(count_label)}</span></div>'
+        if include_heading
+        else ""
+    )
     return (
         f"{cap_css}{_COMMON_CSS}"
         f'<div class="wc-wrap">'
-        f'<div class="wc-head">On 2+ lists<span>{html.escape(count_label)}</span></div>'
+        f"{head}"
         f"{gaps_html}"
         f'<div class="wc-picks">{picks_html}</div>'
         f"</div>"

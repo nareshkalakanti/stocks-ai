@@ -39,11 +39,6 @@ TICKER_ALIASES: dict[str, str] = {
 
 # Manual rows when yfinance has no quote (BSE-only / illiquid).
 _MANUAL_LISTINGS: dict[str, dict[str, str]] = {
-    "SILPO": {
-        "name": "SILPO Limited",
-        "sector": "",
-        "market": "NSE",
-    },
     "ASAHIIND": {
         "name": "Asahi Industries Limited",
         "sector": "",

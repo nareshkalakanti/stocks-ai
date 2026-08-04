@@ -36,6 +36,16 @@ MARKET_CAP_CACHE_HOURS = int(
 YFINANCE_REQUEST_DELAY = float(os.getenv("YFINANCE_REQUEST_DELAY", "0.45"))  # Fundamentals only
 # Pace screener.in scrapes (map profile/mcap hydrate) to avoid blocks.
 SCREENER_REQUEST_DELAY = float(os.getenv("SCREENER_REQUEST_DELAY", "1.5"))
+# Corporate website About Us scraper (homepage → about/company pages).
+WEB_ABOUT_REQUEST_DELAY = float(os.getenv("WEB_ABOUT_REQUEST_DELAY", "1.0"))
+WEB_ABOUT_TIMEOUT = float(os.getenv("WEB_ABOUT_TIMEOUT", "15"))
+WEB_ABOUT_MIN_CHARS = int(os.getenv("WEB_ABOUT_MIN_CHARS", "180"))
+WEB_ABOUT_MIN_WORDS = int(os.getenv("WEB_ABOUT_MIN_WORDS", "35"))
+WEB_ABOUT_MAX_CHARS = int(os.getenv("WEB_ABOUT_MAX_CHARS", "3500"))
+WEB_ABOUT_MAX_PAGES = int(os.getenv("WEB_ABOUT_MAX_PAGES", "4"))
+WEB_ABOUT_PRODUCTS_MAX_CHARS = int(os.getenv("WEB_ABOUT_PRODUCTS_MAX_CHARS", "1200"))
+WEB_ABOUT_MARKETS_MAX_CHARS = int(os.getenv("WEB_ABOUT_MARKETS_MAX_CHARS", "400"))
+WEB_ABOUT_BATCH_SIZE = int(os.getenv("WEB_ABOUT_BATCH_SIZE", "25"))
 SCREENER_HYDRATE_WORKERS = int(os.getenv("SCREENER_HYDRATE_WORKERS", "1"))
 STRATEGY_MAX_WORKERS_CAP = int(os.getenv("STRATEGY_MAX_WORKERS_CAP", "32"))
 STRATEGY_MAX_WORKERS = int(os.getenv("STRATEGY_MAX_WORKERS", str(STRATEGY_MAX_WORKERS_CAP)))
@@ -118,7 +128,8 @@ HEADWIND_PEAD_CACHE_HOURS = int(os.getenv("HEADWIND_PEAD_CACHE_HOURS", "168"))
 HEADWIND_PEAD_BACKFILL_MAX = int(os.getenv("HEADWIND_PEAD_BACKFILL_MAX", "50"))
 # Post-earnings return window: 0 = drift to latest close; >0 = cap at N trading days.
 PEAD2_DRIFT_DAYS = int(os.getenv("PEAD2_DRIFT_DAYS", "0"))
-# ff = FinanciallyFree-style signed score; percentile = universe ranks; absolute = 0–100 per-row
+# ff = FinanciallyFree Result Monitor score (sales mean + cheap PE bonus);
+# percentile = universe ranks; absolute = 0–100 per-row
 PEAD2_SCORE_MODE = os.getenv("PEAD2_SCORE_MODE", "ff").strip().lower()
 PEAD_RESULT_LAG_DAYS = int(os.getenv("PEAD_RESULT_LAG_DAYS", "45"))
 PEAD2_DAILY_RET_CAP = float(os.getenv("PEAD2_DAILY_RET_CAP", "19.99"))
@@ -129,7 +140,7 @@ PEAD2_RECENT_DAY_OPTIONS = tuple(
     if x.strip().isdigit()
 ) or (7, 15, 30, 60)
 PEAD2_RECENT_MAX_FETCH = int(os.getenv("PEAD2_RECENT_MAX_FETCH", "300"))
-PEAD2_CALC_VERSION = 22
+PEAD2_CALC_VERSION = 23
 # Set false to skip live BB+TQ weekly yfinance checks on PEAD scan (use cached signals only).
 PEAD2_CHECK_BREAKOUTS = os.getenv("PEAD2_CHECK_BREAKOUTS", "true").lower() in (
     "1",

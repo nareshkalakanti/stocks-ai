@@ -2,7 +2,7 @@
 
 Streamlit app for Indian equity scans.
 
-**Sidebar:** Strategy · PEAD · H&T · Sector Landscape · SuperStars · Holdings · ValuePickr
+**Sidebar:** Strategy · Sector Landscape · SuperStars · ValuePickr · Demergers
 
 ## Repo layout
 
@@ -38,8 +38,16 @@ streamlit run app.py
 To refresh the seed after a big scan:
 
 ```bash
-cp data/governance.db data/seeds/governance.db
+python scripts/refresh_governance.py --update-seed
+# or: cp data/governance.db data/seeds/governance.db
 git add data/seeds/governance.db
+```
+
+Fill missing CINs / MCA boards (needs ``APIFY_TOKEN`` in ``.env`` for ``--apify``):
+
+```bash
+python scripts/refresh_governance.py --status
+python scripts/refresh_governance.py --cins --apify --update-seed
 ```
 
 Listings dataset: Hugging Face `kjhq/India-Stock-Symbols-and-Metadata` (cached in DB).
@@ -48,6 +56,8 @@ Listings dataset: Hugging Face `kjhq/India-Stock-Symbols-and-Metadata` (cached i
 
 See `.env` — `HF_TOKEN`, `MIN_MARKET_CAP_CR`, `STRATEGY_MAX_WORKERS`, etc.
 
+```bash
 python scripts/refresh_sector_classification.py
 # optional: also refresh NSE listing CSVs
 python scripts/refresh_sector_classification.py --refresh-csv
+```

@@ -239,6 +239,8 @@ def enrich_stocks_classification(
         ticker = safe_str(row.get("ticker")).upper()
         market = safe_str(row.get("market")) or None
         existing_sector = _clean(row.get("sector"))
+        existing_industry = _clean(row.get("industry"))
+        existing_sub = _clean(row.get("sub_sector"))
         raw_sector = _clean(row.get("source_sector")) or existing_sector
         sector, industry, subsector = lookup_classification(
             ticker, maps=maps, market=market
@@ -249,12 +251,21 @@ def enrich_stocks_classification(
         else:
             final_sector = existing_sector or sector
 
+        # Prefer sqlite lookup, then keep any industry already on the row.
+        if not industry and existing_industry:
+            industry = existing_industry
+        if not subsector and (existing_sub or existing_industry):
+            subsector = existing_sub or existing_industry
+
         industry, subsector = _fallback_industry_from_sector(
             final_sector,
             industry,
             subsector,
             raw_sector=raw_sector,
         )
+        if not industry and existing_industry and existing_industry != _clean(final_sector):
+            industry = existing_industry
+            subsector = existing_sub or existing_industry
 
         industries.append(industry)
         sub_sectors.append(subsector)

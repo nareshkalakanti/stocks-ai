@@ -13,7 +13,7 @@ from stocks.core.config import (
     PEAD_PEG_REQUIRE_POSITIVE,
 )
 from stocks.strategies.napkin.strategy import near_term_pe, required_cagr_pct, resolve_pe
-from stocks.strategies.pead2.strategy import Pead2ScoreWeights, score_pead2_ff
+from stocks.strategies.pead2.strategy import Pead2ScoreWeights, score_pead2_ff_weighted
 from stocks.strategies.positive_surprise.strategy import (
     _peg_component,
     compute_peg,
@@ -141,7 +141,7 @@ def score_peg_aware(df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame() if df is None else df
 
     work = attach_peg_aware_fields(df)
-    scored = score_pead2_ff(work, weights=peg_aware_score_weights())
+    scored = score_pead2_ff_weighted(work, weights=peg_aware_score_weights())
     scored = apply_peg_aware_gate(scored)
     scored = scored[scored["pead_score"].notna()].copy()
     if scored.empty:

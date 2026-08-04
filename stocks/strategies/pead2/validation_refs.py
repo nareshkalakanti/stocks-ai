@@ -47,9 +47,13 @@ def ff_daily_ret_rows() -> list[dict]:
 
 
 def ff_monitor_cases() -> list[dict]:
-    """FinanciallyFree PEAD Result Monitor reference cases (KPL, WPIL, …)."""
-    batch = load_pead_references().get("ff_pead_monitor_2026_07_13", {})
-    return list(batch.get("cases", []))
+    """FinanciallyFree PEAD Result Monitor reference cases (KPL, WPIL, YASHO, …)."""
+    refs = load_pead_references()
+    cases: list[dict] = []
+    for key in ("ff_pead_monitor_2026_07_13", "ff_pead_monitor_2026_08_01"):
+        batch = refs.get(key, {})
+        cases.extend(list(batch.get("cases", [])))
+    return cases
 
 
 def ff_monitor_case(ticker: str) -> dict | None:
@@ -68,8 +72,10 @@ def score_row_from_ff_monitor(case: dict, *, use_dashboard: bool = False) -> dic
     card = case.get("monitor_card") or {}
     row: dict = {
         "ticker": case.get("ticker"),
-        "sales_yoy": card.get("sales_yoy_pct") if not use_dashboard else card.get("sales_yoy_pct"),
-        "np_yoy": card.get("np_yoy_pct") if not use_dashboard else card.get("np_yoy_pct"),
+        "sales_yoy": card.get("sales_yoy_pct"),
+        "sales_qoq": card.get("sales_qoq_pct"),
+        "np_yoy": card.get("np_yoy_pct"),
+        "np_qoq": card.get("np_qoq_pct"),
         "forward_pe": src.get("forward_pe"),
         "returns_pct": src.get("returns_pct"),
     }

@@ -543,9 +543,17 @@ def _init_db_schema() -> None:
         _ensure_business_group_members_columns(conn)
         _ensure_intrinsic_value_cache_columns(conn)
         _ensure_superstar_holdings_columns(conn)
+        _ensure_company_profile_cache_columns(conn)
         _migrate_strategy_tq_timeframe(conn)
         _migrate_headwind_scan_cache(conn)
         _migrate_legacy_parents_spinoffs_to_demerger_stocks(conn)
+
+
+def _ensure_company_profile_cache_columns(conn) -> None:
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(company_profile_cache)")}
+    for col in ("products", "end_markets", "ir_url", "theme_tags", "website_status"):
+        if col not in cols:
+            conn.execute(f"ALTER TABLE company_profile_cache ADD COLUMN {col} TEXT")
 
 
 def _ensure_superstar_holdings_columns(conn) -> None:
@@ -2060,7 +2068,8 @@ def load_company_profile_cache(
         rows = conn.execute(
             f"""
             SELECT ticker, market, website, long_description, company_sector,
-                   company_industry, headquarters, employees, source, fetched_at
+                   company_industry, headquarters, employees, source, fetched_at,
+                   products, end_markets, ir_url, theme_tags, website_status
             FROM company_profile_cache
             WHERE ticker IN ({placeholders})
             """,
@@ -2071,6 +2080,7 @@ def load_company_profile_cache(
         if max_hours is not None and not _is_fresh(row["fetched_at"], max_hours):
             continue
         ticker = str(row["ticker"]).upper()
+        keys_avail = set(row.keys())
         out[ticker] = {
             "ticker": ticker,
             "market": row["market"],
@@ -2082,6 +2092,11 @@ def load_company_profile_cache(
             "employees": row["employees"],
             "source": row["source"],
             "fetched_at": row["fetched_at"],
+            "products": row["products"] if "products" in keys_avail else None,
+            "end_markets": row["end_markets"] if "end_markets" in keys_avail else None,
+            "ir_url": row["ir_url"] if "ir_url" in keys_avail else None,
+            "theme_tags": row["theme_tags"] if "theme_tags" in keys_avail else None,
+            "website_status": row["website_status"] if "website_status" in keys_avail else None,
         }
     return out
 
@@ -2310,6 +2325,7 @@ def save_company_profile_cache(rows: list[dict]) -> None:
     now = _utc_now()
     with _write_lock:
         with get_connection() as conn:
+            _ensure_company_profile_cache_columns(conn)
             for row in rows:
                 ticker = str(row.get("ticker", "")).strip().upper()
                 if not ticker:
@@ -2318,9 +2334,10 @@ def save_company_profile_cache(rows: list[dict]) -> None:
                     """
                     INSERT INTO company_profile_cache (
                         ticker, market, website, long_description, company_sector,
-                        company_industry, headquarters, employees, source, fetched_at
+                        company_industry, headquarters, employees, source, fetched_at,
+                        products, end_markets, ir_url, theme_tags, website_status
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(ticker) DO UPDATE SET
                         market=excluded.market,
                         website=excluded.website,
@@ -2330,7 +2347,12 @@ def save_company_profile_cache(rows: list[dict]) -> None:
                         headquarters=excluded.headquarters,
                         employees=excluded.employees,
                         source=excluded.source,
-                        fetched_at=excluded.fetched_at
+                        fetched_at=excluded.fetched_at,
+                        products=excluded.products,
+                        end_markets=excluded.end_markets,
+                        ir_url=excluded.ir_url,
+                        theme_tags=excluded.theme_tags,
+                        website_status=excluded.website_status
                     """,
                     (
                         ticker,
@@ -2343,6 +2365,11 @@ def save_company_profile_cache(rows: list[dict]) -> None:
                         row.get("employees"),
                         row.get("source"),
                         now,
+                        row.get("products"),
+                        row.get("end_markets"),
+                        row.get("ir_url"),
+                        row.get("theme_tags"),
+                        row.get("website_status"),
                     ),
                 )
 

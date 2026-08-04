@@ -124,9 +124,9 @@ class TestPeadScoreVsFinanciallyFree:
         row = {**growth, "returns_pct": ff_row["returns_pct"], "forward_pe": ff_row["forward_pe"]}
         ff_scored = score_pead2_ff(pd.DataFrame([row]))
         ff_score = float(ff_scored["pead_score"].iloc[0])
-        # Classic FF weights should land in the same neighborhood as the captured dashboard.
-        assert abs(ff_score - ff_row["pead_score"]) <= 20.0
-        assert ff_score > 0
+        # Monitor formula is sales-led; allow a wider band vs older dashboard captures.
+        assert abs(ff_score - ff_row["pead_score"]) <= 35.0
+        assert not pd.isna(ff_score)
 
     def test_absolute_mode_still_bounded_0_100(self):
         row = ff_daily_ret_rows()[2]
@@ -236,20 +236,17 @@ class TestPeadFfMonitorJul2026:
         assert card["ebitda_pct_q0"] == ff["ebitda_pct_q0"]
 
     def test_ff_mode_score_with_dashboard_inputs_kpl(self):
-        """Dashboard row (fwd PE 22.7 + returns) is closer to FF table score 47 than monitor card alone."""
+        """Monitor formula: KPL sales YoY (+ optional PE) near FF card / dashboard scores."""
         kpl = ff_monitor_case("KPL")
         card = kpl["monitor_card"]
         dash = kpl["dashboard_row"]
         monitor_row = {
             "sales_yoy": card["sales_yoy_pct"],
-            "np_yoy": card["np_yoy_pct"],
             "forward_pe": card["forward_pe"],
         }
         dash_row = {
             "sales_yoy": card["sales_yoy_pct"],
-            "np_yoy": card["np_yoy_pct"],
             "forward_pe": dash["forward_pe"],
-            "returns_pct": dash["returns_pct"],
         }
         monitor_score = float(
             score_pead2_ff(pd.DataFrame([monitor_row]))["pead_score"].iloc[0]
@@ -257,8 +254,9 @@ class TestPeadFfMonitorJul2026:
         dash_score = float(
             score_pead2_ff(pd.DataFrame([dash_row]))["pead_score"].iloc[0]
         )
-        assert abs(dash_score - dash["pead_score"]) < abs(monitor_score - card["pead_score"])
-        assert abs(dash_score - dash["pead_score"]) <= 6.0
+        # No QoQ on card → score ≈ sales_yoy (PE ≥ 20 → no bonus).
+        assert abs(monitor_score - card["pead_score"]) <= 3.0
+        assert abs(dash_score - dash["pead_score"]) <= 3.0
 
     def test_ff_mode_score_computed_for_wpil(self):
         wpil = ff_monitor_case("WPIL")
@@ -278,6 +276,158 @@ class TestPeadFfMonitorJul2026:
         assert len(df) >= 2
         assert "ff_pead_score" in df.columns
         assert "our_pead_score" in df.columns
+
+
+class TestPeadFfMonitorAug2026:
+    """FinanciallyFree PEAD Result Monitor — YASHO, AEROFLEX, STLTECH (Aug 2026)."""
+
+    def test_yasho_case_present(self):
+        case = ff_monitor_case("YASHO")
+        assert case is not None
+        assert case["company"] == "Yasho Industries Ltd"
+        assert case["result_label"] == "Q1 FY27"
+        assert case["bse_code"] == "541167"
+
+    def test_yasho_monitor_card_matches_screenshot(self):
+        card = ff_monitor_case("YASHO")["monitor_card"]
+        ff = load_pead_references()["financiallyfree_screenshot"]["YASHO"]
+        assert card["pead_score"] == ff["pead_score"] == 53.9
+        assert card["forward_pe"] == ff["forward_pe"] == 14.3
+        assert card["revenue_q0_crore"] == 307.74
+        assert card["np_q0_crore"] == 36.05
+        assert card["ebitda_pct_q0"] == 24.2
+        assert card["price"] == 3409.7
+        assert card["mcap_cr"] == 2064
+        assert card["ret_1d_pct"] == 6.4
+        # Crores × 100 = lakhs (FF display unit)
+        assert card["revenue_q0_lakhs"] == round(card["revenue_q0_crore"] * 100)
+        assert card["np_q0_lakhs"] == round(card["np_q0_crore"] * 100)
+
+    def test_yasho_growth_from_monitor_table(self):
+        card = ff_monitor_case("YASHO")["monitor_card"]
+        rev0, rev_y = card["revenue_q0_crore"], card["revenue_yoy_crore"]
+        np0, np_y = card["np_q0_crore"], card["np_yoy_crore"]
+        sales_yoy = round((rev0 - rev_y) / abs(rev_y) * 100, 1)
+        np_yoy = round((np0 - np_y) / abs(np_y) * 100, 1)
+        assert sales_yoy == card["sales_yoy_pct"] == 54.9
+        assert np_yoy == card["np_yoy_pct"] == 890.4
+
+    def test_ff_mode_score_with_monitor_growth_and_pe(self):
+        """Monitor formula matches YASHO card (sales mean + cheap PE bonus)."""
+        card = ff_monitor_case("YASHO")["monitor_card"]
+        row = {
+            "sales_yoy": card["sales_yoy_pct"],
+            "sales_qoq": card["sales_qoq_pct"],
+            "forward_pe": card["forward_pe"],
+            "np_yoy": card["np_yoy_pct"],  # ignored by monitor formula
+        }
+        ours = float(score_pead2_ff(pd.DataFrame([row]))["pead_score"].iloc[0])
+        assert abs(ours - float(card["pead_score"])) <= 1.0
+
+    def test_score_comparison_includes_yasho(self):
+        df = ff_monitor_score_comparison()
+        assert "YASHO" in set(df["ticker"])
+        row = df[df["ticker"] == "YASHO"].iloc[0]
+        assert float(row["ff_pead_score"]) == 53.9
+        assert row["our_pead_score"] is not None
+
+    def test_aeroflex_case_present(self):
+        case = ff_monitor_case("AEROFLEX")
+        assert case is not None
+        assert case["company"] == "Aeroflex Industries Ltd"
+        assert case["result_label"] == "Q1 FY27"
+        assert case["bse_code"] == "543972"
+
+    def test_aeroflex_monitor_card_matches_screenshot(self):
+        card = ff_monitor_case("AEROFLEX")["monitor_card"]
+        ff = load_pead_references()["financiallyfree_screenshot"]["AEROFLEX"]
+        assert card["pead_score"] == ff["pead_score"] == 44.1
+        assert card["forward_pe"] == ff["forward_pe"] == 56.0
+        assert card["revenue_q0_crore"] == 145.38
+        assert card["np_q0_crore"] == 18.79
+        assert card["ebitda_pct_q0"] == 23.4
+        assert card["mcap_cr"] == 4206
+        assert card["revenue_q0_lakhs"] == round(card["revenue_q0_crore"] * 100)
+        assert card["np_q0_lakhs"] == round(card["np_q0_crore"] * 100)
+
+    def test_aeroflex_growth_from_monitor_table(self):
+        card = ff_monitor_case("AEROFLEX")["monitor_card"]
+        rev0, rev_y = card["revenue_q0_crore"], card["revenue_yoy_crore"]
+        np0, np_y = card["np_q0_crore"], card["np_yoy_crore"]
+        sales_yoy = round((rev0 - rev_y) / abs(rev_y) * 100, 1)
+        np_yoy = round((np0 - np_y) / abs(np_y) * 100, 1)
+        assert sales_yoy == card["sales_yoy_pct"] == 72.4
+        assert np_yoy == card["np_yoy_pct"] == 162.1
+
+    def test_aeroflex_ff_mode_matches_monitor(self):
+        """Rich Fwd PE: score ≈ mean(sales YoY, QoQ); NP ignored."""
+        card = ff_monitor_case("AEROFLEX")["monitor_card"]
+        row = {
+            "sales_yoy": card["sales_yoy_pct"],
+            "sales_qoq": card["sales_qoq_pct"],
+            "np_yoy": card["np_yoy_pct"],
+            "np_qoq": card["np_qoq_pct"],
+            "forward_pe": card["forward_pe"],
+        }
+        ours = float(score_pead2_ff(pd.DataFrame([row]))["pead_score"].iloc[0])
+        assert abs(ours - float(card["pead_score"])) <= 1.0
+
+    def test_score_comparison_includes_aeroflex(self):
+        df = ff_monitor_score_comparison()
+        assert "AEROFLEX" in set(df["ticker"])
+        row = df[df["ticker"] == "AEROFLEX"].iloc[0]
+        assert float(row["ff_pead_score"]) == 44.1
+        assert row["our_pead_score"] is not None
+
+    def test_stltech_case_present(self):
+        case = ff_monitor_case("STLTECH")
+        assert case is not None
+        assert case["company"] == "Sterlite Technologies Ltd"
+        assert case["result_label"] == "Q1 FY27"
+        assert case["bse_code"] == "532374"
+
+    def test_stltech_monitor_card_matches_screenshot(self):
+        card = ff_monitor_case("STLTECH")["monitor_card"]
+        ff = load_pead_references()["financiallyfree_screenshot"]["STLTECH"]
+        assert card["pead_score"] == ff["pead_score"] == 61.5
+        assert card["forward_pe"] == ff["forward_pe"] == 18.3
+        assert card["revenue_q0_crore"] == 1910.0
+        assert card["np_q0_crore"] == 197.0
+        assert card["ebitda_pct_q0"] == 20.8
+        assert card["mcap_cr"] == 14448
+        assert card["cap_bucket"] == "Mid Cap"
+        assert card["result_tag"] == "Great Results"
+        assert card["generated_ist"] == "2026-07-24 14:45"
+        assert card["revenue_q0_lakhs"] == round(card["revenue_q0_crore"] * 100)
+        assert card["np_q0_lakhs"] == round(card["np_q0_crore"] * 100)
+
+    def test_stltech_growth_from_monitor_table(self):
+        card = ff_monitor_case("STLTECH")["monitor_card"]
+        rev0, rev_y = card["revenue_q0_crore"], card["revenue_yoy_crore"]
+        np0, np_y = card["np_q0_crore"], card["np_yoy_crore"]
+        sales_yoy = round((rev0 - rev_y) / abs(rev_y) * 100, 1)
+        np_yoy = round((np0 - np_y) / abs(np_y) * 100, 1)
+        assert sales_yoy == card["sales_yoy_pct"] == 87.4
+        assert np_yoy == card["np_yoy_pct"] == 1870.0
+
+    def test_stltech_ff_mode_matches_monitor(self):
+        """STLTECH: sales mean + small cheap-PE bonus ≈ FF 61.5."""
+        card = ff_monitor_case("STLTECH")["monitor_card"]
+        row = {
+            "sales_yoy": card["sales_yoy_pct"],
+            "sales_qoq": card["sales_qoq_pct"],
+            "np_yoy": card["np_yoy_pct"],
+            "forward_pe": card["forward_pe"],
+        }
+        ours = float(score_pead2_ff(pd.DataFrame([row]))["pead_score"].iloc[0])
+        assert abs(ours - float(card["pead_score"])) <= 3.0
+
+    def test_score_comparison_includes_stltech(self):
+        df = ff_monitor_score_comparison()
+        assert "STLTECH" in set(df["ticker"])
+        row = df[df["ticker"] == "STLTECH"].iloc[0]
+        assert float(row["ff_pead_score"]) == 61.5
+        assert row["our_pead_score"] is not None
 
 
 class TestPeadUnitValidation:

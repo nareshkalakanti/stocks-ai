@@ -25,6 +25,12 @@ CFO_FIELDS = (
 
 PEAD_HIGH_SCORE_MIN = 40.0
 
+# Reverse-engineered from FF Result Monitor cards (YASHO / AEROFLEX / STLTECH, 2026-08).
+# score ≈ mean(sales_yoy, sales_qoq) + max(0, (PE_CHEAP_MAX − forward_pe) × PE_BONUS_PER_POINT)
+FF_MONITOR_PE_CHEAP_MAX = 20.0
+FF_MONITOR_PE_BONUS_PER_POINT = 2.4
+FF_MONITOR_GROWTH_CAP = 100.0
+
 _GROWTH_QOQ_COLUMNS = ("sales_qoq", "np_qoq", "eps_qoq", "ebidt_qoq")
 
 # Column order aligned with pead_results SQL export (stock_symbol … calculation_date).
@@ -843,12 +849,48 @@ def _apply_ff_forward_pe_when_yoy_missing(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def score_pead2_ff(
+def _ff_monitor_pead_score(
+    sales_yoy: float | None,
+    sales_qoq: float | None,
+    forward_pe: float | None,
+    *,
+    pe_cheap_max: float = FF_MONITOR_PE_CHEAP_MAX,
+    pe_bonus_per_point: float = FF_MONITOR_PE_BONUS_PER_POINT,
+    growth_cap: float = FF_MONITOR_GROWTH_CAP,
+) -> float | None:
+    """
+    FinanciallyFree Result Monitor–style score (fitted 2026-08 cards).
+
+    mean(capped sales YoY/QoQ) + cheap-Fwd-PE bonus when PE < ``pe_cheap_max``.
+    NP / EPS / returns are intentionally excluded — they overshoot FF monitor cards.
+    """
+    parts: list[float] = []
+    for raw in (sales_yoy, sales_qoq):
+        if raw is None or (isinstance(raw, float) and pd.isna(raw)):
+            continue
+        try:
+            parts.append(max(-growth_cap, min(growth_cap, float(raw))))
+        except (TypeError, ValueError):
+            continue
+    if not parts:
+        return None
+    score = float(np.mean(parts))
+    try:
+        pe = float(forward_pe) if forward_pe is not None and not pd.isna(forward_pe) else None
+    except (TypeError, ValueError):
+        pe = None
+    if pe is not None and 0 < pe < 500 and pe < pe_cheap_max:
+        score += (pe_cheap_max - pe) * pe_bonus_per_point
+    return round(score, 1)
+
+
+def score_pead2_ff_weighted(
     df: pd.DataFrame,
     *,
     weights: Pead2ScoreWeights | None = None,
+    sort: bool = True,
 ) -> pd.DataFrame:
-    """FinanciallyFree-style signed PEAD score (growth + forward PE + returns)."""
+    """Legacy weighted FF signed score (growth + PE + returns). Used by PEG-aware."""
     if df.empty:
         return df
 
@@ -894,7 +936,70 @@ def score_pead2_ff(
 
     scaled = composite / row_weights.replace(0, np.nan) * 100.0
     out["pead_score"] = scaled.round(1)
+    if not sort:
+        return out
     return out.sort_values("pead_score", ascending=False).reset_index(drop=True)
+
+
+def score_pead2_ff(
+    df: pd.DataFrame,
+    *,
+    weights: Pead2ScoreWeights | None = None,
+) -> pd.DataFrame:
+    """
+    FinanciallyFree-style PEAD score.
+
+    Default: Result Monitor formula (sales mean + cheap Fwd PE bonus).
+    When ``weights`` is passed (e.g. PEG-aware), use the legacy weighted path.
+    """
+    if df.empty:
+        return df
+    if weights is not None:
+        return score_pead2_ff_weighted(df, weights=weights)
+
+    out = df.copy()
+    sales_yoy = (
+        pd.to_numeric(out["sales_yoy"], errors="coerce")
+        if "sales_yoy" in out.columns
+        else pd.Series(np.nan, index=out.index)
+    )
+    sales_qoq = (
+        pd.to_numeric(out["sales_qoq"], errors="coerce")
+        if "sales_qoq" in out.columns
+        else pd.Series(np.nan, index=out.index)
+    )
+    forward_pe = (
+        pd.to_numeric(out["forward_pe"], errors="coerce")
+        if "forward_pe" in out.columns
+        else pd.Series(np.nan, index=out.index)
+    )
+
+    scores: list[float] = []
+    need_fallback: list[int] = []
+    for i, (sy, sq, pe) in enumerate(
+        zip(sales_yoy.tolist(), sales_qoq.tolist(), forward_pe.tolist())
+    ):
+        s = _ff_monitor_pead_score(
+            None if sy is None or (isinstance(sy, float) and pd.isna(sy)) else float(sy),
+            None if sq is None or (isinstance(sq, float) and pd.isna(sq)) else float(sq),
+            None if pe is None or (isinstance(pe, float) and pd.isna(pe)) else float(pe),
+        )
+        if s is None:
+            need_fallback.append(i)
+            scores.append(float("nan"))
+        else:
+            scores.append(float(s))
+
+    if need_fallback:
+        fallback = score_pead2_ff_weighted(out.iloc[need_fallback].copy(), sort=False)
+        fb_vals = pd.to_numeric(fallback["pead_score"], errors="coerce").to_numpy(dtype=float)
+        for j, i in enumerate(need_fallback):
+            val = float(fb_vals[j]) if j < len(fb_vals) else float("nan")
+            scores[i] = val
+
+    out["pead_score"] = scores
+    return out.sort_values("pead_score", ascending=False).reset_index(drop=True)
+
 
 
 def score_pead2_absolute(

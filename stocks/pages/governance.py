@@ -26,6 +26,7 @@ from stocks.governance.service import (
     governance_stats,
     holdings_governance_coverage,
     init_governance_db,
+    missing_boards,
     multi_board_directors,
     overlaps_for_ticker,
     save_company_board,
@@ -338,6 +339,33 @@ def _render_governance_scan(*, show_title: bool = True) -> None:
                 file_name="governance_pending.csv",
                 mime="text/csv",
                 key="gov_pending_csv",
+            )
+
+    missing_df = missing_boards(universe)
+    missing_n = len(missing_df)
+    with st.expander(f"Missing boards ({missing_n:,})", expanded=False):
+        if missing_df.empty:
+            st.caption("Every company in this universe has a saved board.")
+        else:
+            st.caption(
+                f"**{missing_n:,}** with no saved board "
+                "(includes empty NSE scans)."
+            )
+            show_n = min(len(missing_df), 500)
+            st.dataframe(
+                missing_df.head(show_n),
+                width="stretch",
+                hide_index=True,
+                height=min(420, 36 + show_n * 35),
+            )
+            if missing_n > show_n:
+                st.caption(f"Table shows first **{show_n:,}** — download CSV for full list.")
+            st.download_button(
+                f"Download missing CSV · {missing_n}",
+                data=missing_df.to_csv(index=False).encode("utf-8"),
+                file_name="governance_missing_boards.csv",
+                mime="text/csv",
+                key="gov_missing_boards_csv",
             )
 
     workers = int(

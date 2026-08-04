@@ -1,22 +1,8 @@
-"""Streamlit embed for in-app HTML dashboards.
-
-Large boards (>~350KB) cannot reliably ride Streamlit's websocket, so they are
-written to a runtime-only ``static/`` cache and loaded via ``/app/static/...``
-(requires ``server.enableStaticServing = true``). That folder is gitignored —
-it is not part of the product tree.
-"""
+"""Streamlit embed for in-app HTML dashboards."""
 
 from __future__ import annotations
 
 import html as html_mod
-import hashlib
-from pathlib import Path
-
-# Streamlit serves only app-root ./static at /app/static/ (runtime cache).
-_STATIC_DIR = Path(__file__).resolve().parents[2] / "static"
-_STATIC_URL_PREFIX = "/app/static/"
-_KEEP_PER_STEM = 1
-_STATIC_MIN_BYTES = 350_000
 
 
 def _embed_height(height: int | str) -> int:
@@ -25,44 +11,16 @@ def _embed_height(height: int | str) -> int:
     return int(height)
 
 
-def _prune_static(stem: str, *, keep: int = _KEEP_PER_STEM) -> None:
-    stale = sorted(
-        _STATIC_DIR.glob(f"{stem}-*.html"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    for old in stale[keep:]:
-        try:
-            old.unlink()
-        except OSError:
-            pass
-
-
-def _write_static_html(html_content: str, *, stem: str = "dashboard") -> str | None:
-    """Write HTML into the runtime static cache; return /app/static/... URL."""
-    try:
-        _STATIC_DIR.mkdir(parents=True, exist_ok=True)
-        digest = hashlib.sha1(html_content.encode("utf-8", errors="ignore")).hexdigest()[:10]
-        name = f"{stem}-{digest}.html"
-        path = _STATIC_DIR / name
-        if not path.is_file():
-            path.write_text(html_content, encoding="utf-8")
-        _prune_static(stem)
-        return f"{_STATIC_URL_PREFIX}{name}"
-    except OSError:
-        return None
-
-
 def embed_html_iframe(
     html_content: str,
     *,
     height: int | str = "content",
     key: str | None = None,
     allow_top_navigation: bool = False,
-    static_stem: str | None = "dashboard",
+    static_stem: str | None = None,
 ) -> None:
-    """Render HTML inline in the app (no committed assets)."""
-    _ = key  # reserved for callers
+    """Render HTML inline via ``st.iframe`` / ``components.html`` (no static/ disk cache)."""
+    _ = key, static_stem  # static_stem kept for call-site compat; unused
     h = _embed_height(height)
 
     # Prefer markdown srcdoc only for small HTML that needs top navigation.
@@ -86,14 +44,7 @@ def embed_html_iframe(
 
     from stocks.core.streamlit_compat import iframe_width_kw
 
-    use_static = static_stem and len(html_content) >= _STATIC_MIN_BYTES
-    if use_static:
-        url = _write_static_html(html_content, stem=str(static_stem))
-        if url and hasattr(st, "iframe"):
-            st.iframe(url, height=h, **iframe_width_kw())
-            return
-
-    if hasattr(st, "iframe") and len(html_content) < 1_800_000:
+    if hasattr(st, "iframe"):
         st.iframe(html_content, height=h, **iframe_width_kw())
         return
 

@@ -239,6 +239,41 @@ def save_company_board(
     return {"ticker": ticker_key, "seats": len(clean_seats), "skipped": False}
 
 
+def upsert_company_cin(
+    *,
+    ticker: str,
+    name: str,
+    cin: str,
+    market: str = "NSE",
+) -> bool:
+    """Upsert company row with CIN only (no board seats)."""
+    init_governance_db()
+    ticker_key = safe_str(ticker).upper()
+    cin_key = safe_str(cin).upper()
+    if not ticker_key or not cin_key:
+        return False
+    market = _require_market(market)
+    company_name = safe_str(name) or ticker_key
+    now = _utc_now()
+    with get_governance_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO companies (
+                ticker, market, name, cin, isin, notes,
+                sector, industry, sub_sector, updated_at
+            )
+            VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, ?)
+            ON CONFLICT(ticker) DO UPDATE SET
+                market=excluded.market,
+                name=COALESCE(NULLIF(excluded.name, ''), companies.name),
+                cin=excluded.cin,
+                updated_at=excluded.updated_at
+            """,
+            (ticker_key, market, company_name, cin_key, now),
+        )
+    return True
+
+
 def _lookup_company_classification(ticker: str, market: str = "NSE") -> dict[str, str]:
     """Best-effort sector / industry / sub_sector from listings classification."""
     try:
@@ -391,6 +426,51 @@ def seed_curated_boards(*, force: bool = False) -> int:
     if saved:
         enrich_governance_company_classification(only_missing=True)
     return saved
+
+
+def missing_boards(universe: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Companies in ``universe`` with no saved DIN board (ticker, name, market)."""
+    from stocks.listings.stocks_data import apply_market_column_filter, load_india_stocks
+
+    if universe is None or (hasattr(universe, "empty") and universe.empty):
+        stocks = load_india_stocks()
+        frames: list[pd.DataFrame] = []
+        for m in ("NSE", "NSE SME"):
+            part = apply_market_column_filter(stocks, m)
+            if part is not None and not part.empty:
+                frames.append(part)
+        if not frames:
+            return pd.DataFrame(columns=["ticker", "name", "market"])
+        universe = pd.concat(frames, ignore_index=True)
+
+    work = universe.copy()
+    work["ticker"] = work["ticker"].astype(str).str.strip().str.upper()
+    work = work.drop_duplicates(subset=["ticker"], keep="first")
+
+    have: set[str] = set()
+    existing = companies_with_boards()
+    if not existing.empty and "ticker" in existing.columns:
+        if "director_count" in existing.columns:
+            with_seats = existing[existing["director_count"].fillna(0).astype(int) > 0]
+            have = set(with_seats["ticker"].astype(str).str.upper())
+        else:
+            have = set(existing["ticker"].astype(str).str.upper())
+
+    missing = work[~work["ticker"].isin(have)].copy()
+    if missing.empty:
+        return pd.DataFrame(columns=["ticker", "name", "market"])
+
+    rows: list[dict] = []
+    for _, row in missing.iterrows():
+        t = safe_str(row.get("ticker")).upper()
+        rows.append(
+            {
+                "ticker": t,
+                "name": safe_str(row.get("name")) or t,
+                "market": safe_str(row.get("market")).upper() or "NSE",
+            }
+        )
+    return pd.DataFrame(rows).sort_values(["market", "ticker"]).reset_index(drop=True)
 
 
 def governance_stats() -> dict[str, int]:

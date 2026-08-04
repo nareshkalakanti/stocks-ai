@@ -3317,13 +3317,6 @@
           "spin_off": false
         },
         {
-          "ticker": "SILPO",
-          "market": "NSE",
-          "name": "SILPO Limited",
-          "demerger": false,
-          "spin_off": false
-        },
-        {
           "ticker": "SRAMSET",
           "market": "BSE",
           "name": "Shriram Asset Management Co. Ltd.",

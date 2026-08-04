@@ -32,10 +32,6 @@ _REQUIRED_NSE: dict[str, dict[str, str]] = {
         "industry": "Building Products - Prefab Structures",
         "sub_sector": "Building Products - Prefab Structures",
     },
-    "SILPO": {
-        "name": "SILPO Limited",
-        "sector": "",
-    },
     "SURAJEST": {
         "name": "Suraj Estate Developers Limited",
         "sector": "Real Estate",
@@ -109,6 +105,105 @@ _CLASSIFICATION_OVERRIDES: tuple[dict[str, str], ...] = (
         "industry": "IT Enabled Services",
         "sub_sector": "IT Enabled Services",
     },
+    {
+        # NSE SME power / industrial cables (Vidhut Cables).
+        "ticker": "BHADORA",
+        "market": "NSE SME",
+        "name": "Bhadora Industries Limited",
+        "sector": "Capital Goods",
+        "industry": "Cables",
+        "sub_sector": "Cables",
+    },
+    {
+        # NSE SME LT power / control / AB cables.
+        "ticker": "PRIMECAB",
+        "market": "NSE SME",
+        "name": "Prime Cable Industries Limited",
+        "sector": "Capital Goods",
+        "industry": "Cables",
+        "sub_sector": "Cables",
+    },
+    {
+        # BSE SME digital textile printing machines + consumables.
+        "ticker": "TRUECOLORS",
+        "market": "BSE",
+        "name": "True Colors Limited",
+        "sector": "Capital Goods",
+        "industry": "Industrial Machinery",
+        "sub_sector": "Industrial Machinery",
+    },
+    {
+        "ticker": "ASHIKAG",
+        "sector": "Banking & Finance",
+        "industry": "Non Banking Financial Company (NBFC)",
+        "sub_sector": "Non Banking Financial Company (NBFC)",
+    },
+    {
+        "ticker": "GRANDOAK",
+        "sector": "FMCG & Consumer Goods",
+        "industry": "Breweries & Distilleries",
+        "sub_sector": "Breweries & Distilleries",
+    },
+    {
+        "ticker": "KLBRENG-B",
+        "sector": "Engineering & Capital Goods",
+        "industry": "Industrial Products",
+        "sub_sector": "Industrial Products",
+    },
+    {
+        "ticker": "MCCHRLS-B",
+        "sector": "Hotels, Tourism & Leisure",
+        "industry": "Hotels & Resorts",
+        "sub_sector": "Hotels & Resorts",
+    },
+    {
+        "ticker": "SINGERIND",
+        "sector": "Consumer Durables",
+        "industry": "Household Appliances",
+        "sub_sector": "Household Appliances",
+    },
+    {
+        "ticker": "TAALTECH",
+        "sector": "IT & Technology",
+        "industry": "IT Consulting & Software",
+        "sub_sector": "IT Consulting & Software",
+    },
+    {
+        "ticker": "BGLOBAL",
+        "sector": "IT & Technology",
+        "industry": "IT Services",
+        "sub_sector": "IT Services",
+    },
+    {
+        "ticker": "CMICABLES",
+        "sector": "Engineering & Capital Goods",
+        "industry": "Cables",
+        "sub_sector": "Cables",
+    },
+    {
+        "ticker": "GENSOL",
+        "sector": "Power & Utilities",
+        "industry": "Renewable Energy Equipment & Services",
+        "sub_sector": "Renewable Energy Equipment & Services",
+    },
+    {
+        "ticker": "SKIL",
+        "sector": "Real Estate & Construction",
+        "industry": "Construction & Engineering",
+        "sub_sector": "Construction & Engineering",
+    },
+    {
+        "ticker": "CLCIND",
+        "sector": "Textiles & Apparel",
+        "industry": "Textile Manufacturing",
+        "sub_sector": "Textile Manufacturing",
+    },
+    {
+        "ticker": "DSKULKARNI",
+        "sector": "Real Estate & Construction",
+        "industry": "Real Estate - Development",
+        "sub_sector": "Real Estate - Development",
+    },
 )
 
 
@@ -143,12 +238,15 @@ def ticker_meta_override(ticker: str) -> dict[str, str]:
     for rule in _CLASSIFICATION_OVERRIDES:
         if safe_str(rule.get("ticker")).upper() != key:
             continue
-        if rule.get("market") or rule.get("name_contains"):
-            continue  # ambiguous without row context
+        if rule.get("name_contains"):
+            continue  # ambiguous without company-name context
         for col in ("sector", "industry", "sub_sector"):
             val = safe_str(rule.get(col))
             if val:
                 out[col] = val
+        name = safe_str(rule.get("name"))
+        if name and "name" not in out:
+            out["name"] = name
         break
     return out
 

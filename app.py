@@ -57,6 +57,8 @@ elif _prev == "Fund Watchlists" or _legacy == "Fund Watchlists":
     st.session_state[_SIDEBAR_KEY] = "Strategy"
     st.session_state[_STRATEGY_SECTION_KEY] = "Watching"
     st.session_state["watching_list"] = NEGEN_PLAYLIST_LABEL
+elif _prev == "IPO":
+    st.session_state[_SIDEBAR_KEY] = "Strategy"
 
 with st.sidebar:
     page = st.radio(

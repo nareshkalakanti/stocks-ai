@@ -210,6 +210,29 @@ def _apply_overrides_to_db(db_path: Path, *, db_kind: str) -> int:
         cur.execute(sql, (*values, *params))
         if cur.rowcount and cur.rowcount > 0:
             updated += int(cur.rowcount)
+            continue
+
+        # Missing from taxonomy CSV — insert so SME / new listings resolve.
+        if "company_name" not in cols:
+            continue
+        company = safe_str(rule.get("name")) or ticker
+        insert_cols = ["company_name", "nse_code"]
+        insert_vals: list = [company, ticker]
+        if "sector" in cols:
+            insert_cols.append("sector")
+            insert_vals.append(sector)
+        if "industry" in cols:
+            insert_cols.append("industry")
+            insert_vals.append(industry)
+        if "subsector" in cols:
+            insert_cols.append("subsector")
+            insert_vals.append(sub)
+        placeholders = ", ".join("?" for _ in insert_cols)
+        cur.execute(
+            f"INSERT INTO stocks ({', '.join(insert_cols)}) VALUES ({placeholders})",
+            insert_vals,
+        )
+        updated += 1
 
     conn.commit()
     conn.close()

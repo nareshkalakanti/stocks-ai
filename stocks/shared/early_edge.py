@@ -526,18 +526,43 @@ def hydrate_early_edge_missing(
                             need_price = False
 
             if need_web or need_sector or need_mcap or need_price:
-                merged = merge_company_profile({}, ticker, market)
-                if sanitize_website(merged.get("website")) and need_web:
-                    stats["website"] += 1
-                sector = scraped_sector or safe_str(merged.get("company_sector"))
-                industry = scraped_industry or safe_str(merged.get("company_industry"))
+                from stocks.listings.sector_display import display_sector
+                from stocks.market.website_about_batch import resolve_website
+
+                if need_web:
+                    # Clear sticky not_found by resolving with overrides + search.
+                    web, _src = resolve_website(
+                        ticker,
+                        market,
+                        verify=True,
+                        company_name=row_name_by.get(ticker),
+                        use_web_search=True,
+                    )
+                    if web:
+                        stats["website"] += 1
+                        need_web = False
+                    else:
+                        merged = merge_company_profile({}, ticker, market)
+                        if sanitize_website(merged.get("website")):
+                            stats["website"] += 1
+                            need_web = False
+
+                sector = scraped_sector or ""
+                industry = scraped_industry or ""
+                if need_sector and not (sector or industry):
+                    merged = merge_company_profile({}, ticker, market)
+                    sector = safe_str(merged.get("company_sector"))
+                    industry = safe_str(merged.get("company_industry"))
                 if need_sector and (sector or industry):
+                    mapped = display_sector(
+                        sector=sector, industry=industry, sub_sector=industry
+                    ) or sector
                     name = safe_str(row_name_by.get(ticker)) or ticker
                     if update_stock_classification(
                         ticker,
                         market=market,
                         name=name,
-                        sector=sector or None,
+                        sector=mapped or None,
                         industry=industry or None,
                         sub_sector=industry or None,
                     ):
@@ -622,11 +647,18 @@ def enrich_watching_board(
         else:
             listings = listings.drop_duplicates("ticker", keep="first")
         out = out.drop(
-            columns=[c for c in ("name", "market", "sector") if c in out.columns and c in listings.columns],
+            columns=[
+                c
+                for c in ("name", "market", "sector", "industry", "sub_sector")
+                if c in out.columns and c in listings.columns
+            ],
             errors="ignore",
         )
         out = out.merge(listings, on="ticker", how="left", suffixes=("", "_list"))
-
+        out = out.drop(
+            columns=[c for c in out.columns if c.endswith("_list")],
+            errors="ignore",
+        )
     for col in ("sector", "industry", "sub_sector", "name", "market"):
         if col not in out.columns:
             out[col] = ""
@@ -653,12 +685,20 @@ def enrich_watching_board(
     profiles = load_company_profiles_from_db(tickers)
     websites: list[str | None] = []
     abouts: list[str] = []
+    products: list[str] = []
+    end_markets: list[str] = []
+    theme_tags: list[str] = []
+    ir_urls: list[str] = []
     for _, row in out.iterrows():
         ticker = safe_str(row.get("ticker")).upper()
         prof = profiles.get(ticker) or {}
         web = sanitize_website(prof.get("website"))
         websites.append(web)
         abouts.append(safe_str(prof.get("long_description")) or "")
+        products.append(safe_str(prof.get("products")) or "")
+        end_markets.append(safe_str(prof.get("end_markets")) or "")
+        theme_tags.append(safe_str(prof.get("theme_tags")) or "")
+        ir_urls.append(sanitize_website(prof.get("ir_url")) or "")
         if not safe_str(row.get("sector")) and safe_str(prof.get("company_sector")):
             out.at[row.name, "sector"] = safe_str(prof.get("company_sector"))
         if not safe_str(row.get("industry")) and safe_str(prof.get("company_industry")):
@@ -667,6 +707,10 @@ def enrich_watching_board(
             out.at[row.name, "sub_sector"] = safe_str(prof.get("company_industry"))
     out["website"] = websites
     out["about"] = abouts
+    out["products"] = products
+    out["end_markets"] = end_markets
+    out["theme_tags"] = theme_tags
+    out["ir_url"] = ir_urls
 
     # Prefer industry as sub_sector display when sub_sector blank.
     out["sub_sector"] = out.apply(
@@ -790,52 +834,70 @@ def watching_gap_counts(view: pd.DataFrame | None) -> dict[str, int]:
     base = {"total": 0, "price": 0, "sector": 0, "sub_sector": 0, "mcap": 0, "web": 0, "any_rows": 0}
     if view is None or view.empty:
         return base
-    n = len(view)
-    missing_price = (
-        int(pd.Series(view["price"]).isna().sum()) if "price" in view.columns else n
-    )
-    missing_sector = (
-        int(view["sector"].astype(str).str.strip().eq("").sum())
-        if "sector" in view.columns
-        else n
-    )
-    missing_sub = 0
-    if "sub_sector" in view.columns or "industry" in view.columns:
-        for _, row in view.iterrows():
-            if not (
-                safe_str(row.get("sub_sector")) or safe_str(row.get("industry"))
-            ):
-                missing_sub += 1
-    else:
-        missing_sub = n
-    missing_mcap = (
-        int(view["market_cap_cr"].isna().sum()) if "market_cap_cr" in view.columns else n
-    )
-    missing_web = (
-        int(view["website"].astype(str).str.strip().eq("").sum())
-        if "website" in view.columns
-        else n
-    )
-    gap_rows = 0
-    for _, row in view.iterrows():
-        if (
-            (pd.isna(row.get("price")) if "price" in view.columns else True)
-            or not safe_str(row.get("sector"))
-            or not (safe_str(row.get("sub_sector")) or safe_str(row.get("industry")))
-            or (pd.isna(row.get("market_cap_cr")) if "market_cap_cr" in view.columns else True)
-            or not safe_str(row.get("website"))
-        ):
-            gap_rows += 1
+    gaps = watching_gap_rows(view)
+    if gaps.empty:
+        return {**base, "total": len(view)}
     return {
-        "total": n,
-        "price": missing_price,
-        "sector": missing_sector,
-        "sub_sector": missing_sub,
-        "mcap": missing_mcap,
-        "web": missing_web,
-        "any_rows": gap_rows,
+        "total": len(view),
+        "price": int(gaps["missing_price"].sum()) if "missing_price" in gaps.columns else 0,
+        "sector": int(gaps["missing_sector"].sum()) if "missing_sector" in gaps.columns else 0,
+        "sub_sector": int(gaps["missing_sub_sector"].sum())
+        if "missing_sub_sector" in gaps.columns
+        else 0,
+        "mcap": int(gaps["missing_mcap"].sum()) if "missing_mcap" in gaps.columns else 0,
+        "web": int(gaps["missing_web"].sum()) if "missing_web" in gaps.columns else 0,
+        "any_rows": len(gaps),
     }
 
+
+def watching_gap_rows(view: pd.DataFrame | None) -> pd.DataFrame:
+    """Rows with any fill-missing gap; includes boolean missing_* columns for CSV export."""
+    if view is None or view.empty:
+        return pd.DataFrame()
+    rows: list[dict] = []
+    for _, row in view.iterrows():
+        miss_price = bool(pd.isna(row.get("price"))) if "price" in view.columns else True
+        miss_sector = not safe_str(row.get("sector"))
+        miss_sub = not (safe_str(row.get("sub_sector")) or safe_str(row.get("industry")))
+        miss_mcap = (
+            bool(pd.isna(row.get("market_cap_cr")))
+            if "market_cap_cr" in view.columns
+            else True
+        )
+        miss_web = not safe_str(row.get("website"))
+        if not (miss_price or miss_sector or miss_sub or miss_mcap or miss_web):
+            continue
+        missing_fields = [
+            label
+            for flag, label in (
+                (miss_price, "price"),
+                (miss_sector, "sector"),
+                (miss_sub, "sub_sector"),
+                (miss_mcap, "mcap"),
+                (miss_web, "web"),
+            )
+            if flag
+        ]
+        rows.append(
+            {
+                "ticker": safe_str(row.get("ticker")).upper(),
+                "name": safe_str(row.get("name")) or safe_str(row.get("ticker")),
+                "market": safe_str(row.get("market")).upper() or "NSE",
+                "sector": safe_str(row.get("sector")),
+                "sub_sector": safe_str(row.get("sub_sector"))
+                or safe_str(row.get("industry")),
+                "website": safe_str(row.get("website")),
+                "price": row.get("price"),
+                "market_cap_cr": row.get("market_cap_cr"),
+                "missing": ",".join(missing_fields),
+                "missing_price": miss_price,
+                "missing_sector": miss_sector,
+                "missing_sub_sector": miss_sub,
+                "missing_mcap": miss_mcap,
+                "missing_web": miss_web,
+            }
+        )
+    return pd.DataFrame(rows)
 
 def format_watching_gaps(counts: dict[str, int]) -> str:
     if not counts.get("total"):

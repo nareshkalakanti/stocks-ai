@@ -26,6 +26,7 @@ from stocks.shared.early_edge import (
     resolve_early_edge_queries,
     seed_early_edge,
     watching_gap_counts,
+    watching_gap_rows,
     format_watching_gaps,
 )
 from stocks.shared.early_edge_html import build_early_edge_html, early_edge_iframe_height
@@ -151,33 +152,81 @@ def _render_common_tiles() -> None:
     if view.empty:
         return
 
-    gaps = watching_gap_counts(view)
-    html = build_watching_common_html(
-        view,
-        total_common=total,
-        limit=_COMMON_TILES_MAX,
-        gap_counts=gaps,
-    )
-    if not html:
-        return
-    st.markdown(html, unsafe_allow_html=True)
+    shown = len(view)
+    count_label = f"showing {shown} of {total}" if total > shown else str(shown)
+    with st.expander(f"On 2+ lists · {count_label}", expanded=False):
+        gaps = watching_gap_counts(view)
+        html = build_watching_common_html(
+            view,
+            total_common=total,
+            limit=_COMMON_TILES_MAX,
+            gap_counts=gaps,
+            include_heading=False,
+        )
+        if html:
+            st.markdown(html, unsafe_allow_html=True)
 
 
-def _board_stats_caption(view) -> None:
+def _board_stats_lines(view) -> list[str]:
     gaps = watching_gap_counts(view)
     with_sector = gaps["total"] - gaps["sector"]
     with_sub = gaps["total"] - int(gaps.get("sub_sector") or 0)
     with_mcap = gaps["total"] - gaps["mcap"]
     with_web = gaps["total"] - gaps["web"]
     with_price = gaps["total"] - gaps["price"]
-    st.caption(
+    lines = [
         f"{gaps['total']:,} stocks · price **{with_price}** · sector **{with_sector}** · "
         f"sub-sector **{with_sub}** · mcap **{with_mcap}** · web **{with_web}** · "
         f"filter Cap / SME / Sector in the board"
-    )
+    ]
     gap_txt = format_watching_gaps(gaps)
     if gap_txt:
-        st.caption(gap_txt)
+        lines.append(gap_txt)
+    return lines
+
+
+def _render_list_stats(
+    *,
+    list_caption: str,
+    view,
+    list_label: str = "",
+) -> None:
+    lines = [list_caption, *_board_stats_lines(view)]
+    gaps = watching_gap_counts(view)
+    missing = gaps.get("any_rows") or 0
+    label = "List stats"
+    if missing:
+        label = f"List stats · {missing} need fill"
+    with st.expander(label, expanded=bool(missing)):
+        for line in lines:
+            st.caption(line)
+        if missing:
+            gap_df = watching_gap_rows(view)
+            show_cols = [
+                c
+                for c in (
+                    "ticker",
+                    "name",
+                    "market",
+                    "missing",
+                    "sector",
+                    "sub_sector",
+                    "market_cap_cr",
+                    "website",
+                    "price",
+                )
+                if c in gap_df.columns
+            ]
+            st.dataframe(gap_df[show_cols], width="stretch", hide_index=True)
+            slug = safe_str(list_label).lower().replace(" ", "_") or "watching"
+            st.download_button(
+                f"Download missing CSV · {missing}",
+                data=gap_df[show_cols].to_csv(index=False).encode("utf-8"),
+                file_name=f"watching_missing_{slug}.csv",
+                mime="text/csv",
+                key=f"watching_missing_csv_{slug}",
+                help="Tickers still missing price, sector, sub-sector, mcap, and/or website.",
+            )
 
 
 def _render_watching_board(
@@ -186,11 +235,17 @@ def _render_watching_board(
     title: str,
     iframe_key: str,
     client_page_size: int | None = None,
+    list_caption: str = "",
 ) -> None:
     if view is None or view.empty:
         st.caption("No tickers in this list yet.")
         return
-    _board_stats_caption(view)
+    if list_caption:
+        _render_list_stats(list_caption=list_caption, view=view, list_label=title)
+    else:
+        with st.expander("List stats", expanded=False):
+            for line in _board_stats_lines(view):
+                st.caption(line)
     display_rows = len(view)
     if client_page_size:
         display_rows = min(display_rows, client_page_size)
@@ -368,19 +423,14 @@ def _render_holdings_actions() -> bool:
     return True
 
 
-def _render_fund_caption(list_key: str, label: str) -> None:
-    meta = FUND_WATCHLIST_DEFS.get(list_key) or {}
-    inv = ", ".join(meta.get("investor_names") or [])
-    extra = f" · {inv}" if inv else ""
-    st.caption(_LIST_CAPTIONS.get(label, f"**{label}**") + extra)
-
-
 def _render_selected_list(selected: str) -> None:
-    caption = _LIST_CAPTIONS.get(selected, f"**{selected}**")
     if selected in _LABEL_TO_FUND_KEY:
-        _render_fund_caption(_LABEL_TO_FUND_KEY[selected], selected)
+        meta = FUND_WATCHLIST_DEFS.get(_LABEL_TO_FUND_KEY[selected]) or {}
+        inv = ", ".join(meta.get("investor_names") or [])
+        extra = f" · {inv}" if inv else ""
+        list_caption = _LIST_CAPTIONS.get(selected, f"**{selected}**") + extra
     else:
-        st.caption(caption)
+        list_caption = _LIST_CAPTIONS.get(selected, f"**{selected}**")
 
     if selected == EARLY_EDGE_PLAYLIST_LABEL and not _render_early_edge_actions():
         return
@@ -400,6 +450,7 @@ def _render_selected_list(selected: str) -> None:
         title=selected,
         iframe_key=iframe_key,
         client_page_size=page_size,
+        list_caption=list_caption,
     )
 
 
@@ -413,7 +464,7 @@ def render_watching(*, show_title: bool = True) -> None:
 
     inject_scan_toolbar_css()
     with st.container(border=True):
-        row = st.columns([1.05, 1.2], vertical_alignment="bottom", gap="small")
+        row = st.columns([1.2, 1.0], vertical_alignment="bottom", gap="small")
         with row[0]:
             selected = st.selectbox(
                 "List",
@@ -431,24 +482,36 @@ def render_watching(*, show_title: bool = True) -> None:
                 width="stretch",
                 help=(
                     "Fetch missing price, mcap, website, sector, and sub-sector "
-                    "from screener + Yahoo. NSE / NSE SME: up to 100 names per run."
+                    "from screener + Yahoo for every gap in this list. "
+                    "Download the gap list from List stats."
                 ),
                 key="watching_fill",
             )
 
-    raw_selected = _raw_for_list(selected)
-    if not raw_selected.empty:
-        gap_view = _enrich_for_list(selected, raw_selected)
-        gap_line = format_watching_gaps(watching_gap_counts(gap_view))
-        if gap_line:
-            st.caption(gap_line)
-
     _render_common_tiles()
 
+    raw_selected = _raw_for_list(selected)
     if fill:
-        max_tried = _BOARD_PAGE_SIZE if selected in _PAGINATED_LISTS else None
-        if max_tried:
-            st.info(f"Fill missing runs on up to **{max_tried}** names with gaps per click.")
-        _run_fill_missing(raw_selected, list_label=selected, max_tried=max_tried)
+        if raw_selected is None or raw_selected.empty:
+            st.info("Nothing in this list.")
+        else:
+            bulk = selected in _PAGINATED_LISTS
+            preview = enrich_watching_board(
+                raw_selected,
+                list_tag=selected,
+                is_holding=(selected == HOLDINGS_PLAYLIST_LABEL),
+                is_edge=(selected == EARLY_EDGE_PLAYLIST_LABEL),
+                fetch_live_prices=not bulk,
+            )
+            gap_df = watching_gap_rows(preview)
+            if gap_df.empty:
+                st.info("Nothing missing on this list.")
+            else:
+                gap_tickers = set(gap_df["ticker"].astype(str).str.upper())
+                raw_gaps = raw_selected[
+                    raw_selected["ticker"].astype(str).str.upper().isin(gap_tickers)
+                ].copy()
+                st.info(f"Filling **{len(raw_gaps)}** names with gaps…")
+                _run_fill_missing(raw_gaps, list_label=selected, max_tried=None)
 
     _render_selected_list(selected)

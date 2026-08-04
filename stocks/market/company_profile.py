@@ -18,6 +18,11 @@ PROFILE_KEYS = (
     "company_industry",
     "headquarters",
     "employees",
+    "products",
+    "end_markets",
+    "ir_url",
+    "theme_tags",
+    "website_status",
 )
 
 # Manual website fixes when Yahoo/screener miss the corporate site.
@@ -28,7 +33,53 @@ _WEBSITE_OVERRIDES: dict[str, str] = {
     "INA": "https://www.insolationenergy.in/",
     # Screener only links Google search; Yahoo/corporate site known.
     "VAML": "https://www.vedantalimited.com/",
+    "CLEANMAX": "https://www.cleanmax.com/",
+    "ASHIKAG": "https://www.ashikagroup.com/",
+    "KLBRENG-B": "https://www.kilburnengg.com/",
+    "MCCHRLS-B": "https://www.maccharlesindia.com/",
+    "SINGERIND": "https://www.singerindia.com/",
+    "TAALTECH": "https://www.taaltech.com/",
+    "FINCABLES": "https://finolex.com/",
+    "ECLERX": "https://www.eclerx.com/",
+    "POLYPLEX": "https://www.polyplex.com/",
+    "SUBEXLTD": "https://www.subex.com/",
+    "FILATEX": "https://www.filatex.com/",
+    "BBOX": "https://www.blackbox.com/",
+    "APCOTEXIND": "https://www.apcotex.com/",
+    "FCL": "https://www.fineotex.com/",
+    "INDOBORAX": "https://www.indoborax.com/",
+    "BANSWRAS": "https://www.banswarasyntex.com/",
+    "AYMSYNTEX": "https://www.aymsyntex.com/",
+    "STYRENIX": "https://www.styrenix.com/",
+    "ABSLAMC": "https://mutualfund.adityabirlacapital.com/",
+    "NPST": "https://www.npstx.com/",
+    "HEXATRADEX": "https://www.hexatradex.com/",
+    "LAGNAM": "https://www.lagnamspintex.com/",
+    "RELCHEMQ": "https://www.relchemotex.com/",
+    "ORIENTALTL": "https://www.orientaltrimex.com/",
+    "RUDRA": "https://www.rudraglobal.com/",
+    "MAHAPEXLTD": "https://www.maharashtraapex.com/",
+    "BSE": "https://www.bseindia.com/",
+    "SRTL": "https://www.shreeramtwistex.com/",
+    "AASTHA": "https://www.aastha-spintex.com/",
+    "NIMBSPROJ": "https://www.nimbusprojectsltd.com/",
+    "GRANDOAK": "https://www.pifl.in/",
 }
+
+
+def website_override(ticker: str) -> str | None:
+    """Manual corporate website for a ticker, if configured."""
+    raw = safe_str(_WEBSITE_OVERRIDES.get(safe_str(ticker).upper()))
+    if not raw:
+        return None
+    cleaned = sanitize_website(raw)
+    # Trust explicit overrides even when host is normally filtered (e.g. BSE → bseindia.com).
+    if cleaned:
+        return cleaned
+    if raw.startswith(("http://", "https://")):
+        return raw if raw.endswith("/") else raw + "/"
+    return f"https://{raw}"
+
 
 
 def _pick_profile(data: dict) -> dict:
@@ -90,7 +141,7 @@ def _save_profile_if_needed(
 
 
 def _fetch_yfinance_profile(ticker: str, market: str | None) -> dict:
-    """Best-effort website + about + sector from Yahoo when screener omits them."""
+    """Best-effort website + about + sector/HQ from Yahoo when screener omits them."""
     symbol = to_yfinance_symbol(ticker, market)
     try:
         info = call_throttled(
@@ -108,12 +159,40 @@ def _fetch_yfinance_profile(ticker: str, market: str | None) -> dict:
     about = safe_str(info.get("longBusinessSummary")).strip()
     if about:
         out["long_description"] = about
-    sector = safe_str(info.get("sector")).strip()
+    sector = safe_str(info.get("sector") or info.get("sectorDisp")).strip()
     if sector:
         out["company_sector"] = sector
-    industry = safe_str(info.get("industry")).strip()
+    industry = safe_str(info.get("industry") or info.get("industryDisp")).strip()
     if industry:
         out["company_industry"] = industry
+    employees = info.get("fullTimeEmployees")
+    try:
+        if employees is not None and int(employees) > 0:
+            out["employees"] = int(employees)
+    except (TypeError, ValueError):
+        pass
+    hq_bits = [
+        safe_str(info.get("address1")),
+        safe_str(info.get("city")),
+        safe_str(info.get("state")),
+        safe_str(info.get("country")),
+    ]
+    hq = ", ".join(b for b in hq_bits if b)
+    if hq:
+        out["headquarters"] = hq
+    # Theme / end-market tags from Yahoo about (same tagger as website scrape).
+    if about:
+        try:
+            from stocks.market.website_about import extract_end_markets, extract_theme_tags
+
+            tags = extract_theme_tags(about, industry, sector)
+            markets = extract_end_markets(about, industry, sector)
+            if tags:
+                out["theme_tags"] = tags
+            if markets:
+                out["end_markets"] = markets
+        except Exception:
+            pass
     raw_mcap = info.get("marketCap")
     try:
         if raw_mcap is not None:

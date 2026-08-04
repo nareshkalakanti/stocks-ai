@@ -129,16 +129,51 @@ def format_market_cap_cr(value: object) -> str:
 
 
 def sanitize_website(url: str | None) -> str | None:
-    """Drop placeholder/search URLs; normalize scheme and HTML entities."""
+    """Drop placeholder/search/portal URLs; normalize scheme and HTML entities."""
+    from urllib.parse import urlparse
+
     raw = unescape(safe_str(url).strip())
     if not raw:
         return None
     site = raw if raw.startswith(("http://", "https://")) else f"https://{raw}"
     low = site.lower()
+    if "," in raw or ";" in raw or " " in raw.strip():
+        return None
     if "screener.in" in low:
         return None
     if "google." in low and "/search" in low:
         return None
     if any(x in low for x in ("facebook.com/sharer", "twitter.com/intent", "linkedin.com/share")):
+        return None
+    # Match hostname only — substring "x.com" must not reject "cleanmax.com".
+    host = urlparse(site).netloc.lower().removeprefix("www.")
+    if not host:
+        return None
+    if "economictimes." in host:
+        return None
+    # Exchange homepages are valid for the exchange companies themselves;
+    # reject deeper quote/paths that screener sometimes stores as "website".
+    if host in {"bseindia.com", "nseindia.com"}:
+        path = urlparse(site).path.rstrip("/")
+        return site if not path else None
+    junk_hosts = (
+        "finance.yahoo.com",
+        "yahoo.com",
+        "moneycontrol.com",
+        "business-standard.com",
+        "reuters.com",
+        "bloomberg.com",
+        "wikipedia.org",
+        "youtube.com",
+        "facebook.com",
+        "twitter.com",
+        "x.com",
+        "linkedin.com",
+        "instagram.com",
+        "trendlyne.com",
+        "tickertape.in",
+        "marketscreener.com",
+    )
+    if any(host == h or host.endswith("." + h) for h in junk_hosts):
         return None
     return site
