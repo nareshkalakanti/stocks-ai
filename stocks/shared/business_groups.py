@@ -172,8 +172,11 @@ def seed_default_business_groups(*, force: bool = False) -> int:
 
 
 def _needs_business_group_seed() -> bool:
+    """True when SQLite has no groups, or is thin *and* a seed file is available."""
     if business_groups_count() == 0:
         return True
+    if not _BUSINESS_GROUPS_SEED_PATH.is_file():
+        return False
     return business_group_members_count() < _MIN_SEEDED_BUSINESS_GROUP_MEMBERS
 
 

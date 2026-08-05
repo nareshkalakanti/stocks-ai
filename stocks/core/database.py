@@ -114,6 +114,12 @@ def _init_db_schema() -> None:
                 PRIMARY KEY (ticker, market)
             );
 
+            CREATE TABLE IF NOT EXISTS bse_codes (
+                ticker TEXT PRIMARY KEY,
+                bse_code TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS stock_metrics (
                 ticker TEXT PRIMARY KEY,
                 market TEXT,
@@ -878,6 +884,42 @@ def _normalize_stock_frame(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def load_bse_code_map_from_db() -> dict[str, str]:
+    """Map ticker → numeric BSE scrip code."""
+    init_db()
+    with get_connection() as conn:
+        rows = conn.execute("SELECT ticker, bse_code FROM bse_codes").fetchall()
+    out: dict[str, str] = {}
+    for r in rows:
+        t = safe_str(r["ticker"]).upper()
+        c = safe_str(r["bse_code"]).strip()
+        if c.endswith(".0"):
+            c = c[:-2]
+        if t and c.isdigit():
+            out[t] = c
+    return out
+
+
+def save_bse_code_map_to_db(code_map: dict[str, str]) -> int:
+    """Replace ``bse_codes`` table contents. Returns row count."""
+    init_db()
+    now = _utc_now()
+    rows = [
+        (safe_str(t).upper(), safe_str(c).strip(), now)
+        for t, c in code_map.items()
+        if safe_str(t) and safe_str(c).strip().isdigit()
+    ]
+    rows.sort(key=lambda r: r[0])
+    with get_connection() as conn:
+        conn.execute("DELETE FROM bse_codes")
+        if rows:
+            conn.executemany(
+                "INSERT INTO bse_codes (ticker, bse_code, updated_at) VALUES (?,?,?)",
+                rows,
+            )
+    return len(rows)
+
+
 def load_stocks_from_db() -> pd.DataFrame:
     init_db()
     with get_connection() as conn:
@@ -894,6 +936,10 @@ def load_stocks_from_db() -> pd.DataFrame:
 
 
 def save_stocks_to_db(stocks: pd.DataFrame) -> int:
+    """Replace ``stocks`` rows, keeping any previously filled classification when
+    the incoming frame has blank sector / industry / sub_sector (e.g. NSE SME
+    CSV re-sync would otherwise wipe Fill-missing results).
+    """
     init_db()
     now = _utc_now()
     frame = stocks.copy()
@@ -906,8 +952,62 @@ def save_stocks_to_db(stocks: pd.DataFrame) -> int:
     records = frame[
         ["ticker", "name", "market", "sector", "source_sector", "industry", "sub_sector"]
     ].drop_duplicates(subset=["ticker", "market"])
+
     with get_connection() as conn:
         _ensure_stocks_columns(conn)
+        prior_rows = conn.execute(
+            """
+            SELECT ticker, market, sector, source_sector, industry, sub_sector
+            FROM stocks
+            """
+        ).fetchall()
+        by_tm: dict[tuple[str, str], dict] = {}
+        by_ticker: dict[str, dict] = {}
+        for r in prior_rows:
+            d = dict(r)
+            t = safe_str(d.get("ticker")).upper()
+            m = safe_str(d.get("market")).upper()
+            if not t:
+                continue
+            by_tm[(t, m)] = d
+            # Prefer a prior row that already has sector when building ticker fallback.
+            prev = by_ticker.get(t)
+            if prev is None or (
+                not safe_str(prev.get("sector")) and safe_str(d.get("sector"))
+            ):
+                by_ticker[t] = d
+
+        insert_rows: list[tuple] = []
+        for r in records.itertuples(index=False):
+            ticker = safe_str(r.ticker).upper()
+            market = safe_str(r.market)
+            sector = safe_str(r.sector)
+            source_sector = safe_str(r.source_sector)
+            industry = safe_str(r.industry)
+            sub_sector = safe_str(r.sub_sector)
+            prior = by_tm.get((ticker, market.upper())) or by_ticker.get(ticker)
+            if prior:
+                if not sector:
+                    sector = safe_str(prior.get("sector"))
+                if not source_sector:
+                    source_sector = safe_str(prior.get("source_sector"))
+                if not industry:
+                    industry = safe_str(prior.get("industry"))
+                if not sub_sector:
+                    sub_sector = safe_str(prior.get("sub_sector")) or industry
+            insert_rows.append(
+                (
+                    ticker,
+                    safe_str(r.name) or ticker,
+                    market,
+                    sector,
+                    source_sector,
+                    industry,
+                    sub_sector,
+                    now,
+                )
+            )
+
         conn.execute("DELETE FROM stocks")
         conn.executemany(
             """
@@ -916,21 +1016,9 @@ def save_stocks_to_db(stocks: pd.DataFrame) -> int:
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            [
-                (
-                    r.ticker,
-                    r.name,
-                    r.market,
-                    r.sector,
-                    r.source_sector,
-                    r.industry,
-                    r.sub_sector,
-                    now,
-                )
-                for r in records.itertuples(index=False)
-            ],
+            insert_rows,
         )
-    return len(records)
+    return len(insert_rows)
 
 
 def load_metrics_from_db(tickers: list[str]) -> pd.DataFrame:

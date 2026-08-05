@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from pathlib import Path
 from urllib.parse import quote
 
 import pandas as pd
 
-from stocks.core.config import DATA_DIR
 from stocks.core.text_utils import safe_str
 
 TV_CHART_BASE = "https://www.tradingview.com/chart/"
-BSE_CODES_PATH = DATA_DIR / "bse_codes.csv"
 _NSE_MARKETS = frozenset({"NSE", "NSE SME", "NATIONAL STOCK EXCHANGE"})
 
 
@@ -37,22 +34,13 @@ def nse_listed_symbols() -> frozenset[str]:
 
 @lru_cache(maxsize=1)
 def bse_code_by_ticker() -> dict[str, str]:
-    """Map BSE text ticker → numeric scrip code (for screener.in)."""
-    if not BSE_CODES_PATH.is_file():
-        return {}
+    """Map BSE text ticker → numeric scrip code (for screener.in / Yahoo)."""
+    from stocks.core.database import load_bse_code_map_from_db
+
     try:
-        df = pd.read_csv(BSE_CODES_PATH, dtype=str)
+        return load_bse_code_map_from_db()
     except Exception:
         return {}
-    if df.empty or "ticker" not in df.columns or "bse_code" not in df.columns:
-        return {}
-    out: dict[str, str] = {}
-    for ticker, code in zip(df["ticker"], df["bse_code"]):
-        sym = safe_str(ticker).upper()
-        bse = _clean_bse_code(code)
-        if sym and bse.isdigit():
-            out[sym] = bse
-    return out
 
 
 @lru_cache(maxsize=1)

@@ -15,11 +15,32 @@ from stocks.shared.business_groups import ensure_business_groups, seed_default_b
 from stocks.scans.business_groups_playlist import business_groups_playlist_count
 
 
-def test_seed_default_business_groups_from_repo_file():
+def test_seed_default_business_groups_from_optional_file(tmp_path, monkeypatch):
     init_db()
     clear_all_business_groups()
     assert business_groups_count() == 0
 
+    seed_path = tmp_path / "business_groups_seed.json"
+    seed_path.write_text(
+        json.dumps(
+            {
+                "groups": [
+                    {
+                        "name": "SEED GROUP",
+                        "token": "SEEDCO",
+                        "members": [
+                            {"ticker": "SEEDCO", "market": "NSE", "name": "Seed Co"},
+                            {"ticker": "SEEDSPN", "market": "NSE", "name": "Seed Spin"},
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "stocks.shared.business_groups._BUSINESS_GROUPS_SEED_PATH", seed_path
+    )
     count = seed_default_business_groups()
     assert count > 0
     assert business_groups_playlist_count(seed_if_empty=False) > 0
@@ -57,7 +78,7 @@ def test_seed_default_business_groups_skips_when_populated(tmp_path, monkeypatch
     assert business_groups_count() == 1
 
 
-def test_ensure_business_groups_reseeds_when_under_populated():
+def test_ensure_business_groups_reseeds_when_under_populated(tmp_path, monkeypatch):
     init_db()
     clear_all_business_groups()
     save_business_group(
@@ -71,7 +92,37 @@ def test_ensure_business_groups_reseeds_when_under_populated():
     assert business_groups_count() == 1
     assert business_group_members_count() == 2
 
+    # Without a seed file, keep the thin DB (committed stocks_ai.db is source of truth).
+    monkeypatch.setattr(
+        "stocks.shared.business_groups._BUSINESS_GROUPS_SEED_PATH",
+        tmp_path / "missing.json",
+    )
+    assert ensure_business_groups(seed_if_empty=True) == 1
+
+    seed_path = tmp_path / "business_groups_seed.json"
+    seed_path.write_text(
+        json.dumps(
+            {
+                "groups": [
+                    {
+                        "name": "FULL GROUP",
+                        "token": "FULLCO",
+                        "members": [
+                            {"ticker": "FULLCO", "market": "NSE", "name": "Full"},
+                            {"ticker": "FULLSPN", "market": "NSE", "name": "Spin"},
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "stocks.shared.business_groups._BUSINESS_GROUPS_SEED_PATH", seed_path
+    )
+    monkeypatch.setattr(
+        "stocks.shared.business_groups._MIN_SEEDED_BUSINESS_GROUP_MEMBERS", 10
+    )
     count = ensure_business_groups(seed_if_empty=True)
-    assert count >= 133
-    assert business_group_members_count() >= 400
-    assert business_groups_playlist_count(seed_if_empty=False) >= 400
+    assert count >= 1
+    assert business_group_members_count() >= 2

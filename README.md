@@ -10,7 +10,7 @@ Streamlit app for Indian equity scans.
 app.py              # entry — streamlit run app.py
 requirements.txt
 .env
-data/               # SQLite, BSE codes, models, logs
+data/               # committed SQLite only
 stocks/               # application code (see stocks/README.md)
 ```
 
@@ -26,38 +26,17 @@ streamlit run app.py
 
 | Path | Purpose |
 |------|---------|
-| `stocks_ai.db` | SQLite cache (local; not in git) |
-| `governance.db` | Governance Map boards/directors (local; not in git) |
-| `seeds/governance.db` | **Bundled GovMap snapshot** — copied to `governance.db` on first run |
-| `bse_codes.csv` | BSE screener symbols |
-| `models/` | Optional model weights |
-| `logs/errors.log` | Error log |
+| `stocks_ai.db` | Listings, BSE codes, prices/mcap, profiles, holdings, shareholding, business groups, … |
+| `governance.db` | Governance Map boards / directors |
 
-**Governance Map on a fresh clone:** commit `data/seeds/governance.db` on `dev` (or `main`). On startup, `ensure_governance_db_seeded()` copies it to `data/governance.db` if that file is missing, empty, or has fewer companies than the seed (stale local DB). Your local `governance.db` stays gitignored so scans and hydrates do not dirty the repo.
-
-To refresh the seed after a big scan:
-
-```bash
-python scripts/refresh_governance.py --update-seed
-# or: cp data/governance.db data/seeds/governance.db
-git add data/seeds/governance.db
-```
-
-Fill missing CINs / MCA boards (needs ``APIFY_TOKEN`` in ``.env`` for ``--apify``):
+Everything else under `data/` is regenerable (NSE CSV caches, XBRL, logs, `*.db-wal` / `*.db-shm`) and gitignored.
 
 ```bash
 python scripts/refresh_governance.py --status
 python scripts/refresh_governance.py --cins --apify --update-seed
+python scripts/refresh_sector_classification.py
 ```
-
-Listings dataset: Hugging Face `kjhq/India-Stock-Symbols-and-Metadata` (cached in DB).
 
 ## Environment
 
-See `.env` — `HF_TOKEN`, `MIN_MARKET_CAP_CR`, `STRATEGY_MAX_WORKERS`, etc.
-
-```bash
-python scripts/refresh_sector_classification.py
-# optional: also refresh NSE listing CSVs
-python scripts/refresh_sector_classification.py --refresh-csv
-```
+See `.env` — `HF_TOKEN`, `MIN_MARKET_CAP_CR`, `STRATEGY_MAX_WORKERS`, `APIFY_TOKEN`, etc.

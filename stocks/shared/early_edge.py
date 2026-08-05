@@ -639,11 +639,19 @@ def enrich_watching_board(
         have = [c for c in listing_cols if c in stocks.columns]
         listings = stocks[have].copy()
         listings["ticker"] = listings["ticker"].astype(str).str.strip().str.upper()
-        pref = {"NSE": 0, "NSE SME": 1, "BSE": 2}
+        # Prefer the listing row that already has sector (avoid empty NSE beating filled NSE SME).
         if "market" in listings.columns:
+            pref = {"NSE": 0, "NSE SME": 1, "BSE": 2}
+            listings["_has_sector"] = (
+                listings["sector"].map(lambda s: 0 if safe_str(s) else 1)
+                if "sector" in listings.columns
+                else 1
+            )
             listings["_pref"] = listings["market"].map(lambda m: pref.get(str(m), 9))
-            listings = listings.sort_values("_pref").drop_duplicates("ticker", keep="first")
-            listings = listings.drop(columns=["_pref"], errors="ignore")
+            listings = listings.sort_values(["_has_sector", "_pref"]).drop_duplicates(
+                "ticker", keep="first"
+            )
+            listings = listings.drop(columns=["_has_sector", "_pref"], errors="ignore")
         else:
             listings = listings.drop_duplicates("ticker", keep="first")
         out = out.drop(

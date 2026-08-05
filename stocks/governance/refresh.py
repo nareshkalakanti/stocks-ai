@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
-from stocks.core.config import GOVERNANCE_DB_PATH, GOVERNANCE_SEED_DB_PATH
+from stocks.core.config import GOVERNANCE_DB_PATH
 from stocks.core.text_utils import safe_str
 from stocks.governance.db import get_governance_connection, init_governance_db
 from stocks.governance.service import (
@@ -78,7 +77,7 @@ def companies_with_cin_missing_din_board() -> pd.DataFrame:
 def refresh_missing_cins(*, fetch_screener_codes: bool = True) -> dict[str, int]:
     """
     Resolve BSE → CIN for tickers still missing a DIN board.
-    Upserts CIN onto ``companies`` (no seats). Updates ``data/bse_codes.csv``.
+    Upserts CIN onto ``companies`` (no seats). Updates ``bse_codes`` in stocks_ai.db.
     """
     init_governance_db()
     miss = missing_boards()
@@ -234,16 +233,13 @@ def refresh_boards_from_apify(
 
 
 def update_governance_seed() -> Path:
-    """Copy live ``governance.db`` → ``data/seeds/governance.db`` (bundled snapshot)."""
+    """Checkpoint + VACUUM live ``governance.db`` so it is safe to commit."""
     init_governance_db()
-    # Checkpoint WAL so the seed is a single consistent file.
     with get_governance_connection() as conn:
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    seed = GOVERNANCE_SEED_DB_PATH
-    seed.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(GOVERNANCE_DB_PATH, seed)
+        conn.execute("VACUUM")
     for suffix in ("-wal", "-shm"):
-        sidecar = Path(f"{seed}{suffix}")
+        sidecar = Path(f"{GOVERNANCE_DB_PATH}{suffix}")
         if sidecar.is_file():
             sidecar.unlink(missing_ok=True)
-    return seed
+    return GOVERNANCE_DB_PATH

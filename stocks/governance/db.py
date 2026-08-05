@@ -164,11 +164,11 @@ def _governance_company_count() -> int:
 
 def ensure_governance_db_seeded() -> bool:
     """
-    Copy ``data/seeds/governance.db`` into ``data/governance.db`` when the
-    runtime DB is missing, empty, or behind the bundled seed (stale local file).
+    Optionally copy ``data/seeds/governance.db`` into ``data/governance.db`` when
+    the runtime DB is missing, empty, or behind that seed.
 
-    The seed file is tracked in git; the runtime DB stays gitignored.
-    Local DBs with *more* companies than the seed are left alone.
+    Primary source of truth is the committed ``data/governance.db``. The seed
+    path is only used if present (tests / optional local bootstrap).
     """
     global _governance_initialized_path
     seed = GOVERNANCE_SEED_DB_PATH

@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-import csv
 import re
 import threading
 import time
-from pathlib import Path
 
 import requests
 
-from stocks.core.config import DATA_DIR, SCREENER_REQUEST_DELAY
+from stocks.core.config import SCREENER_REQUEST_DELAY
+from stocks.core.database import load_bse_code_map_from_db, save_bse_code_map_to_db
 from stocks.core.text_utils import safe_str
 
-_BSE_CODES_PATH = DATA_DIR / "bse_codes.csv"
 _CIN_RE = re.compile(r"^[LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$")
 _BSE_CODE_RE = re.compile(r"BSE:\s*(\d{5,6})", re.I)
 
@@ -43,31 +41,23 @@ def _throttle(kind: str) -> None:
             _LAST_SCREENER_AT = stamp
 
 
-def load_bse_code_map(path: Path | None = None) -> dict[str, str]:
-    csv_path = path or _BSE_CODES_PATH
-    if not csv_path.exists():
-        return {}
-    out: dict[str, str] = {}
-    with csv_path.open(newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh):
-            t = safe_str(row.get("ticker")).upper()
-            code = safe_str(row.get("bse_code")).strip()
-            if t and code.isdigit():
-                out[t] = code
-    return out
+def load_bse_code_map(path=None) -> dict[str, str]:
+    """Load ticker → BSE scrip code (from ``stocks_ai.db``). ``path`` ignored."""
+    del path  # legacy CSV path no longer used
+    return load_bse_code_map_from_db()
 
 
-def save_bse_code_map(code_map: dict[str, str], path: Path | None = None) -> None:
-    csv_path = path or _BSE_CODES_PATH
-    csv_path.parent.mkdir(parents=True, exist_ok=True)
-    rows = sorted(
-        ({"ticker": t, "bse_code": c} for t, c in code_map.items() if t and c),
-        key=lambda r: r["ticker"],
-    )
-    with csv_path.open("w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=["ticker", "bse_code"])
-        writer.writeheader()
-        writer.writerows(rows)
+def save_bse_code_map(code_map: dict[str, str], path=None) -> None:
+    """Persist BSE codes into ``stocks_ai.db``. ``path`` ignored."""
+    del path
+    save_bse_code_map_to_db(code_map)
+    try:
+        from stocks.shared.links import bse_code_by_ticker, bse_ticker_by_code
+
+        bse_code_by_ticker.cache_clear()
+        bse_ticker_by_code.cache_clear()
+    except Exception:
+        pass
 
 
 def fetch_bse_code_from_screener(ticker: str) -> str | None:

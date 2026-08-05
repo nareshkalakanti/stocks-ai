@@ -204,6 +204,12 @@ _CLASSIFICATION_OVERRIDES: tuple[dict[str, str], ...] = (
         "industry": "Real Estate - Development",
         "sub_sector": "Real Estate - Development",
     },
+    {
+        "ticker": "GENXAI",
+        "sector": "IT & Technology",
+        "industry": "IT Services & Consulting",
+        "sub_sector": "IT Services & Consulting",
+    },
 )
 
 

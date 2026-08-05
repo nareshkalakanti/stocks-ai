@@ -2,11 +2,19 @@
 venv/
 __pycache__/
 .pytest_cache/
-data/stocks_ai.db
-data/governance.db
+
+# Runtime / regenerable under data/ (committed artifacts: stocks_ai.db, governance.db)
 data/logs/
 data/models/
 data/dashboard_cache/
+data/nse_xbrl_cache/
+data/nse_equity_l.csv
+data/nse_sme_equity.csv
+data/nse_surveillance_cache.json
+data/*.db-wal
+data/*.db-shm
+data/**/*.db-wal
+data/**/*.db-shm
 .cache/
 ########################################################################
 # Python - https://github.com/github/gitignore/blob/master/Python.gitignore

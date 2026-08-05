@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refresh governance.db: resolve CINs, optionally pull MCA boards via Apify, update seed.
+"""Refresh governance.db: resolve CINs, optionally pull MCA boards via Apify.
 
 Examples::
 
@@ -9,8 +9,8 @@ Examples::
   # Pull MCA directors for companies that already have CIN but no DIN board
   python scripts/refresh_governance.py --apify
 
-  # Full refresh + copy live DB into data/seeds/governance.db
-  python scripts/refresh_governance.py --cins --apify --update-seed
+  # Checkpoint + VACUUM governance.db before committing it
+  python scripts/refresh_governance.py --update-seed
 """
 
 from __future__ import annotations
@@ -53,7 +53,7 @@ def main() -> None:
     parser.add_argument(
         "--update-seed",
         action="store_true",
-        help="Copy data/governance.db → data/seeds/governance.db",
+        help="Checkpoint + VACUUM data/governance.db (ready to commit)",
     )
     parser.add_argument(
         "--status",
@@ -95,7 +95,7 @@ def main() -> None:
 
     if args.update_seed:
         path = update_governance_seed()
-        print(f"Seed updated: {path}")
+        print(f"governance.db ready to commit: {path}")
 
     if args.cins or args.apify or args.update_seed:
         stats = governance_stats()

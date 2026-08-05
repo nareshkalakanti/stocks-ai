@@ -202,8 +202,21 @@ def merge_nse_sme_into_stocks(
     base = stocks.copy() if stocks is not None and not stocks.empty else pd.DataFrame()
     sme_tickers = set(sme["ticker"].astype(str).str.upper())
 
-    # Drop prior NSE SME rows; re-add from the live/cached Emerge list.
+    # Keep prior NSE SME classification — CSV re-sync always has blank sector.
+    prior_sme: dict[str, dict] = {}
     if not base.empty and "market" in base.columns:
+        old_sme = base[base["market"].astype(str) == NSE_SME_MARKET]
+        for _, row in old_sme.iterrows():
+            t = safe_str(row.get("ticker")).upper()
+            if not t:
+                continue
+            prior_sme[t] = {
+                "name": safe_str(row.get("name")),
+                "sector": safe_str(row.get("sector")),
+                "industry": safe_str(row.get("industry")),
+                "sub_sector": safe_str(row.get("sub_sector")),
+                "source_sector": safe_str(row.get("source_sector")),
+            }
         base = base[base["market"].astype(str) != NSE_SME_MARKET].copy()
 
     # Mainboard list can still include names that trade on Emerge — move to NSE SME.
@@ -247,6 +260,22 @@ def merge_nse_sme_into_stocks(
                 alt = safe_str(prev.get(col))
                 if col == "name":
                     if alt:
+                        sme.at[idx, col] = alt
+                elif not cur and alt:
+                    sme.at[idx, col] = alt
+
+    # Restore Fill-missing / prior SME classification wiped by empty CSV columns.
+    if prior_sme:
+        for idx, row in sme.iterrows():
+            ticker = safe_str(row.get("ticker")).upper()
+            prev = prior_sme.get(ticker)
+            if not prev:
+                continue
+            for col in ("name", "sector", "industry", "sub_sector", "source_sector"):
+                cur = safe_str(sme.at[idx, col])
+                alt = safe_str(prev.get(col))
+                if col == "name":
+                    if alt and (not cur or cur == ticker):
                         sme.at[idx, col] = alt
                 elif not cur and alt:
                     sme.at[idx, col] = alt

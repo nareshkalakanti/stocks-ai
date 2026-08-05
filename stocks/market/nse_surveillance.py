@@ -13,7 +13,16 @@ from stocks.core.config import BASE_DIR
 from stocks.core.log_service import log_error
 from stocks.core.text_utils import safe_str
 
-_SEED_PATH = BASE_DIR / "data" / "distress_seed.json"
+_DISTRESS_SEED_TICKERS = (
+    "GPTINFRA",
+    "HMT",
+    "LOKESHMACH",
+    "ATAM",
+    "MIRCELECTR",
+    "TEAMGTY",
+    "DGCONTENT",
+    "BPL",
+)
 _CACHE_PATH = BASE_DIR / "data" / "nse_surveillance_cache.json"
 _TIMEOUT_SEC = 15
 _USER_AGENT = (
@@ -36,23 +45,7 @@ _NSE_CSV_URLS = (
 
 def load_distress_seed_tickers() -> list[str]:
     """Always-on monitoring set (user-provided reverse-engineering anchors)."""
-    if not _SEED_PATH.exists():
-        return []
-    try:
-        payload = json.loads(_SEED_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return []
-    tickers = payload.get("tickers") if isinstance(payload, dict) else payload
-    if not isinstance(tickers, list):
-        return []
-    out: list[str] = []
-    seen: set[str] = set()
-    for raw in tickers:
-        t = safe_str(raw).upper()
-        if t and t not in seen:
-            seen.add(t)
-            out.append(t)
-    return out
+    return list(_DISTRESS_SEED_TICKERS)
 
 
 def _session() -> requests.Session:

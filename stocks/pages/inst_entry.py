@@ -158,7 +158,6 @@ def render_inst_entry(*, show_title: bool = True) -> None:
     if candidates is None:
         st.caption(
             "Set filters, then **Scan**. Defaults to 20–100 Cr. "
-            "Optional seed: `data/shareholding_seed.csv`. "
             "Shareholding loads from NSE filings (not screener.in)."
         )
         return
@@ -169,8 +168,7 @@ def render_inst_entry(*, show_title: bool = True) -> None:
         st.caption(
             f"No institutional-entry signals "
             f"(quant watchlist had **{n_watch:,}** names). "
-            "Shareholding comes from NSE XBRL (auto on scan) or "
-            "`data/shareholding_seed.csv` — then re-scan."
+            "Shareholding comes from NSE XBRL (auto on scan) — then re-scan."
         )
         if isinstance(watch, pd.DataFrame) and not watch.empty:
             st.markdown("##### Quant watchlist (no inst trigger yet)")
