@@ -14,6 +14,8 @@ from stocks.market.yfinance_limits import call_throttled
 PROFILE_KEYS = (
     "website",
     "long_description",
+    "yf_about",
+    "scraped_about",
     "company_sector",
     "company_industry",
     "headquarters",
@@ -159,6 +161,7 @@ def _fetch_yfinance_profile(ticker: str, market: str | None) -> dict:
     about = safe_str(info.get("longBusinessSummary")).strip()
     if about:
         out["long_description"] = about
+        out["yf_about"] = about
     sector = safe_str(info.get("sector") or info.get("sectorDisp")).strip()
     if sector:
         out["company_sector"] = sector

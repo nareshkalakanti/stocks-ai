@@ -39,6 +39,8 @@ def _profile_row(
     ir_url: str | None = None,
     theme_tags: str | None = None,
     website_status: str | None = None,
+    yf_about: str | None = None,
+    scraped_about: str | None = None,
 ) -> dict:
     base = dict(stored or {})
 
@@ -54,6 +56,26 @@ def _profile_row(
             safe_str(base.get("website_status")) or None
         )
 
+    scraped = (
+        safe_str(scraped_about).strip()
+        if scraped_about is not None
+        else (
+            safe_str(about).strip()
+            if about is not None and source == "website_about"
+            else safe_str(base.get("scraped_about")).strip()
+        )
+    ) or None
+    yf = (
+        safe_str(yf_about).strip()
+        if yf_about is not None
+        else safe_str(base.get("yf_about")).strip()
+    ) or None
+    preferred = scraped or yf or (
+        safe_str(about).strip()
+        if about is not None
+        else safe_str(base.get("long_description")).strip()
+    ) or None
+
     return {
         "ticker": ticker,
         "market": market or base.get("market"),
@@ -62,9 +84,9 @@ def _profile_row(
             if website is not None
             else sanitize_website(base.get("website"))
         ),
-        "long_description": about
-        if about is not None
-        else safe_str(base.get("long_description")) or None,
+        "long_description": preferred,
+        "yf_about": yf,
+        "scraped_about": scraped,
         "company_sector": base.get("company_sector"),
         "company_industry": base.get("company_industry"),
         "headquarters": base.get("headquarters"),
@@ -464,14 +486,45 @@ def scrape_and_save_about(
             "fill_source": "cache",
         }
 
-    existing_about = safe_str(stored.get("long_description")).strip()
-    if existing_about and safe_str(stored.get("source")) == "website_about" and not force:
+    existing_scraped = safe_str(stored.get("scraped_about")).strip()
+    existing_about = existing_scraped or safe_str(stored.get("long_description")).strip()
+    if existing_scraped and not force:
         return {
             "ticker": key,
             "market": market_key,
             "ok": True,
             "skipped": True,
-            "reason": "already_have_website_about",
+            "reason": "already_have_scraped_about",
+            "website": sanitize_website(stored.get("website")),
+            "chars": len(existing_scraped),
+            "fill_source": "cache",
+        }
+    if (
+        existing_about
+        and safe_str(stored.get("source")) == "website_about"
+        and not force
+        and not existing_scraped
+    ):
+        # Legacy row — promote long_description into scraped_about once.
+        save_company_profiles(
+            [
+                _profile_row(
+                    key,
+                    market_key,
+                    website=sanitize_website(stored.get("website")),
+                    about=existing_about,
+                    source="website_about",
+                    stored=stored,
+                    scraped_about=existing_about,
+                )
+            ]
+        )
+        return {
+            "ticker": key,
+            "market": market_key,
+            "ok": True,
+            "skipped": True,
+            "reason": "promoted_legacy_scraped_about",
             "website": sanitize_website(stored.get("website")),
             "chars": len(existing_about),
             "fill_source": "cache",
@@ -546,6 +599,7 @@ def scrape_and_save_about(
                 ir_url="",
                 theme_tags="",
                 website_status=WEBSITE_STATUS_OK,
+                scraped_about=about_text,
             )
         ]
     )

@@ -9,8 +9,7 @@ from stocks.governance.db import init_governance_db, ensure_governance_db_seeded
 from stocks.pages.sector_landscape import render_sector_landscape
 from stocks.pages.strategy import render_strategy
 from stocks.pages.superstars import render_superstars
-from stocks.pages.valuepickr import render_valuepickr
-from stocks.pages.demerger import render_demerger
+from stocks.pages.data_hub import render_data
 from stocks.shared.early_edge import ensure_early_edge_seeded
 from stocks.scans.holdings_playlist import HOLDINGS_PLAYLIST_LABEL
 from stocks.shared.fund_watchlists import NEGEN_PLAYLIST_LABEL
@@ -30,8 +29,7 @@ _SIDEBAR_PAGES = [
     "Strategy",
     "Sector Landscape",
     "SuperStars",
-    "ValuePickr",
-    "Demergers",
+    "Data",
 ]
 # v9: EarningsQ + Watching moved under Strategy (like Governance / Gmap)
 _SIDEBAR_KEY = "app_sidebar_page_v9"
@@ -57,7 +55,7 @@ elif _prev == "Fund Watchlists" or _legacy == "Fund Watchlists":
     st.session_state[_SIDEBAR_KEY] = "Strategy"
     st.session_state[_STRATEGY_SECTION_KEY] = "Watching"
     st.session_state["watching_list"] = NEGEN_PLAYLIST_LABEL
-elif _prev == "IPO":
+elif _prev in {"IPO", "ValuePickr", "Demergers"}:
     st.session_state[_SIDEBAR_KEY] = "Strategy"
 
 with st.sidebar:
@@ -74,7 +72,5 @@ elif page == "Sector Landscape":
     render_sector_landscape()
 elif page == "SuperStars":
     render_superstars()
-elif page == "ValuePickr":
-    render_valuepickr()
-elif page == "Demergers":
-    render_demerger()
+elif page == "Data":
+    render_data()

@@ -2,7 +2,7 @@
 
 Streamlit app for Indian equity scans.
 
-**Sidebar:** Strategy · Sector Landscape · SuperStars · ValuePickr · Demergers
+**Sidebar:** Strategy · Sector Landscape · SuperStars · Data
 
 ## Repo layout
 

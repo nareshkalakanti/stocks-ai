@@ -557,7 +557,15 @@ def _init_db_schema() -> None:
 
 def _ensure_company_profile_cache_columns(conn) -> None:
     cols = {row[1] for row in conn.execute("PRAGMA table_info(company_profile_cache)")}
-    for col in ("products", "end_markets", "ir_url", "theme_tags", "website_status"):
+    for col in (
+        "products",
+        "end_markets",
+        "ir_url",
+        "theme_tags",
+        "website_status",
+        "yf_about",
+        "scraped_about",
+    ):
         if col not in cols:
             conn.execute(f"ALTER TABLE company_profile_cache ADD COLUMN {col} TEXT")
 
@@ -2157,7 +2165,8 @@ def load_company_profile_cache(
             f"""
             SELECT ticker, market, website, long_description, company_sector,
                    company_industry, headquarters, employees, source, fetched_at,
-                   products, end_markets, ir_url, theme_tags, website_status
+                   products, end_markets, ir_url, theme_tags, website_status,
+                   yf_about, scraped_about
             FROM company_profile_cache
             WHERE ticker IN ({placeholders})
             """,
@@ -2185,6 +2194,8 @@ def load_company_profile_cache(
             "ir_url": row["ir_url"] if "ir_url" in keys_avail else None,
             "theme_tags": row["theme_tags"] if "theme_tags" in keys_avail else None,
             "website_status": row["website_status"] if "website_status" in keys_avail else None,
+            "yf_about": row["yf_about"] if "yf_about" in keys_avail else None,
+            "scraped_about": row["scraped_about"] if "scraped_about" in keys_avail else None,
         }
     return out
 
@@ -2418,35 +2429,48 @@ def save_company_profile_cache(rows: list[dict]) -> None:
                 ticker = str(row.get("ticker", "")).strip().upper()
                 if not ticker:
                     continue
+                yf_about = safe_str(row.get("yf_about")).strip() or None
+                scraped_about = safe_str(row.get("scraped_about")).strip() or None
+                legacy = safe_str(row.get("long_description")).strip() or None
+                # Preferred display about: scraped > yahoo > legacy payload
+                long_desc = scraped_about or yf_about or legacy
                 conn.execute(
                     """
                     INSERT INTO company_profile_cache (
                         ticker, market, website, long_description, company_sector,
                         company_industry, headquarters, employees, source, fetched_at,
-                        products, end_markets, ir_url, theme_tags, website_status
+                        products, end_markets, ir_url, theme_tags, website_status,
+                        yf_about, scraped_about
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(ticker) DO UPDATE SET
-                        market=excluded.market,
-                        website=excluded.website,
-                        long_description=excluded.long_description,
-                        company_sector=excluded.company_sector,
-                        company_industry=excluded.company_industry,
-                        headquarters=excluded.headquarters,
-                        employees=excluded.employees,
-                        source=excluded.source,
+                        market=COALESCE(NULLIF(excluded.market, ''), company_profile_cache.market),
+                        website=COALESCE(NULLIF(excluded.website, ''), company_profile_cache.website),
+                        long_description=COALESCE(
+                            NULLIF(excluded.scraped_about, ''),
+                            NULLIF(excluded.yf_about, ''),
+                            NULLIF(excluded.long_description, ''),
+                            company_profile_cache.long_description
+                        ),
+                        company_sector=COALESCE(NULLIF(excluded.company_sector, ''), company_profile_cache.company_sector),
+                        company_industry=COALESCE(NULLIF(excluded.company_industry, ''), company_profile_cache.company_industry),
+                        headquarters=COALESCE(NULLIF(excluded.headquarters, ''), company_profile_cache.headquarters),
+                        employees=COALESCE(excluded.employees, company_profile_cache.employees),
+                        source=COALESCE(NULLIF(excluded.source, ''), company_profile_cache.source),
                         fetched_at=excluded.fetched_at,
-                        products=excluded.products,
-                        end_markets=excluded.end_markets,
-                        ir_url=excluded.ir_url,
-                        theme_tags=excluded.theme_tags,
-                        website_status=excluded.website_status
+                        products=COALESCE(NULLIF(excluded.products, ''), company_profile_cache.products),
+                        end_markets=COALESCE(NULLIF(excluded.end_markets, ''), company_profile_cache.end_markets),
+                        ir_url=COALESCE(NULLIF(excluded.ir_url, ''), company_profile_cache.ir_url),
+                        theme_tags=COALESCE(NULLIF(excluded.theme_tags, ''), company_profile_cache.theme_tags),
+                        website_status=COALESCE(NULLIF(excluded.website_status, ''), company_profile_cache.website_status),
+                        yf_about=COALESCE(NULLIF(excluded.yf_about, ''), company_profile_cache.yf_about),
+                        scraped_about=COALESCE(NULLIF(excluded.scraped_about, ''), company_profile_cache.scraped_about)
                     """,
                     (
                         ticker,
                         row.get("market"),
                         row.get("website"),
-                        row.get("long_description"),
+                        long_desc,
                         row.get("company_sector"),
                         row.get("company_industry"),
                         row.get("headquarters"),
@@ -2458,6 +2482,8 @@ def save_company_profile_cache(rows: list[dict]) -> None:
                         row.get("ir_url"),
                         row.get("theme_tags"),
                         row.get("website_status"),
+                        yf_about,
+                        scraped_about,
                     ),
                 )
 
