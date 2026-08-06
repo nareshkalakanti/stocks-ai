@@ -30,6 +30,7 @@ from stocks.core.config import (
     WEB_ABOUT_TIMEOUT,
 )
 from stocks.core.text_utils import safe_str, sanitize_website
+from stocks.market.investment_themes import extract_theme_tags
 
 _USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -75,35 +76,6 @@ _IR_HREF_RE = re.compile(
 _IR_ANCHOR_RE = re.compile(
     r"\b(investor\s+relations?|shareholders?|annual\s+report|financial\s+results?)\b",
     re.I,
-)
-
-# Investment theme tags inferred from site copy (pipe-stored in DB).
-_THEME_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
-    (tag, re.compile(pat, re.I))
-    for tag, pat in (
-        ("copper", r"\bcopper\b"),
-        ("aluminium", r"\balumin(?:ium|um)\b"),
-        ("cobalt", r"\bcobalt\b"),
-        ("nickel", r"\bnickel\b"),
-        ("zinc", r"\bzinc\b"),
-        ("steel", r"\bsteel\b"),
-        ("cdmo", r"\bcdmo\b|contract\s+development\s+and\s+manufactur"),
-        ("api", r"\bactive\s+pharmaceutical\b|\bapis?\b"),
-        ("formulation", r"\bformulation\b"),
-        ("pharma", r"\bpharma(?:ceutical)?\b"),
-        ("biotech", r"\bbiotech(?:nology)?\b"),
-        ("defence", r"\bdefen[cs]e\b|\baerospace\b"),
-        ("ev", r"\belectric\s+vehicle|\bev\b|\bbattery\b"),
-        ("renewable", r"\brenewable\b|\bsolar\b|\bwind\s+power\b"),
-        ("semiconductor", r"\bsemiconductor\b|\bwafers?\b"),
-        ("specialty_chem", r"\bspecialt[y]?\s+chem"),
-        ("packaging", r"\bpackaging\b|\bfoil\b"),
-        ("auto", r"\bautomotive\b|\boe\s*ms?\b|\bauto\s+component"),
-        ("railways", r"\brailways?\b|\bvande\s+bharat\b"),
-        ("infra", r"\binfrastructure\b|\bconstruction\b"),
-        ("fmcg", r"\bfmcg\b|\bconsumer\s+(?:goods|durables)\b"),
-        ("it_services", r"\bit\s+services\b|\bsoftware\s+services\b|\bdigital\s+transformation\b"),
-    )
 )
 
 _END_MARKET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
@@ -572,17 +544,6 @@ def extract_end_markets(*texts: str) -> str:
     if len(text) > WEB_ABOUT_MARKETS_MAX_CHARS:
         text = text[:WEB_ABOUT_MARKETS_MAX_CHARS].rsplit(",", 1)[0].strip()
     return text
-
-
-def extract_theme_tags(*texts: str) -> str:
-    blob = " ".join(safe_str(t) for t in texts if t)
-    if not blob:
-        return ""
-    tags: list[str] = []
-    for tag, pat in _THEME_PATTERNS:
-        if pat.search(blob):
-            tags.append(tag)
-    return "|".join(tags)
 
 
 def pick_ir_url(home_url: str, html: str) -> str:

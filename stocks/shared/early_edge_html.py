@@ -10,6 +10,7 @@ import pandas as pd
 from stocks.core.json_utils import json_dumps, json_safe_scalar
 from stocks.core.text_utils import safe_str
 from stocks.dashboards.report_html import _REPORT_CSS
+from stocks.market.investment_themes import SEARCH_SYNONYMS, theme_groups_for_ui
 
 _EDGE_CSS = """
 <style>
@@ -153,6 +154,22 @@ _EDGE_CSS = """
   .ee-about mark {
     background: #fef08a; color: #854d0e; padding: 0 2px; border-radius: 2px;
   }
+  .ee-theme-group { margin: 0 0 12px; }
+  .ee-theme-group .ee-filter-label { display: block; margin-bottom: 6px; text-align: center; }
+  .ee-theme-chips {
+    display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
+    max-width: 920px; margin: 0 auto;
+  }
+  .ee-theme-chip.active {
+    background: #fef3c7; border-color: #f59e0b; color: #92400e;
+  }
+  .ee-theme-tags {
+    display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 8px;
+  }
+  .ee-theme-tag {
+    display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 7px;
+    border-radius: 999px; background: #fef3c7; color: #92400e; text-transform: capitalize;
+  }
 </style>
 """
 
@@ -215,6 +232,11 @@ def build_early_edge_html(
     )
     data_json = json_dumps(payload, separators=(",", ":"))
     sectors_json = json.dumps(sectors, separators=(",", ":"))
+    theme_groups_json = json.dumps(theme_groups_for_ui(), separators=(",", ":"))
+    synonyms_json = json.dumps(
+        {k: list(v) for k, v in SEARCH_SYNONYMS.items()},
+        separators=(",", ":"),
+    )
     title_esc = html.escape(title)
 
     body = f"""
@@ -230,7 +252,12 @@ def build_early_edge_html(
         autocomplete="off" spellcheck="false" />
     </div>
     <div class="ee-search-hint">
-      <code>+</code> AND &nbsp;·&nbsp; <code>|</code> OR &nbsp;·&nbsp; e.g. copper | aluminium | cobalt
+      <code>+</code> AND &nbsp;·&nbsp; <code>|</code> OR &nbsp;·&nbsp;
+      e.g. <code>acsr | copper | transformer oil</code> &nbsp;·&nbsp; theme chips filter by About tags (type to narrow further)
+    </div>
+    <div class="ee-theme-group" id="ee-theme-group" aria-label="Investment theme filters">
+      <span class="ee-filter-label">Themes</span>
+      <div class="ee-theme-chips" id="ee-theme-chips"></div>
     </div>
     <div class="ee-count" id="ee-count"></div>
   </div>
@@ -272,6 +299,7 @@ def build_early_edge_html(
 (function() {{
   const DATA = {data_json};
   const SECTORS = {sectors_json};
+  const THEME_GROUPS = {theme_groups_json};
   const PAGE_SIZE = {page_size};
   const COLS = [
     {{ id: "company", label: "Company", sort: "name" }},
@@ -292,12 +320,9 @@ def build_early_edge_html(
   let expanded = null;
   let collapsedManual = new Set(); // tickers user closed while search auto-opens About
   let pageIndex = 0;
+  let activeThemeGroup = "";
 
-  // Common about-text spelling variants (Yahoo often uses US spelling).
-  const TERM_SYNONYMS = {{
-    aluminium: ["aluminium", "aluminum"],
-    aluminum: ["aluminium", "aluminum"],
-  }};
+  const TERM_SYNONYMS = {synonyms_json};
 
   function resetPage() {{
     pageIndex = 0;
@@ -334,9 +359,22 @@ def build_early_edge_html(
     return searchTerms.join(join);
   }}
   function rowHay(r) {{
+    const tags = String(r.theme_tags || "").replace(/\\|/g, " ").replace(/_/g, " ");
     return [r.ticker, r.name, r.sector, r.sub_sector, r.industry, r.market, r.matched_from,
-            r.about]
+            r.about, r.products, r.end_markets, tags, r.theme_tags]
       .map(v => String(v || "").toLowerCase()).join(" ");
+  }}
+  function parseThemeTags(raw) {{
+    return new Set(
+      String(raw || "").split("|").map(t => t.trim().toLowerCase()).filter(Boolean)
+    );
+  }}
+  function themeGroupOk(r) {{
+    if (!activeThemeGroup) return true;
+    const group = THEME_GROUPS.find(g => g.id === activeThemeGroup);
+    if (!group || !group.tags || !group.tags.length) return true;
+    const have = parseThemeTags(r.theme_tags);
+    return group.tags.some(t => have.has(String(t).toLowerCase()));
   }}
 
   const sectorEl = document.getElementById("ee-sector");
@@ -474,8 +512,20 @@ def build_early_edge_html(
     const labelHit = hit
       ? `<span class="ee-about-hit">matched “${{esc(searchLabel())}}”</span>`
       : "";
+    const tagList = String(r.theme_tags || "").split("|").map(t => t.trim()).filter(Boolean);
+    const tagHtml = tagList.length
+      ? `<div class="ee-theme-tags">${{tagList.map(t =>
+          `<span class="ee-theme-tag">${{esc(t.replace(/_/g, " "))}}</span>`).join("")}}</div>`
+      : "";
+    const products = String(r.products || "").trim();
+    const markets = String(r.end_markets || "").trim();
+    const metaBits = [];
+    if (products) metaBits.push(`<div class="ee-about-meta"><b>Products</b>${{esc(products)}}</div>`);
+    if (markets) metaBits.push(`<div class="ee-about-meta"><b>End markets</b>${{esc(markets)}}</div>`);
     if (!about) {{
       return (
+        tagHtml +
+        metaBits.join("") +
         `<div class="ee-about-label">About${{labelHit}}</div>` +
         `<div class="ee-about ee-muted">No about text yet.</div>`
       );
@@ -483,6 +533,8 @@ def build_early_edge_html(
     const long = about.length > 280 && !hit;
     const id = "ee-about-" + esc(r.ticker);
     return (
+      tagHtml +
+      metaBits.join("") +
       `<div class="ee-about-label">About${{labelHit}}</div>` +
       `<div class="ee-about${{long ? " collapsed" : ""}}" id="${{id}}">${{highlightAbout(about)}}</div>` +
       (long
@@ -523,6 +575,49 @@ def build_early_edge_html(
       btn.classList.toggle("active", active);
     }});
   }}
+  function syncThemeButtons() {{
+    document.querySelectorAll("#ee-theme-chips .ee-theme-chip").forEach(btn => {{
+      const gid = String(btn.getAttribute("data-theme-group") || "");
+      btn.classList.toggle("active", gid === activeThemeGroup);
+    }});
+  }}
+  function initThemeChips() {{
+    const host = document.getElementById("ee-theme-chips");
+    if (!host || !THEME_GROUPS.length) return;
+    THEME_GROUPS.forEach(g => {{
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ee-chip ee-theme-chip";
+      btn.setAttribute("data-theme-group", g.id);
+      btn.title = g.search_hint ? `Search: ${{g.search_hint}}` : g.label;
+      btn.textContent = g.label;
+      btn.onclick = () => {{
+        const searchEl = document.getElementById("ee-search");
+        if (activeThemeGroup === g.id) {{
+          activeThemeGroup = "";
+          if (searchEl) {{
+            searchEl.placeholder = "Search companies";
+          }}
+        }} else {{
+          activeThemeGroup = g.id;
+          // Theme chip filters by tag group only — do not stack the hint as a text search.
+          if (searchEl) {{
+            searchEl.value = "";
+            searchEl.placeholder = g.search_hint
+              ? `Theme: ${{g.search_hint}} — type to narrow`
+              : "Search companies";
+          }}
+          searchQuery = "";
+          searchTerms = [];
+          searchMode = "and";
+          collapsedManual.clear();
+        }}
+        resetPage();
+        render();
+      }};
+      host.appendChild(btn);
+    }});
+  }}
   function renderHead() {{
     const th = document.getElementById("ee-head");
     if (!th) return;
@@ -548,7 +643,8 @@ def build_early_edge_html(
     renderHead();
     syncCapButtons();
     syncSmeButtons();
-    let rows = DATA.filter(r => capOk(r) && smeOk(r) && sectorOk(r) && searchOk(r));
+    syncThemeButtons();
+    let rows = DATA.filter(r => capOk(r) && smeOk(r) && sectorOk(r) && themeGroupOk(r) && searchOk(r));
     rows = rows.slice().sort(compare);
     const totalFiltered = rows.length;
     let pageRows = rows;
@@ -576,6 +672,10 @@ def build_early_edge_html(
       if (capFilters.size) bits.push([...capFilters].join("+"));
       if (smeOnly) bits.push("SME");
       if (sectorFilter) bits.push(sectorFilter);
+      if (activeThemeGroup) {{
+        const g = THEME_GROUPS.find(x => x.id === activeThemeGroup);
+        bits.push(g ? g.label : activeThemeGroup);
+      }}
       if (searchQuery) {{
         const aboutHits = rows.filter(aboutMatch).length;
         bits.push(aboutHits ? `search (${{aboutHits}} in about)` : "search");
@@ -646,6 +746,7 @@ def build_early_edge_html(
     const parsed = parseSearch(searchQuery);
     searchMode = parsed.mode;
     searchTerms = parsed.terms;
+    activeThemeGroup = "";
     collapsedManual.clear();
     resetPage();
     render();
@@ -696,6 +797,7 @@ def build_early_edge_html(
       render();
     }};
   }}
+  initThemeChips();
   render();
 }})();
 </script>

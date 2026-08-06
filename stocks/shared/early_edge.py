@@ -689,6 +689,8 @@ def enrich_watching_board(
             if not safe_str(row.get("sub_sector")) and subsector:
                 out.at[idx, "sub_sector"] = subsector
 
+    from stocks.market.investment_themes import merge_theme_tags
+
     tickers = out["ticker"].tolist()
     profiles = load_company_profiles_from_db(tickers)
     websites: list[str | None] = []
@@ -702,10 +704,18 @@ def enrich_watching_board(
         prof = profiles.get(ticker) or {}
         web = sanitize_website(prof.get("website"))
         websites.append(web)
-        abouts.append(safe_str(prof.get("long_description")) or "")
-        products.append(safe_str(prof.get("products")) or "")
-        end_markets.append(safe_str(prof.get("end_markets")) or "")
-        theme_tags.append(safe_str(prof.get("theme_tags")) or "")
+        about = (
+            safe_str(prof.get("scraped_about"))
+            or safe_str(prof.get("yf_about"))
+            or safe_str(prof.get("long_description"))
+            or ""
+        )
+        prod = safe_str(prof.get("products")) or ""
+        markets = safe_str(prof.get("end_markets")) or ""
+        abouts.append(about)
+        products.append(prod)
+        end_markets.append(markets)
+        theme_tags.append(merge_theme_tags(prof.get("theme_tags"), about, prod, markets))
         ir_urls.append(sanitize_website(prof.get("ir_url")) or "")
         if not safe_str(row.get("sector")) and safe_str(prof.get("company_sector")):
             out.at[row.name, "sector"] = safe_str(prof.get("company_sector"))
