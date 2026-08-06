@@ -120,6 +120,16 @@ def _init_db_schema() -> None:
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS stock_classifications (
+                ticker TEXT NOT NULL,
+                market TEXT NOT NULL DEFAULT 'NSE',
+                sector TEXT,
+                industry TEXT,
+                sub_sector TEXT,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (ticker, market)
+            );
+
             CREATE TABLE IF NOT EXISTS stock_metrics (
                 ticker TEXT PRIMARY KEY,
                 market TEXT,
@@ -390,6 +400,42 @@ def _init_db_schema() -> None:
                 ON superstar_holdings(symbol);
             CREATE INDEX IF NOT EXISTS idx_superstar_holdings_fetched
                 ON superstar_holdings(fetched_at);
+
+            CREATE TABLE IF NOT EXISTS factor_scores (
+                run_id TEXT NOT NULL,
+                ticker TEXT NOT NULL,
+                market TEXT,
+                name TEXT,
+                sector TEXT,
+                asof_date TEXT,
+                price REAL,
+                composite REAL,
+                mom_21 REAL,
+                value_proxy REAL,
+                vol_factor REAL,
+                sector_rel_mom REAL,
+                mom_21_z REAL,
+                value_proxy_z REAL,
+                vol_factor_z REAL,
+                sector_rel_mom_z REAL,
+                factor_rank INTEGER,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (run_id, ticker)
+            );
+
+            CREATE TABLE IF NOT EXISTS factor_validation (
+                run_id TEXT PRIMARY KEY,
+                train_mean_ic REAL,
+                train_icir REAL,
+                test_mean_ic REAL,
+                test_icir REAL,
+                random_baseline_ic REAL,
+                n_train_periods INTEGER,
+                n_test_periods INTEGER,
+                n_tickers INTEGER,
+                forward_days INTEGER,
+                created_at TEXT NOT NULL
+            );
 
             CREATE TABLE IF NOT EXISTS strategy_tq_signals (
                 ticker TEXT PRIMARY KEY,
@@ -932,15 +978,54 @@ def load_stocks_from_db() -> pd.DataFrame:
     init_db()
     with get_connection() as conn:
         _ensure_stocks_columns(conn)
+        _ensure_stock_classifications_table(conn)
         rows = conn.execute(
             """
             SELECT ticker, name, market, sector, source_sector, industry, sub_sector
             FROM stocks ORDER BY ticker
             """
         ).fetchall()
+        class_rows = conn.execute(
+            """
+            SELECT ticker, market, sector, industry, sub_sector
+            FROM stock_classifications
+            """
+        ).fetchall()
     if not rows:
         return pd.DataFrame()
-    return _normalize_stock_frame(pd.DataFrame([dict(r) for r in rows]))
+    out = _normalize_stock_frame(pd.DataFrame([dict(r) for r in rows]))
+    if not class_rows:
+        return out
+    # Durable fills survive listing DELETE+reinsert.
+    by_tm = {
+        (safe_str(r["ticker"]).upper(), safe_str(r["market"]).upper()): dict(r)
+        for r in class_rows
+        if safe_str(r["ticker"])
+    }
+    by_t = {}
+    for (t, _m), d in by_tm.items():
+        prev = by_t.get(t)
+        if prev is None or (
+            not safe_str(prev.get("sector")) and safe_str(d.get("sector"))
+        ):
+            by_t[t] = d
+    for idx, row in out.iterrows():
+        t = safe_str(row.get("ticker")).upper()
+        m = safe_str(row.get("market")).upper()
+        patch = by_tm.get((t, m)) or by_t.get(t)
+        if not patch:
+            continue
+        if not safe_str(row.get("sector")) and safe_str(patch.get("sector")):
+            out.at[idx, "sector"] = safe_str(patch.get("sector"))
+        if not safe_str(row.get("industry")) and safe_str(patch.get("industry")):
+            out.at[idx, "industry"] = safe_str(patch.get("industry"))
+        if not safe_str(row.get("sub_sector")) and (
+            safe_str(patch.get("sub_sector")) or safe_str(patch.get("industry"))
+        ):
+            out.at[idx, "sub_sector"] = safe_str(patch.get("sub_sector")) or safe_str(
+                patch.get("industry")
+            )
+    return out
 
 
 def save_stocks_to_db(stocks: pd.DataFrame) -> int:
@@ -963,27 +1048,42 @@ def save_stocks_to_db(stocks: pd.DataFrame) -> int:
 
     with get_connection() as conn:
         _ensure_stocks_columns(conn)
+        _ensure_stock_classifications_table(conn)
         prior_rows = conn.execute(
             """
             SELECT ticker, market, sector, source_sector, industry, sub_sector
             FROM stocks
             """
         ).fetchall()
+        class_rows = conn.execute(
+            """
+            SELECT ticker, market, sector, industry, sub_sector
+            FROM stock_classifications
+            """
+        ).fetchall()
         by_tm: dict[tuple[str, str], dict] = {}
         by_ticker: dict[str, dict] = {}
-        for r in prior_rows:
+        for r in list(prior_rows) + list(class_rows):
             d = dict(r)
             t = safe_str(d.get("ticker")).upper()
             m = safe_str(d.get("market")).upper()
             if not t:
                 continue
-            by_tm[(t, m)] = d
-            # Prefer a prior row that already has sector when building ticker fallback.
-            prev = by_ticker.get(t)
+            # Prefer filled sector when merging stocks + durable classifications.
+            prev = by_tm.get((t, m))
             if prev is None or (
                 not safe_str(prev.get("sector")) and safe_str(d.get("sector"))
             ):
-                by_ticker[t] = d
+                merged = dict(prev or {})
+                merged.update({k: v for k, v in d.items() if safe_str(v)})
+                by_tm[(t, m)] = merged
+            prev_t = by_ticker.get(t)
+            if prev_t is None or (
+                not safe_str(prev_t.get("sector")) and safe_str(d.get("sector"))
+            ):
+                merged_t = dict(prev_t or {})
+                merged_t.update({k: v for k, v in d.items() if safe_str(v)})
+                by_ticker[t] = merged_t
 
         insert_rows: list[tuple] = []
         for r in records.itertuples(index=False):
@@ -1211,6 +1311,22 @@ def save_market_cap_to_db(
         )
 
 
+def _ensure_stock_classifications_table(conn) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS stock_classifications (
+            ticker TEXT NOT NULL,
+            market TEXT NOT NULL DEFAULT 'NSE',
+            sector TEXT,
+            industry TEXT,
+            sub_sector TEXT,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (ticker, market)
+        )
+        """
+    )
+
+
 def update_stock_classification(
     ticker: str,
     *,
@@ -1220,7 +1336,7 @@ def update_stock_classification(
     industry: str | None = None,
     sub_sector: str | None = None,
 ) -> bool:
-    """Upsert sector / industry / sub_sector on ``stocks`` (insert stub row if missing)."""
+    """Upsert sector / industry / sub_sector on ``stocks`` + durable classifications."""
     init_db()
     key = safe_str(ticker).upper()
     if not key:
@@ -1235,6 +1351,21 @@ def update_stock_classification(
     mkt = safe_str(market).upper() or "NSE"
     with get_connection() as conn:
         _ensure_stocks_columns(conn)
+        _ensure_stock_classifications_table(conn)
+        # Durable copy — survives listing DELETE FROM stocks.
+        conn.execute(
+            """
+            INSERT INTO stock_classifications (
+                ticker, market, sector, industry, sub_sector, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(ticker, market) DO UPDATE SET
+                sector=COALESCE(NULLIF(excluded.sector, ''), stock_classifications.sector),
+                industry=COALESCE(NULLIF(excluded.industry, ''), stock_classifications.industry),
+                sub_sector=COALESCE(NULLIF(excluded.sub_sector, ''), stock_classifications.sub_sector),
+                updated_at=excluded.updated_at
+            """,
+            (key, mkt, sector_v or "", industry_v or "", sub_v or "", now),
+        )
         cur = conn.execute(
             """
             UPDATE stocks

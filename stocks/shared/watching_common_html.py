@@ -1,4 +1,4 @@
-"""Compact common-stock tiles for Watching (EarningsQ pick-card style, smaller)."""
+"""Compact common-stock tiles for Watching / SuperStars (EarningsQ pick-card style)."""
 
 from __future__ import annotations
 
@@ -134,13 +134,14 @@ def _cap_badge(code: str, label: str = "") -> str:
     return f'<span class="cap-badge cap-{c.lower()}" title="{tip}">{html.escape(c)}</span>'
 
 
-def _list_chips(on_lists: str) -> str:
+def _list_chips(on_lists: str, *, chip_short: dict[str, str] | None = None) -> str:
+    short_map = chip_short if chip_short is not None else _LIST_CHIP_SHORT
     bits: list[str] = []
     for raw in (on_lists or "").split("|"):
         label = safe_str(raw)
         if not label:
             continue
-        short = _LIST_CHIP_SHORT.get(label, label)
+        short = short_map.get(label, label)
         bits.append(
             f'<span class="wc-chip wc-chip-list" title="{html.escape(label)}">'
             f"{html.escape(short)}</span>"
@@ -179,7 +180,7 @@ def _links_html(row: pd.Series) -> str:
     return "".join(bits)
 
 
-def _pick_card(row: pd.Series) -> str:
+def _pick_card(row: pd.Series, *, chip_short: dict[str, str] | None = None) -> str:
     ticker = html.escape(safe_str(row.get("ticker")).upper() or "—")
     name = html.escape(safe_str(row.get("name")) or ticker)
     sector = safe_str(row.get("sector"))
@@ -195,7 +196,7 @@ def _pick_card(row: pd.Series) -> str:
             f'<span class="wc-chip wc-chip-sector" title="{html.escape(sector)}">'
             f"{html.escape(sector)}</span>"
         )
-    meta.append(_list_chips(safe_str(row.get("on_lists"))))
+    meta.append(_list_chips(safe_str(row.get("on_lists")), chip_short=chip_short))
     links = _links_html(row)
     return (
         f'<div class="wc-pick">'
@@ -232,7 +233,10 @@ def build_watching_common_html(
     limit: int = 12,
     gap_counts: dict[str, int] | None = None,
     include_heading: bool = True,
+    heading: str = "On 2+ lists",
+    chip_short: dict[str, str] | None = None,
 ) -> str:
+    del limit  # caller already slices the frame
     work = df if df is not None else pd.DataFrame()
     if work.empty:
         return ""
@@ -240,11 +244,14 @@ def build_watching_common_html(
     shown = len(work)
     total = total_common if total_common is not None else shown
     count_label = f"showing {shown} of {total}" if total > shown else str(shown)
-    picks_html = "".join(_pick_card(row) for _, row in work.iterrows())
+    picks_html = "".join(
+        _pick_card(row, chip_short=chip_short) for _, row in work.iterrows()
+    )
     cap_css = cap_colors_css(include_chip=False, include_gov_filter=False)
     gaps_html = _gaps_html(gap_counts)
     head = (
-        f'<div class="wc-head">On 2+ lists<span>{html.escape(count_label)}</span></div>'
+        f'<div class="wc-head">{html.escape(heading)}'
+        f"<span>{html.escape(count_label)}</span></div>"
         if include_heading
         else ""
     )

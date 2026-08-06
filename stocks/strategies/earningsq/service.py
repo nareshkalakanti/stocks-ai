@@ -15,6 +15,7 @@ from stocks.core.json_utils import json_safe_obj
 from stocks.core.text_utils import safe_str
 from stocks.listings.classification_service import load_classification_maps, lookup_classification
 from stocks.market.nse_earningsq import fetch_nse_earnings_announcements
+from stocks.market.nse_financials_xbrl import seasonal_yoy_metrics_from_nse
 from stocks.strategies.earningsq.scores import (
     compute_return_score,
     compute_surprise_score,
@@ -196,48 +197,83 @@ def price_returns_around_broadcast(
     return out
 
 
-def enrich_earningsq_row(
-    event: dict,
-    *,
-    pead_blob: dict | None = None,
-    with_returns: bool = True,
-) -> dict:
-    row = dict(event)
-    lag0 = None
-    if pead_blob:
-        norm = _normalize_cache_blob(pead_blob)
-        lag0 = (norm.get("lags") or {}).get("0")
-        payload = expand_from_lag_row(lag0 if isinstance(lag0, dict) else None)
-        if payload.get("quarters"):
-            row["quarters"] = payload["quarters"]
-    metrics = _metrics_from_pead_lag(lag0 if isinstance(lag0, dict) else None)
-    for key, val in metrics.items():
-        if val is not None:
-            row[key] = val
-        elif key not in row or row.get(key) is None:
-            row[key] = None
-
-    text = " ".join(
-        safe_str(row.get(k))
-        for k in ("desc", "attachment_text", "consolidated", "relating_to")
-    )
-    row["filing_type"] = filing_type_label(
-        text, consolidated_flag=row.get("consolidated")
-    )
+def _is_num(val) -> bool:
+    if val is None:
+        return False
     try:
-        bts = pd.Timestamp(row.get("broadcast_at"))
-    except (ValueError, TypeError):
-        bts = None
-    row["market_hours"] = market_hours_bucket(bts)
+        if isinstance(val, float) and pd.isna(val):
+            return False
+        float(val)
+        return True
+    except (TypeError, ValueError):
+        return False
 
-    if with_returns:
-        rets = price_returns_around_broadcast(
-            row.get("ticker") or "",
-            row.get("broadcast_at") or "",
-            market=safe_str(row.get("market")) or "NSE",
+
+def _has_growth_metrics(row: dict) -> bool:
+    return any(_is_num(row.get(k)) for k in ("rev_yoy", "np_yoy", "eps_yoy", "rev_qoq", "np_qoq", "eps_qoq"))
+
+
+
+def _apply_nse_xbrl_metrics(row: dict) -> dict:
+    """Fill YoY growth from NSE Ind-AS XBRL when PEAD cache is empty."""
+    ticker = safe_str(row.get("ticker")).upper()
+    if not ticker or _has_growth_metrics(row):
+        return row
+    try:
+        metrics = seasonal_yoy_metrics_from_nse(ticker, use_cache=True)
+    except Exception:
+        return row
+    if not metrics:
+        return row
+    for src, dst in (
+        ("rev_actual", "rev_actual"),
+        ("np_actual", "np_actual"),
+        ("eps_actual", "eps_actual"),
+        ("sales_yoy", "rev_yoy"),
+        ("np_yoy", "np_yoy"),
+        ("eps_yoy", "eps_yoy"),
+    ):
+        val = metrics.get(src)
+        if val is not None and not _is_num(row.get(dst)):
+            row[dst] = val
+    if not row.get("period_end") and metrics.get("period_end"):
+        row["period_end"] = metrics.get("period_end")
+    if metrics.get("filing_type") and not row.get("filing_type"):
+        row["filing_type"] = metrics.get("filing_type")
+    row["metrics_source"] = "nse_xbrl"
+    return row
+
+
+def _apply_yahoo_quarter_metrics(row: dict) -> dict:
+    """Yahoo quarterly income fallback when PEAD + NSE XBRL miss."""
+    ticker = safe_str(row.get("ticker")).upper()
+    if not ticker or _has_growth_metrics(row):
+        return row
+    try:
+        from stocks.strategies.pead2.expand_data import fetch_pead_expand_data
+
+        payload = fetch_pead_expand_data(
+            ticker,
+            safe_str(row.get("market")) or "NSE",
+            price=row.get("price_now"),
         )
-        row.update(rets)
+    except Exception:
+        return row
+    if not payload or not payload.get("quarters"):
+        return row
+    metrics = metrics_from_quarters(payload.get("quarters"))
+    filled = False
+    for key, val in metrics.items():
+        if val is not None and not _is_num(row.get(key)):
+            row[key] = val
+            filled = True
+    if filled:
+        row["quarters"] = payload.get("quarters")
+        row["metrics_source"] = "yahoo"
+    return row
 
+
+def _rescore_row(row: dict) -> dict:
     row["surprise_score"] = compute_surprise_score(
         sales_yoy=row.get("rev_yoy"),
         sales_qoq=row.get("rev_qoq"),
@@ -254,6 +290,254 @@ def enrich_earningsq_row(
         ret_qtd=row.get("ret_qtd"),
     )
     return row
+
+
+def enrich_earningsq_row(
+    event: dict,
+    *,
+    pead_blob: dict | None = None,
+    with_returns: bool = True,
+    fetch_nse_metrics: bool = True,
+) -> dict:
+    row = dict(event)
+    lag0 = None
+    if pead_blob:
+        norm = _normalize_cache_blob(pead_blob)
+        lag0 = (norm.get("lags") or {}).get("0")
+        payload = expand_from_lag_row(lag0 if isinstance(lag0, dict) else None)
+        if payload.get("quarters"):
+            row["quarters"] = payload["quarters"]
+            row["metrics_source"] = "pead_cache"
+    metrics = _metrics_from_pead_lag(lag0 if isinstance(lag0, dict) else None)
+    for key, val in metrics.items():
+        if val is not None:
+            row[key] = val
+        elif key not in row or row.get(key) is None:
+            row[key] = None
+
+    if fetch_nse_metrics and not _has_growth_metrics(row):
+        row = _apply_nse_xbrl_metrics(row)
+    if not _has_growth_metrics(row):
+        row = _apply_yahoo_quarter_metrics(row)
+
+    text = " ".join(
+        safe_str(row.get(k))
+        for k in ("desc", "attachment_text", "consolidated", "relating_to")
+    )
+    row["filing_type"] = filing_type_label(
+        text, consolidated_flag=row.get("consolidated")
+    ) or row.get("filing_type")
+    try:
+        bts = pd.Timestamp(row.get("broadcast_at"))
+    except (ValueError, TypeError):
+        bts = None
+    row["market_hours"] = market_hours_bucket(bts)
+
+    if with_returns:
+        rets = price_returns_around_broadcast(
+            row.get("ticker") or "",
+            row.get("broadcast_at") or "",
+            market=safe_str(row.get("market")) or "NSE",
+        )
+        row.update(rets)
+
+    return _rescore_row(row)
+
+
+def rehydrate_earningsq_from_pead(
+    df: pd.DataFrame,
+    *,
+    only_missing: bool = True,
+) -> tuple[pd.DataFrame, int]:
+    """
+    Merge PEAD2 cache growth into an EarningsQ frame (fast, no live NSE/Yahoo).
+
+    Returns ``(df, n_updated)``.
+    """
+    if df is None or df.empty or "ticker" not in df.columns:
+        return (df if df is not None else pd.DataFrame()), 0
+
+    work = df.copy()
+    tickers = [
+        safe_str(t).upper()
+        for t in work["ticker"]
+        if safe_str(t)
+    ]
+    pead_map = load_pead2_cache(tickers, max_hours=HOLDINGS_PEAD_CACHE_HOURS)
+    if not pead_map:
+        return work, 0
+
+    keep_keys = (
+        "rev_actual", "rev_yoy", "rev_qoq",
+        "np_actual", "np_yoy", "np_qoq",
+        "eps_actual", "eps_yoy", "eps_qoq",
+        "opm_actual", "opm_yoy_pp", "opm_qoq_pp",
+        "surprise_score", "return_score",
+        "metrics_source", "filing_type",
+    )
+    for key in keep_keys:
+        if key not in work.columns:
+            work[key] = None
+
+    updated = 0
+    for idx, row in work.iterrows():
+        t = safe_str(row.get("ticker")).upper()
+        blob = pead_map.get(t)
+        if not blob:
+            continue
+        if only_missing and _is_num(row.get("surprise_score")) and any(
+            _is_num(row.get(k)) for k in ("rev_yoy", "np_yoy", "eps_yoy")
+        ):
+            continue
+        raw = row.to_dict()
+        # Keep existing returns/price; only refresh growth + surprise from PEAD.
+        filled = enrich_earningsq_row(
+            raw,
+            pead_blob=blob,
+            with_returns=False,
+            fetch_nse_metrics=False,
+        )
+        if not _is_num(filled.get("surprise_score")) and not any(
+            _is_num(filled.get(k)) for k in ("rev_yoy", "np_yoy", "eps_yoy")
+        ):
+            continue
+        for key in keep_keys:
+            if key in filled and filled.get(key) is not None:
+                # Don't wipe an existing return_score with None from with_returns=False path
+                if key == "return_score" and not _is_num(filled.get(key)):
+                    continue
+                work.at[idx, key] = filled.get(key)
+        # Recompute return_score from existing ret_* if present.
+        r1 = work.at[idx, "ret_1d"] if "ret_1d" in work.columns else None
+        rw = work.at[idx, "ret_1w"] if "ret_1w" in work.columns else None
+        rq = work.at[idx, "ret_qtd"] if "ret_qtd" in work.columns else None
+        if _is_num(r1) or _is_num(rw) or _is_num(rq):
+            work.at[idx, "return_score"] = compute_return_score(
+                ret_1d=r1, ret_1w=rw, ret_qtd=rq
+            )
+        updated += 1
+
+    stats = dict(getattr(df, "attrs", {}) or {}).get("scan_stats") or {}
+    stats = dict(stats)
+    stats["pead_rehydrated"] = updated
+    if "surprise_score" in work.columns:
+        stats["with_surprise"] = int(
+            pd.to_numeric(work["surprise_score"], errors="coerce").notna().sum()
+        )
+    work.attrs["scan_stats"] = stats
+    return work, updated
+
+
+def metrics_missing_rate(df: pd.DataFrame) -> float:
+    """Share of rows missing surprise or core YoY fields (0–1)."""
+    if df is None or df.empty:
+        return 1.0
+    surprise = pd.to_numeric(df.get("surprise_score"), errors="coerce")
+    np_y = pd.to_numeric(df.get("np_yoy"), errors="coerce")
+    rev_y = pd.to_numeric(df.get("rev_yoy"), errors="coerce")
+    miss = surprise.isna() & np_y.isna() & rev_y.isna()
+    return float(miss.mean()) if len(miss) else 1.0
+
+
+def backfill_earningsq_metrics(
+    df: pd.DataFrame,
+    *,
+    with_returns: bool = True,
+    max_workers: int | None = None,
+    progress_callback: Callable[[int, int, str], None] | None = None,
+) -> pd.DataFrame:
+    """
+    Fill missing Surprise / Sales / Profit / EPS YoY (and optional returns)
+    on an existing EarningsQ frame — PEAD → NSE XBRL → Yahoo.
+    """
+    if df is None or df.empty:
+        return df if df is not None else pd.DataFrame()
+
+    work = df.copy()
+    stats = dict(getattr(df, "attrs", {}) or {}).get("scan_stats") or {}
+    tickers = [
+        safe_str(t).upper()
+        for t in work.get("ticker", pd.Series(dtype=str))
+        if safe_str(t)
+    ]
+    pead_map = load_pead2_cache(tickers, max_hours=HOLDINGS_PEAD_CACHE_HOURS) if tickers else {}
+
+    need_mask = []
+    for _, row in work.iterrows():
+        has_growth = any(_is_num(row.get(k)) for k in ("rev_yoy", "np_yoy", "eps_yoy"))
+        has_surprise = _is_num(row.get("surprise_score"))
+        need_rets = with_returns and not _is_num(row.get("ret_1d"))
+        need_mask.append(not has_growth or not has_surprise or need_rets)
+
+    idxs = [i for i, need in enumerate(need_mask) if need]
+    if not idxs:
+        return work
+
+    total = len(idxs)
+    workers = yfinance_worker_count(total, max_workers or 8)
+
+    def _one(i: int) -> tuple[int, dict]:
+        raw = work.iloc[i].to_dict()
+        t = safe_str(raw.get("ticker")).upper()
+        filled = enrich_earningsq_row(
+            raw,
+            pead_blob=pead_map.get(t),
+            with_returns=with_returns,
+            fetch_nse_metrics=True,
+        )
+        return i, filled
+
+    updated = 0
+    # Scalar / JSON-safe fields only — avoid writing nested dicts into odd dtypes.
+    keep_keys = (
+        "rev_actual", "rev_yoy", "rev_qoq",
+        "np_actual", "np_yoy", "np_qoq",
+        "eps_actual", "eps_yoy", "eps_qoq",
+        "opm_actual", "opm_yoy_pp", "opm_qoq_pp",
+        "surprise_score", "return_score",
+        "ret_1d", "ret_1w", "ret_qtd", "price_now",
+        "metrics_source", "filing_type", "period_end", "market_hours",
+    )
+    for key in keep_keys:
+        if key not in work.columns:
+            work[key] = None
+
+    results: dict[int, dict] = {}
+    if total > 1:
+        done = 0
+        with ThreadPoolExecutor(max_workers=max(1, min(workers, total))) as pool:
+            futs = {pool.submit(_one, i): i for i in idxs}
+            for fut in as_completed(futs):
+                done += 1
+                try:
+                    i, filled = fut.result()
+                except Exception:
+                    continue
+                results[i] = filled
+                updated += 1
+                if progress_callback:
+                    progress_callback(done, total, safe_str(filled.get("ticker")))
+    else:
+        i, filled = _one(idxs[0])
+        results[i] = filled
+        updated = 1
+        if progress_callback:
+            progress_callback(1, 1, safe_str(filled.get("ticker")))
+
+    for i, filled in results.items():
+        idx = work.index[i]
+        for key in keep_keys:
+            if key in filled:
+                work.at[idx, key] = filled.get(key)
+
+    stats = dict(stats)
+    stats["metrics_backfilled"] = updated
+    if "surprise_score" in work.columns:
+        stats["with_surprise"] = int(
+            pd.to_numeric(work["surprise_score"], errors="coerce").notna().sum()
+        )
+    work.attrs["scan_stats"] = stats
+    return work
 
 
 def load_fixture_events() -> list[dict]:
@@ -427,7 +711,8 @@ def run_earningsq_scan(
 
     enriched: list[dict] = []
     total = len(events)
-    workers = yfinance_worker_count(total, max_workers or 6) if with_returns else 1
+    # Parallel always — PEAD-miss path hits NSE XBRL per ticker.
+    workers = yfinance_worker_count(total, max_workers or 8)
 
     def _one(ev: dict) -> dict:
         t = safe_str(ev.get("ticker")).upper()
@@ -437,7 +722,7 @@ def run_earningsq_scan(
             with_returns=with_returns,
         )
 
-    if with_returns and total > 1:
+    if total > 1:
         done = 0
         with ThreadPoolExecutor(max_workers=max(1, min(workers, total))) as pool:
             futs = {pool.submit(_one, ev): ev for ev in events}
@@ -461,6 +746,12 @@ def run_earningsq_scan(
 
     df = pd.DataFrame(json_safe_obj(enriched))
     scan_stats["scored"] = len(df)
+    if not df.empty and "metrics_source" in df.columns:
+        scan_stats["xbrl_metrics"] = int((df["metrics_source"] == "nse_xbrl").sum())
+        scan_stats["pead_metrics"] = int((df["metrics_source"] == "pead_cache").sum())
+        scan_stats["with_surprise"] = int(
+            pd.to_numeric(df.get("surprise_score"), errors="coerce").notna().sum()
+        )
     if df.empty:
         df.attrs["scan_stats"] = scan_stats
         return df
@@ -469,7 +760,9 @@ def run_earningsq_scan(
     df["fetched_at"] = datetime.now(timezone.utc).isoformat()
     if min_surprise is not None and "surprise_score" in df.columns:
         s = pd.to_numeric(df["surprise_score"], errors="coerce")
-        df = df[s.notna() & (s > float(min_surprise))].copy()
+        # Keep unscored prints (no PEAD/Yahoo metrics yet); only drop scored
+        # rows that fail the floor.
+        df = df[s.isna() | (s > float(min_surprise))].copy()
     sort_cols = [c for c in ("broadcast_at", "ticker") if c in df.columns]
     if sort_cols:
         df = df.sort_values(sort_cols, ascending=[False, True], kind="mergesort")
@@ -481,9 +774,12 @@ def run_earningsq_scan(
 __all__ = [
     "FIXTURES_PATH",
     "attach_sector_mcap",
+    "backfill_earningsq_metrics",
     "enrich_earningsq_row",
     "load_fixture_events",
     "metrics_from_quarters",
+    "metrics_missing_rate",
     "price_returns_around_broadcast",
+    "rehydrate_earningsq_from_pead",
     "run_earningsq_scan",
 ]

@@ -16,6 +16,18 @@ SUPERSTARS_JS_COLS = [
     {"id": "change_display", "label": "Change", "fmt": "ss_change"},
 ]
 
+SUPERSTARS_CONSENSUS_JS_COLS = [
+    {"id": "rank", "label": "#", "fmt": "int"},
+    {"id": "company", "label": "Company", "fmt": "company"},
+    {"id": "investor_count", "label": "N", "fmt": "int"},
+    {"id": "investor", "label": "Investors", "fmt": "text"},
+    {"id": "activity", "label": "Activity", "fmt": "text"},
+    {"id": "sector", "label": "Sector", "fmt": "text"},
+    {"id": "market_cap_cr", "label": "Mcap Cr", "fmt": "num1"},
+    {"id": "cap_code", "label": "Cap", "fmt": "cap_code"},
+    {"id": "combined_value_cr", "label": "Value Cr", "fmt": "num1"},
+]
+
 SUPERSTARS_JS_COLS_NO_INVESTOR = [
     c for c in SUPERSTARS_JS_COLS if c["id"] != "investor"
 ]
@@ -27,6 +39,17 @@ _EXTRA_COLS = (
     "change_display",
     "change_type",
     "holding_entity",
+    "company_name",
+)
+
+_CONSENSUS_EXTRA_COLS = (
+    "rank",
+    "investor",
+    "investor_count",
+    "activity",
+    "cap_code",
+    "market_cap_cr",
+    "combined_value_cr",
     "company_name",
 )
 
@@ -98,5 +121,39 @@ def build_superstars_html(
     )
 
 
+def build_superstars_consensus_html(
+    df: pd.DataFrame,
+    *,
+    title: str = "On 2+ investors",
+    standalone: bool = False,
+) -> str:
+    work = _prepare_report_df(df)
+    if not work.empty and "rank" not in work.columns:
+        work = work.reset_index(drop=True)
+        work.insert(0, "rank", range(1, len(work) + 1))
+    section = build_interactive_section(
+        "ssconsensus",
+        title,
+        work,
+        SUPERSTARS_CONSENSUS_JS_COLS,
+        kind="superstars_consensus",
+        open_section=True,
+        expand_hint="Click row for price, quarterly data & news",
+        fetch_news=False,
+        extra_cols=_CONSENSUS_EXTRA_COLS,
+        include_superstars=False,
+        meta_label="stocks",
+    )
+    return wrap_interactive_page(
+        title="",
+        sections_html=section,
+        standalone=standalone,
+    )
+
+
 def superstars_iframe_height(row_count: int) -> int:
     return min(2200, max(480, 360 + min(row_count, 60) * 28))
+
+
+def superstars_consensus_iframe_height(row_count: int) -> int:
+    return min(2400, max(420, 320 + min(row_count, 80) * 26))

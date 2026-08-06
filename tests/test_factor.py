@@ -72,23 +72,20 @@ def test_build_factor_html():
                 "sector": "Banking & Finance",
                 "sub_sector": "Stock Exchanges & Ratings",
                 "factor_rank": 1,
-                "score": 99.0,
-                "momentum_pct": 42.03,
+                "score": 0.85,
+                "composite": 0.85,
+                "mom_21": 0.042,
+                "value_proxy": 0.12,
+                "vol_factor": 0.22,
+                "sector_rel_mom": 0.01,
                 "price": 3514.0,
-                "price_1y": 2775.3,
-                "price_1m": 3941.8,
                 "date": "2026-07-01",
             }
         ]
     )
-    html = build_factor_html(df, standalone=False)
-    assert "Momentum" in html
+    html = build_factor_html(df, standalone=False, validation={"test_mean_ic": 0.05})
+    assert "Factor" in html
+    assert "Composite" in html
     assert "BSE" in html
-    assert "S.No" in html
     assert "Sector" in html
-    assert "Subsector" in html
-    assert "Price 1Y" in html
-    assert "Price 1M" in html
     assert "pct2" in html
-    assert "42.03" in html
-    assert '"sub_sector"' in html or "sub_sector" in html

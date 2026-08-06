@@ -423,8 +423,15 @@ def prepare_interactive_report_df(
     expand_cache_only: bool = False,
 ) -> pd.DataFrame:
     """PEAD-style expand payload: PEAD2 cache + throttled Yahoo fetch."""
-    if df is None or df.empty:
-        return df if df is not None else pd.DataFrame()
+    if df is None:
+        return pd.DataFrame()
+    if not isinstance(df, pd.DataFrame):
+        try:
+            df = pd.DataFrame(df)
+        except Exception:
+            return pd.DataFrame()
+    if df.empty:
+        return df
 
     from stocks.strategies.pead2.expand_data import attach_pead_expand
 
@@ -434,6 +441,8 @@ def prepare_interactive_report_df(
         max_workers=workers,
         cache_only=expand_cache_only,
     )
+    if not isinstance(out, pd.DataFrame):
+        out = df.copy()
     out = attach_research_links(out)
     if "website" not in out.columns:
         out["website"] = None
@@ -553,6 +562,7 @@ def build_interactive_section(
         return `<span class="badge-score">${{Number(v).toFixed(0)}}</span>`;
       case "num1": return v != null && !isNaN(v) ? Number(v).toFixed(1) : "—";
       case "num2": return v != null && !isNaN(v) ? Number(v).toFixed(2) : "—";
+      case "num3": return v != null && !isNaN(v) ? Number(v).toFixed(3) : "—";
       case "num0":
         if (v == null || isNaN(v)) return "—";
         return Number(v).toLocaleString("en-IN", {{ maximumFractionDigits: 0 }});

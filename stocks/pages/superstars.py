@@ -24,6 +24,7 @@ from stocks.scans.scan_toolbar import default_cap_tier_label
 from stocks.governance.score import mcap_cap_code
 from stocks.shared.superstars.holdings import (
     aggregate_all_portfolios,
+    common_stocks,
     enrich_superstar_classification,
     portfolios_from_db,
     _sector_is_missing,
@@ -32,7 +33,12 @@ from stocks.shared.superstars.cache import (
     load_cached_superstar_portfolios,
     save_cached_superstar_portfolios,
 )
-from stocks.shared.superstars.html import build_superstars_html, superstars_iframe_height
+from stocks.shared.superstars.html import (
+    build_superstars_consensus_html,
+    build_superstars_html,
+    superstars_consensus_iframe_height,
+    superstars_iframe_height,
+)
 from stocks.shared.superstars.investors import (
     SUPERSTAR_INVESTORS,
     _build_company_lookup,
@@ -416,6 +422,95 @@ def _ensure_merged_classification(merged: pd.DataFrame) -> pd.DataFrame:
     return _enrich_superstar_from_db(merged)
 
 
+def _build_common_enriched(
+    merged: pd.DataFrame, *, limit: int | None = None
+) -> tuple[pd.DataFrame, int]:
+    """One row per stock held by 2+ investors — ready for the consensus report."""
+    consensus = common_stocks(merged, min_investors=2)
+    if consensus is None or consensus.empty:
+        return pd.DataFrame(), 0
+    total = len(consensus)
+    work = consensus if limit is None else consensus.head(int(limit))
+
+    # Prefer enriched fields (mcap / links / website) from merged holdings.
+    by_sym: dict[str, pd.Series] = {}
+    if merged is not None and not merged.empty:
+        sym_col = "ticker" if "ticker" in merged.columns else "symbol"
+        if sym_col in merged.columns:
+            for _, row in merged.iterrows():
+                key = safe_str(row.get(sym_col)).upper()
+                if key and key not in by_sym:
+                    by_sym[key] = row
+
+    rows: list[dict] = []
+    for i, crow in enumerate(work.itertuples(index=False), start=1):
+        symbol = safe_str(getattr(crow, "symbol", "")).upper()
+        if not symbol:
+            continue
+        base = by_sym.get(symbol)
+        exchange = safe_str(getattr(crow, "exchange", "")) or (
+            safe_str(base.get("exchange")) if base is not None else ""
+        )
+        market = safe_str(base.get("market")) if base is not None else ""
+        if not market:
+            ex = exchange.upper()
+            market = "BSE" if ex == "BSE" else ("NSE SME" if ex == "NSE SME" else "NSE")
+        name = safe_str(getattr(crow, "company_name", "")) or (
+            safe_str(base.get("company_name") or base.get("name")) if base is not None else ""
+        ) or symbol
+        sector = safe_str(getattr(crow, "sector", "")) or (
+            safe_str(base.get("sector")) if base is not None else ""
+        ) or "—"
+        rows.append(
+            {
+                "rank": i,
+                "symbol": symbol,
+                "ticker": symbol,
+                "name": name,
+                "company_name": name,
+                "market": market,
+                "exchange": exchange or market,
+                "sector": sector,
+                "investor": safe_str(getattr(crow, "investors", "")),
+                "investor_count": int(getattr(crow, "investor_count", 0) or 0),
+                "activity": safe_str(getattr(crow, "activity", "")),
+                "combined_value_cr": getattr(crow, "combined_value_cr", None),
+                "market_cap_cr": (
+                    base.get("market_cap_cr") if base is not None else None
+                ),
+                "cap_code": (
+                    safe_str(base.get("cap_code")) if base is not None else ""
+                ),
+                "price": base.get("price") if base is not None else None,
+                "website": (
+                    sanitize_website(base.get("website")) if base is not None else ""
+                ),
+                "sc": safe_str(base.get("sc") or base.get("screener_link"))
+                if base is not None
+                else "",
+                "tv": safe_str(base.get("tv")) if base is not None else "",
+            }
+        )
+    if not rows:
+        return pd.DataFrame(), total
+    return pd.DataFrame(rows), total
+
+
+def _render_common_tiles(merged: pd.DataFrame) -> None:
+    view, total = _build_common_enriched(merged)
+    if view.empty:
+        return
+    with st.expander(f"On 2+ investors · {total}", expanded=False):
+        html = build_superstars_consensus_html(
+            view,
+            title=f"On 2+ investors · {total}",
+            standalone=False,
+        )
+        embed_html_iframe(
+            html, height=superstars_consensus_iframe_height(len(view))
+        )
+
+
 def _holdings_tickers() -> set[str]:
     try:
         holdings = load_holdings(seed_if_empty=False)
@@ -683,6 +778,9 @@ def render_superstars() -> None:
     if not loaded_count:
         st.info(f"Click **Refresh** to load {len(SUPERSTAR_INVESTORS)} portfolios.")
         return
+
+    # Consensus across ace investors (same pattern as Watching "On 2+ lists").
+    _render_common_tiles(merged)
 
     cap_tier_id = cap_tier_id_from_label(st.session_state.get(_SS_CAP_KEY) or "")
     holdings_symbols = _holdings_tickers()

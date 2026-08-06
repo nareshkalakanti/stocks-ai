@@ -94,7 +94,7 @@ STRATEGY_OPTIONS = (
     "TQ W52 Recovery",
     "RSI Weekly",
     "Above All EMAs",
-    "Momentum",
+    "Factor",
     "Low Volatility",
     "Weekly Base Breakout",
     "Cup & Handle",
@@ -133,7 +133,7 @@ QUANT_HTML_CACHE_KEYS = {
     "recovery": "strat_recovery_html_v4",
     "base_breakout": "strat_base_breakout_html_v3",
     "low_vol": "strat_low_vol_html_v2",
-    "factor": "strat_factor_html_v8",
+    "factor": "strat_factor_html_v10",
     "price_chg": "strat_price_chg_html_v6",
     "tq_bb": "strat_tq_bb_html_v5",
     "cup_handle": "strat_cup_handle_html_v5",
@@ -451,21 +451,37 @@ def _show_low_vol_results(result: pd.DataFrame) -> None:
 
 
 def _show_factor_results(result: pd.DataFrame) -> None:
-    st.caption(
-        f"**{len(result):,}** Momentum names (all, sorted by 12–1) · expand row · website · quarterly · **TV**."
-    )
-    embed_html = build_factor_html(result, standalone=False)
+    if result is None or not isinstance(result, pd.DataFrame):
+        st.warning("No factor results to show.")
+        return
+    work = result.copy()
+    stats = dict(getattr(result, "attrs", {}) or {}).get("factor_validation") or {}
+    # Copy may drop attrs — restore for HTML caption.
+    try:
+        work.attrs["factor_validation"] = stats
+    except Exception:
+        pass
+    bits = [f"**{len(work):,}** Factor names (composite ranked)"]
+    if stats.get("test_mean_ic") is not None:
+        bits.append(f"test IC **{float(stats['test_mean_ic']):+.3f}**")
+    if stats.get("test_icir") is not None:
+        bits.append(f"ICIR **{float(stats['test_icir']):+.2f}**")
+    if stats.get("random_baseline_ic") is not None:
+        bits.append(f"rand **{float(stats['random_baseline_ic']):+.3f}**")
+    bits.append("expand · website · quarterly · **TV**")
+    st.caption(" · ".join(bits))
+    embed_html = build_factor_html(work, standalone=False, validation=stats)
     _embed_cached_quant_html(
         QUANT_HTML_CACHE_KEYS["factor"],
         embed_html,
-        height=factor_iframe_height(len(result)),
+        height=factor_iframe_height(len(work)),
     )
     st.download_button(
         "Download CSV",
-        data=_export_scan_csv(result),
-        file_name="momentum.csv",
+        data=_export_scan_csv(work),
+        file_name="factor.csv",
         mime="text/csv",
-        key="strat_momentum_csv",
+        key="strat_factor_csv",
     )
 
 
@@ -663,13 +679,13 @@ def _render_quant_cached_results(strategy_choice: str) -> None:
         if cached is not None and hasattr(cached, "empty") and not cached.empty:
             _show_low_vol_results(cached)
         return
-    if strategy_choice == "Momentum":
+    if strategy_choice in {"Factor", "Momentum"}:
         cached_html = st.session_state.get(QUANT_HTML_CACHE_KEYS["factor"])
         cached = st.session_state.get("strat_factor_result")
         if cached_html:
             if cached is not None and hasattr(cached, "__len__"):
                 st.caption(
-                    f"**{len(cached):,}** Momentum names · expand row · website · quarterly · TV."
+                    f"**{len(cached):,}** Factor names · composite ranked · expand · website · quarterly · TV."
                 )
             _embed_cached_quant_html(
                 QUANT_HTML_CACHE_KEYS["factor"],
@@ -680,9 +696,9 @@ def _render_quant_cached_results(strategy_choice: str) -> None:
                 st.download_button(
                     "Download CSV",
                     data=_export_scan_csv(cached),
-                    file_name="momentum.csv",
+                    file_name="factor.csv",
                     mime="text/csv",
-                    key="strat_momentum_csv",
+                    key="strat_factor_csv",
                 )
             return
         if cached is not None and hasattr(cached, "empty") and not cached.empty:
@@ -849,22 +865,22 @@ def _run_pattern_scan(
             should_stop=lambda: st.session_state.get("strategy_scan_stop", False),
             **extra,
         )
+        progress.empty()
+
+        if result is None or not isinstance(result, pd.DataFrame) or result.empty:
+            st.session_state.pop(session_key, None)
+            st.warning(empty_message)
+            return
+
+        with st.spinner("Loading website, quarterly data & links..."):
+            result = _prepare_pattern_report(result)
+
+        st.session_state[session_key] = result
+        show_results(result)
     except Exception as exc:
         progress.empty()
         st.error(f"{label} scan failed: {exc}")
         return
-    progress.empty()
-
-    if result.empty:
-        st.session_state.pop(session_key, None)
-        st.warning(empty_message)
-        return
-
-    with st.spinner("Loading website, quarterly data & links..."):
-        result = _prepare_pattern_report(result)
-
-    st.session_state[session_key] = result
-    show_results(result)
 
 
 def _run_cup_handle_scan(
@@ -927,16 +943,73 @@ def _run_low_vol_scan(filtered: pd.DataFrame, *, cap_tier_id: str) -> None:
 
 
 def _run_factor_scan(filtered: pd.DataFrame, *, cap_tier_id: str) -> None:
-    _run_pattern_scan(
-        filtered,
-        cap_tier_id=cap_tier_id,
-        label="Momentum",
-        run_scan=run_factor_scan,
-        prepare_universe=prepare_factor_universe,
-        empty_message="No momentum names in the current selection.",
-        session_key="strat_factor_result",
-        show_results=_show_factor_results,
-    )
+    """Factor has its own runner so prepare/HTML failures don't look like scan bugs."""
+    import traceback
+
+    max_workers = int(st.session_state.strategy_max_workers)
+    try:
+        base_universe = analysis_universe(filtered, limit=0)
+        universe, _, _ = prepare_factor_universe(base_universe, cap_tier_id=cap_tier_id)
+    except Exception as exc:
+        st.error(f"Factor universe failed: {exc}")
+        st.code(traceback.format_exc())
+        return
+
+    if not isinstance(universe, pd.DataFrame) or universe.empty:
+        st.warning("No tickers in the selected universe.")
+        return
+
+    progress = st.progress(0, text="Factor scan...")
+    try:
+
+        def _progress(done: int, total: int) -> None:
+            progress.progress(done / total, text=f"Factor {done}/{total}...")
+
+        result = run_factor_scan(
+            universe,
+            max_workers=max_workers,
+            progress_callback=_progress,
+            should_stop=lambda: st.session_state.get("strategy_scan_stop", False),
+        )
+    except Exception as exc:
+        progress.empty()
+        st.error(f"Factor scan failed: {exc}")
+        st.code(traceback.format_exc())
+        return
+    progress.empty()
+
+    if not isinstance(result, pd.DataFrame) or result.empty:
+        st.session_state.pop("strat_factor_result", None)
+        st.warning("No factor names in the current selection.")
+        return
+
+    # Keep scores even if expand/Yahoo enrichment fails.
+    prepared = result
+    try:
+        with st.spinner("Loading website, quarterly data & links..."):
+            prepared = _prepare_pattern_report(result)
+            if not isinstance(prepared, pd.DataFrame) or prepared.empty:
+                prepared = result
+    except Exception as exc:
+        st.warning(f"Factor scores ready; expand data skipped ({exc})")
+        prepared = result
+
+    # Preserve validation attrs through prepare (DataFrame.copy may drop attrs).
+    try:
+        prepared.attrs["factor_validation"] = dict(
+            getattr(result, "attrs", {}) or {}
+        ).get("factor_validation") or dict(getattr(prepared, "attrs", {}) or {}).get(
+            "factor_validation"
+        ) or {}
+    except Exception:
+        pass
+
+    st.session_state["strat_factor_result"] = prepared
+    try:
+        _show_factor_results(prepared)
+    except Exception as exc:
+        st.error(f"Factor report failed: {exc}")
+        st.code(traceback.format_exc())
 
 
 def _run_rsi_weekly_scan(filtered: pd.DataFrame, *, cap_tier_id: str) -> None:
@@ -1006,6 +1079,8 @@ def render_strategy_scan() -> None:
         with row[4]:
             if st.session_state.get("strat_choice") == "What-if Returns":
                 st.session_state["strat_choice"] = "Price Change"
+            if st.session_state.get("strat_choice") == "Momentum":
+                st.session_state["strat_choice"] = "Factor"
             strategy_choice = st.selectbox(
                 "Strategy",
                 STRATEGY_OPTIONS,
@@ -1013,7 +1088,7 @@ def render_strategy_scan() -> None:
                 help=(
                     "TQ = trend quality · BB = Bollinger breakout · "
                     "Price Change = Market·Cap · invest at year-start → value now (YTD) · "
-                    "Momentum = all names by 12–1 return · "
+                    "Factor = mom + value − vol + sector-rel composite (IC validated) · "
                     "Low Volatility = bottom 20% short+long realized vol · "
                     "Weekly Base Breakout = long consolidation near breakout · "
                     "Cup & Handle = weekly (or daily) pattern · VCP = daily · TV in report"
@@ -1031,7 +1106,7 @@ def render_strategy_scan() -> None:
                     "TQ / BB timeframe · W52 Recovery and RSI Weekly use weekly · "
                     "Cup & Handle defaults to weekly (daily also available) · "
                     "Weekly Base Breakout / RSI / W52 use weekly · "
-                    "Above All EMAs, Momentum, Low Volatility, and VCP use daily"
+                    "Above All EMAs, Factor, Low Volatility, and VCP use daily"
                 ),
             )
         with row[6]:
@@ -1106,7 +1181,7 @@ def render_strategy_scan() -> None:
     if strategy_choice == "Low Volatility":
         _run_low_vol_scan(filtered, cap_tier_id=cap_tier_id)
         return
-    if strategy_choice == "Momentum":
+    if strategy_choice in {"Factor", "Momentum"}:
         _run_factor_scan(filtered, cap_tier_id=cap_tier_id)
         return
     if strategy_choice == "Cup & Handle":

@@ -6,14 +6,24 @@ import pandas as pd
 import streamlit as st
 
 from stocks.dashboards.report_html import embed_html_iframe
+from stocks.core.text_utils import safe_str
 from stocks.strategies.earningsq.html import build_earningsq_html, earningsq_iframe_height
 from stocks.strategies.earningsq.scores import annotate_quality
-from stocks.strategies.earningsq.service import attach_sector_mcap, run_earningsq_scan
+from stocks.strategies.earningsq.service import (
+    attach_sector_mcap,
+    backfill_earningsq_metrics,
+    metrics_missing_rate,
+    rehydrate_earningsq_from_pead,
+    run_earningsq_scan,
+)
 from stocks.shared.corp_tags import attach_corp_tags
+from stocks.core.database import pead2_cache_summary
 
-_CACHE_KEY = "earningsq_df_v5"
-_STATS_KEY = "earningsq_scan_stats_v2"
-_HTML_KEY = "earningsq_html_v9"
+_CACHE_KEY = "earningsq_df_v7"
+_STATS_KEY = "earningsq_scan_stats_v4"
+_HTML_KEY = "earningsq_html_v11"
+_BACKFILL_DONE_KEY = "earningsq_metrics_backfill_v2"
+_PEAD_TS_KEY = "earningsq_pead_cache_ts"
 
 
 def _apply_view(df: pd.DataFrame, *, min_surprise: float, sort_by: str) -> pd.DataFrame:
@@ -33,7 +43,8 @@ def _apply_view(df: pd.DataFrame, *, min_surprise: float, sort_by: str) -> pd.Da
     view = annotate_quality(view)
     if "surprise_score" in view.columns:
         s = pd.to_numeric(view["surprise_score"], errors="coerce")
-        view = view[s.notna() & (s > float(min_surprise))].copy()
+        # Unscored prints stay visible; Surprise > only drops scored misses.
+        view = view[s.isna() | (s > float(min_surprise))].copy()
         view = annotate_quality(view)
 
     sort_by = (sort_by or "Best overall").strip()
@@ -55,7 +66,8 @@ def render_earningsq(*, show_title: bool = True) -> None:
         st.markdown("### EarningsQ")
     st.caption(
         "Live NSE result announcements (mainboard + SME/Emerge) — not a full-universe scan; "
-        "only stocks that filed results in the lookback."
+        "only stocks that filed results in the lookback. Surprise / NP YoY from PEAD cache "
+        "or NSE Ind-AS XBRL when cache is empty."
     )
 
     with st.expander("How to use (30 seconds)", expanded=False):
@@ -92,7 +104,11 @@ def render_earningsq(*, show_title: bool = True) -> None:
                     value=float(st.session_state.get("earningsq_min_surprise") or 0.0),
                     step=0.1,
                     key="earningsq_min_surprise",
-                    help="Hide prints below this surprise score (0 = keep all positive-ish).",
+                    help=(
+                        "Hide scored prints at or below this surprise. "
+                        "Unscored prints (no PEAD metrics yet) stay visible. "
+                        "Use -5 to keep almost everything scored."
+                    ),
                 )
             )
         with c3:
@@ -103,10 +119,29 @@ def render_earningsq(*, show_title: bool = True) -> None:
                 help="1D / 1W moves from the print (slower, but needed for Return score).",
             )
 
-    refresh = st.button("Refresh NSE", type="primary")
+    b1, b2 = st.columns([1, 1.2])
+    with b1:
+        refresh = st.button("Refresh NSE", type="primary", width="stretch")
+    with b2:
+        fill_metrics = st.button(
+            "Fill Surprise / YoY",
+            width="stretch",
+            help=(
+                "Pull PEAD cache into this table, then backfill gaps via NSE XBRL / Yahoo "
+                "(Surprise, Sales/Profit/EPS YoY, Return)."
+            ),
+        )
     sort_by = "Best overall"
 
     cached = st.session_state.get(_CACHE_KEY)
+    if cached is None:
+        # Migrate prior session caches so PEAD rehydrate can run without a full NSE refresh.
+        for legacy in ("earningsq_df_v6", "earningsq_df_v5", "earningsq_df_v4"):
+            legacy_df = st.session_state.get(legacy)
+            if isinstance(legacy_df, pd.DataFrame) and not legacy_df.empty:
+                cached = legacy_df
+                st.session_state[_CACHE_KEY] = legacy_df
+                break
     if refresh or cached is None:
         progress = st.progress(0, text="Fetching NSE equity announcements…")
 
@@ -133,11 +168,93 @@ def render_earningsq(*, show_title: bool = True) -> None:
             st.error(f"EarningsQ scan failed: {exc}")
             return
         progress.empty()
+        # Keep prior prints if NSE feed is empty (common when NSE rate-limits).
+        if (
+            (df is None or df.empty)
+            and isinstance(cached, pd.DataFrame)
+            and not cached.empty
+        ):
+            st.warning(
+                "NSE returned no announcements this attempt — keeping the previous scan. "
+                "Use **Fill Surprise / YoY** to backfill missing metrics."
+            )
+            df = cached
+        else:
+            st.session_state.pop(_BACKFILL_DONE_KEY, None)
         st.session_state[_CACHE_KEY] = df
         st.session_state[_STATS_KEY] = dict(getattr(df, "attrs", {}) or {}).get("scan_stats") or {}
         st.session_state.pop(_HTML_KEY, None)
     else:
         df = cached
+
+    # After PEAD runs, pull growth into the current EarningsQ session (cheap).
+    pead_summary = {}
+    try:
+        pead_summary = pead2_cache_summary() or {}
+    except Exception:
+        pead_summary = {}
+    pead_ts = safe_str(pead_summary.get("pead_fetched_at") or "")
+    pead_changed = bool(pead_ts) and pead_ts != st.session_state.get(_PEAD_TS_KEY)
+    if isinstance(df, pd.DataFrame) and not df.empty and (
+        pead_changed or metrics_missing_rate(df) >= 0.3
+    ):
+        df, n_pead = rehydrate_earningsq_from_pead(df, only_missing=True)
+        if pead_ts:
+            st.session_state[_PEAD_TS_KEY] = pead_ts
+        if n_pead:
+            st.session_state[_CACHE_KEY] = df
+            st.session_state[_STATS_KEY] = (
+                dict(getattr(df, "attrs", {}) or {}).get("scan_stats") or {}
+            )
+            st.session_state.pop(_HTML_KEY, None)
+            st.caption(f"Pulled PEAD metrics into **{n_pead:,}** EarningsQ rows.")
+
+    # Auto-backfill remaining gaps (NSE XBRL / Yahoo) once, or on button.
+    need_fill = (
+        isinstance(df, pd.DataFrame)
+        and not df.empty
+        and (
+            fill_metrics
+            or (
+                metrics_missing_rate(df) >= 0.5
+                and not st.session_state.get(_BACKFILL_DONE_KEY)
+            )
+        )
+    )
+    if need_fill:
+        progress = st.progress(0, text="Filling Surprise / Sales / Profit / EPS YoY…")
+
+        def _fill_progress(done: int, total: int, ticker: str) -> None:
+            if total <= 0:
+                return
+            progress.progress(
+                min(done / total, 1.0),
+                text=f"Metrics {done:,}/{total:,} · {ticker}",
+            )
+
+        try:
+            # Prefer PEAD first inside backfill path as well.
+            df, _ = rehydrate_earningsq_from_pead(df, only_missing=True)
+            df = backfill_earningsq_metrics(
+                df,
+                with_returns=with_returns,
+                progress_callback=_fill_progress,
+            )
+        except Exception as exc:
+            progress.empty()
+            st.error(f"Metrics backfill failed: {exc}")
+        else:
+            progress.empty()
+            st.session_state[_CACHE_KEY] = df
+            st.session_state[_STATS_KEY] = (
+                dict(getattr(df, "attrs", {}) or {}).get("scan_stats") or {}
+            )
+            st.session_state[_BACKFILL_DONE_KEY] = True
+            st.session_state.pop(_HTML_KEY, None)
+            filled = int(
+                (st.session_state.get(_STATS_KEY) or {}).get("with_surprise") or 0
+            )
+            st.caption(f"Metrics filled — **{filled:,}** rows now have a Surprise score.")
 
     view = _apply_view(df, min_surprise=min_surprise, sort_by=sort_by)
     st.session_state.pop(_HTML_KEY, None)
@@ -151,14 +268,30 @@ def render_earningsq(*, show_title: bool = True) -> None:
 
     if view is None or (hasattr(view, "empty") and view.empty):
         raw = int(stats.get("nse_announcements_raw") or 0)
+        prints = int(stats.get("result_prints") or 0)
+        uniq = int(stats.get("unique_tickers") or 0)
+        scored = int(stats.get("scored") or 0)
         uni = int(stats.get("nse_equity_universe") or 0)
-        extra = ""
-        if raw or uni:
-            extra = f" (NSE feed: {raw:,} announcements"
-            if uni:
-                extra += f" · {uni:,} listed equities"
-            extra += ")"
-        st.warning(f"No NSE financial-result prints in this lookback{extra}.")
+        if prints or uniq or scored:
+            st.warning(
+                f"NSE found **{prints or uniq:,}** result prints"
+                + (f" ({uniq:,} tickers)" if uniq and prints and uniq != prints else "")
+                + f", but none pass the current **Surprise >** filter "
+                f"(or all lack surprise metrics). Lower Surprise > toward -5."
+                + (f" Feed: {raw:,} announcements" if raw else "")
+                + (f" · {uni:,} listed equities." if uni else ".")
+            )
+        else:
+            extra = ""
+            if raw or uni:
+                extra = f" (NSE feed: {raw:,} announcements"
+                if uni:
+                    extra += f" · {uni:,} listed equities"
+                extra += ")"
+            st.warning(
+                f"No NSE financial-result prints in this lookback{extra}. "
+                "Outside peak result weeks this can be empty — try a longer lookback."
+            )
         return
 
     src = ""

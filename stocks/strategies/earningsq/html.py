@@ -161,80 +161,130 @@ _EQ_CSS = """
   .eq-chip.is-on { background:#0f172a; color:#fff; border-color:#0f172a; }
   .eq-count { color:#64748b; font-size:12px; margin-left:auto; }
   .eq-picks {
-    display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
-    gap:14px; margin:0 0 18px;
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 8px;
+    margin: 0 0 14px;
+    width: 100%;
+  }
+  @media (max-width: 1100px) {
+    .eq-picks { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  }
+  @media (max-width: 720px) {
+    .eq-picks { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   }
   .eq-pick {
-    background:#fff; border:1px solid #e2e8f0; border-radius:14px;
-    padding:16px 16px 14px; box-shadow:0 1px 3px rgba(15,23,42,.06);
-    min-height:188px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 8px 9px 7px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
-  .eq-pick.strong { border-color:#86efac; background:linear-gradient(180deg,#f0fdf4,#fff); }
-  .eq-pick .eq-pick-top { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+  .eq-pick.strong { border-color: #86efac; background: linear-gradient(180deg, #f0fdf4, #fff); }
+  .eq-pick.fade { border-color: #fecaca; background: linear-gradient(180deg, #fef2f2, #fff); }
+  .eq-pick .eq-pick-top {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 6px;
+    min-width: 0;
+  }
   .eq-pick .eq-pick-ticker {
-    color:#0f172a; font-weight:800; text-decoration:none; font-size:18px; letter-spacing:-0.02em;
+    color: #0f172a; font-weight: 800; font-size: 12px; letter-spacing: -0.02em;
+    line-height: 1.15; min-width: 0; text-decoration: none;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .eq-pick .eq-pick-ticker:hover { color:#1d4ed8; text-decoration:underline; }
-  .eq-pick .eq-pick-name {
-    color:#64748b; font-size:12.5px; margin-top:4px; line-height:1.35;
-    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
-    overflow:hidden;
-  }
+  .eq-pick .eq-pick-ticker:hover { color: #1d4ed8; text-decoration: underline; }
   .eq-pick .eq-pick-price {
-    margin-top:8px; font-size:20px; font-weight:800; color:#0f172a;
-    font-variant-numeric: tabular-nums; letter-spacing:-0.02em;
+    font-size: 12px; font-weight: 800; color: #0f172a;
+    font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0;
   }
-  .eq-pick .eq-pick-price.eq-muted { font-size:14px; font-weight:600; color:#94a3b8; }
+  .eq-pick .eq-pick-price.eq-muted { font-size: 10px; font-weight: 600; color: #94a3b8; }
+  .eq-pick .eq-pick-name {
+    color: #64748b; font-size: 10px; line-height: 1.2;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
   .eq-pick .eq-pick-meta {
-    display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;
+    display: flex; flex-wrap: wrap; gap: 3px; align-items: center;
+    min-height: 18px;
   }
   .eq-chip-meta {
-    display:inline-block; padding:3px 8px; border-radius:999px;
-    background:#f1f5f9; color:#475569; font-size:11px; font-weight:600;
-    border:1px solid #e2e8f0; max-width:100%;
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    display: inline-block; padding: 1px 5px; border-radius: 999px;
+    background: #f1f5f9; color: #475569; font-size: 8.5px; font-weight: 700;
+    border: 1px solid #e2e8f0; max-width: 100%;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .eq-chip-meta.eq-mcap-chip { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }
+  .eq-chip-meta.eq-mcap-chip { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
   .eq-chip-meta.eq-sme-chip {
-    background:#ffedd5; border-color:#fdba74; color:#9a3412; font-weight:700;
+    background: #ffedd5; border-color: #fdba74; color: #9a3412; font-weight: 700;
   }
-  .eq-sme-inline {
-    display:inline-block; margin-left:6px; padding:1px 6px; border-radius:999px;
-    background:#ffedd5; color:#9a3412; border:1px solid #fdba74;
-    font-size:10px; font-weight:700; vertical-align:middle;
+  .eq-chip-meta.eq-chip-sector { background: #f8fafc; color: #64748b; max-width: 72px; }
+  .eq-chip-meta.eq-chip-strong { background: #dcfce7; border-color: #86efac; color: #166534; }
+  .eq-chip-meta.eq-chip-soft { background: #e0f2fe; border-color: #7dd3fc; color: #0369a1; }
+  .eq-chip-meta.eq-chip-fade { background: #fee2e2; border-color: #fca5a5; color: #b91c1c; }
+  .eq-chip-meta.eq-chip-watch { background: #f1f5f9; border-color: #e2e8f0; color: #475569; }
+  .eq-pick .eq-surprise {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 6px;
+    margin-top: 2px; padding: 5px 7px; border-radius: 8px;
+    background: #fff7ed; border: 1px solid #fed7aa;
   }
-  .eq-price {
-    font-weight:700; color:#0f172a; font-variant-numeric: tabular-nums;
+  .eq-pick.strong .eq-surprise { background: #f0fdf4; border-color: #bbf7d0; }
+  .eq-pick .eq-surprise span {
+    color: #9a3412; font-size: 9px; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase;
   }
-  .eq-mcap {
-    font-weight:600; color:#334155; font-variant-numeric: tabular-nums;
-  }
-  .eq-sector {
-    max-width:140px; overflow:hidden; text-overflow:ellipsis; color:#475569;
+  .eq-pick.strong .eq-surprise span { color: #166534; }
+  .eq-pick .eq-surprise b {
+    color: #0f172a; font-size: 14px; font-weight: 800;
+    font-variant-numeric: tabular-nums;
   }
   .eq-pick .eq-pick-stats {
-    display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:14px; font-size:12px;
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3px; margin-top: 1px;
   }
   .eq-pick .eq-stat {
-    background:#f8fafc; border-radius:10px; padding:10px 10px 8px;
-    border:1px solid #eef2f7;
+    background: #f8fafc; border-radius: 6px; padding: 4px 5px 3px;
+    border: 1px solid #eef2f7; min-width: 0;
   }
-  .eq-pick .eq-stat b { display:block; color:#0f172a; font-size:16px; margin-top:3px; font-variant-numeric:tabular-nums; }
-  .eq-pick .eq-stat span { color:#64748b; font-size:11px; font-weight:600; letter-spacing:.02em; }
+  .eq-pick .eq-stat b {
+    display: block; color: #0f172a; font-size: 11px; margin-top: 1px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .eq-pick .eq-stat span {
+    color: #64748b; font-size: 8px; font-weight: 700; letter-spacing: .02em;
+    text-transform: uppercase;
+  }
+  .eq-pick .eq-stat.eq-up b { color: #15803d; }
+  .eq-pick .eq-stat.eq-down b { color: #b91c1c; }
+  .eq-sme-inline {
+    display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 999px;
+    background: #ffedd5; color: #9a3412; border: 1px solid #fdba74;
+    font-size: 10px; font-weight: 700; vertical-align: middle;
+  }
+  .eq-price {
+    font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums;
+  }
+  .eq-mcap {
+    font-weight: 600; color: #334155; font-variant-numeric: tabular-nums;
+  }
+  .eq-sector {
+    max-width: 140px; overflow: hidden; text-overflow: ellipsis; color: #475569;
+  }
   .eq-links {
-    display:flex; flex-wrap:wrap; gap:6px; margin-top:12px;
+    display: flex; flex-wrap: wrap; gap: 3px; align-items: center; margin-top: 1px;
   }
   .eq-links a {
-    display:inline-block; padding:5px 10px; border-radius:8px;
-    background:#f1f5f9; color:#334155; font-size:12px; font-weight:700;
-    text-decoration:none; border:1px solid #e2e8f0;
+    display: inline-block; padding: 1px 5px; border-radius: 5px;
+    background: #f1f5f9; color: #334155; font-size: 8.5px; font-weight: 700;
+    text-decoration: none; border: 1px solid #e2e8f0;
   }
-  .eq-links a:hover { background:#e2e8f0; color:#0f172a; }
-  .eq-links a.eq-web { background:#ecfeff; border-color:#a5f3fc; color:#0e7490; }
-  .eq-links a.eq-tv { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }
-  .eq-links a.eq-sc { background:#f0fdf4; border-color:#bbf7d0; color:#15803d; }
-  .eq-ticker .eq-links { margin-top:4px; }
-  .eq-ticker .eq-links a { padding:2px 7px; font-size:10.5px; border-radius:6px; }
+  .eq-links a:hover { background: #e2e8f0; color: #0f172a; }
+  .eq-links a.eq-web { background: #ecfeff; border-color: #a5f3fc; color: #0e7490; }
+  .eq-links a.eq-tv { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+  .eq-links a.eq-sc { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+  .eq-ticker .eq-links { margin-top: 4px; }
+  .eq-ticker .eq-links a { padding: 2px 7px; font-size: 10.5px; border-radius: 6px; }
   .eq-section-label {
     font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
     color:#64748b; margin:4px 0 8px;
@@ -383,55 +433,80 @@ def _sme_inline_html(r: pd.Series) -> str:
     return '<span class="eq-sme-inline" title="NSE Emerge / SME listing">SME</span>'
 
 
+def _quality_chip(tag: str) -> str:
+    t = safe_str(tag).lower() or "watch"
+    labels = {
+        "strong": ("Strong", "eq-chip-strong"),
+        "soft": ("Mild", "eq-chip-soft"),
+        "fade": ("Caution", "eq-chip-fade"),
+        "watch": ("Watch", "eq-chip-watch"),
+    }
+    label, cls = labels.get(t, ("Watch", "eq-chip-watch"))
+    return f'<span class="eq-chip-meta {cls}">{label}</span>'
+
+
+def _stat_pct(label: str, val) -> str:
+    tone = ""
+    text = "—"
+    if val is not None and not (isinstance(val, float) and pd.isna(val)):
+        try:
+            n = float(val)
+            text = f"{n:+.1f}%"
+            tone = " eq-up" if n > 0 else " eq-down" if n < 0 else ""
+        except (TypeError, ValueError):
+            text = "—"
+    return (
+        f'<div class="eq-stat{tone}"><span>{html.escape(label)}</span>'
+        f"<b>{html.escape(text)}</b></div>"
+    )
+
+
+def _fmt_surprise(val) -> str:
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return "—"
+    try:
+        return f"{float(val):+.2f}"
+    except (TypeError, ValueError):
+        return "—"
+
+
 def _pick_card(r: pd.Series) -> str:
     ticker = safe_str(r.get("ticker")).upper()
     _sc, tv = research_links(ticker, safe_str(r.get("market")) or "NSE")
-    name_raw = safe_str(r.get("name")) or ticker
-    name = html.escape(name_raw)
-    tag = safe_str(r.get("quality_tag")).lower() or "strong"
-    surprise = r.get("surprise_score")
-    ret = r.get("return_score")
-    d1 = r.get("ret_1d")
-    np_y = r.get("np_yoy")
+    name = html.escape(safe_str(r.get("name")) or ticker)
+    tag = safe_str(r.get("quality_tag")).lower() or "watch"
     price_txt = _fmt_price(r.get("price_now"))
     price_cls = "eq-pick-price" if price_txt != "—" else "eq-pick-price eq-muted"
     sector = safe_str(r.get("sector")) or safe_str(r.get("industry"))
     mcap_txt = _fmt_mcap(r.get("market_cap_cr"))
-    meta_bits = []
-    sme_chip = _sme_chip_html(r)
-    if sme_chip:
-        meta_bits.append(sme_chip)
+
+    meta_bits: list[str] = [_quality_chip(tag)]
+    if _is_sme_row(r):
+        meta_bits.append(_sme_chip_html(r))
+    if mcap_txt != "—":
+        meta_bits.append(
+            f'<span class="eq-chip-meta eq-mcap-chip">{html.escape(mcap_txt)}</span>'
+        )
     if sector:
         meta_bits.append(
-            f'<span class="eq-chip-meta" title="{html.escape(sector)}">{html.escape(sector)}</span>'
+            f'<span class="eq-chip-meta eq-chip-sector" title="{html.escape(sector)}">'
+            f"{html.escape(sector)}</span>"
         )
-    if mcap_txt != "—":
-        meta_bits.append(f'<span class="eq-chip-meta eq-mcap-chip">{html.escape(mcap_txt)}</span>')
 
-    def _n(v, suffix="") -> str:
-        if v is None or (isinstance(v, float) and pd.isna(v)):
-            return "—"
-        try:
-            return f"{float(v):+.1f}{suffix}"
-        except (TypeError, ValueError):
-            return "—"
-
+    surprise_txt = _fmt_surprise(r.get("surprise_score"))
     return f"""
     <div class="eq-pick {html.escape(tag)}">
       <div class="eq-pick-top">
-        <div>
-          <a class="eq-pick-ticker" href="{html.escape(tv)}" target="_blank" rel="noopener noreferrer">{html.escape(ticker)}</a>
-          <div class="eq-pick-name">{name}</div>
-          <div class="{price_cls}">{html.escape(price_txt)}</div>
-          {f'<div class="eq-pick-meta">{"".join(meta_bits)}</div>' if meta_bits else ''}
-        </div>
-        {_badge_cell(tag).replace("<td>", "").replace("</td>", "")}
+        <a class="eq-pick-ticker" href="{html.escape(tv)}" target="_blank" rel="noopener noreferrer">{html.escape(ticker)}</a>
+        <span class="{price_cls}">{html.escape(price_txt)}</span>
       </div>
+      <div class="eq-pick-name">{name}</div>
+      <div class="eq-pick-meta">{"".join(meta_bits)}</div>
+      <div class="eq-surprise"><span>Surprise</span><b>{html.escape(surprise_txt)}</b></div>
       <div class="eq-pick-stats">
-        <div class="eq-stat"><span>Surprise</span><b>{_n(surprise)}</b></div>
-        <div class="eq-stat"><span>Return</span><b>{_n(ret)}</b></div>
-        <div class="eq-stat"><span>NP YoY</span><b>{_n(np_y, "%")}</b></div>
-        <div class="eq-stat"><span>1D move</span><b>{_n(d1, "%")}</b></div>
+        {_stat_pct("Sales YoY", r.get("rev_yoy"))}
+        {_stat_pct("Profit YoY", r.get("np_yoy"))}
+        {_stat_pct("EPS YoY", r.get("eps_yoy"))}
       </div>
       {_links_html(r)}
     </div>
@@ -444,7 +519,7 @@ def build_earningsq_html(
     title: str = "EarningsQ — NSE live",
     subtitle: str | None = None,
     standalone: bool = True,
-    top_n: int = 8,
+    top_n: int = 12,
     scan_stats: dict | None = None,
 ) -> str:
     if df is None or df.empty:
@@ -455,12 +530,24 @@ def build_earningsq_html(
         return wrap_interactive_page(title="", sections_html=_EQ_CSS + body, standalone=standalone)
 
     work = annotate_quality(df)
+    # Top cards: surprise-first (then blend); prefer Strong when enough exist.
+    ranked = work.copy()
+    if "surprise_score" in ranked.columns:
+        sort_cols = ["surprise_score"]
+        if "blend_rank" in ranked.columns:
+            sort_cols.append("blend_rank")
+        ranked = ranked.sort_values(
+            sort_cols, ascending=False, kind="mergesort", na_position="last"
+        )
+    elif "blend_rank" in ranked.columns:
+        ranked = ranked.sort_values("blend_rank", ascending=False, kind="mergesort")
+
+    strong = ranked[ranked["quality_tag"] == "strong"]
+    picks = strong.head(top_n) if len(strong) >= 3 else ranked.head(top_n)
+    picks_html = "".join(_pick_card(r) for _, r in picks.iterrows())
+
     if "blend_rank" in work.columns:
         work = work.sort_values("blend_rank", ascending=False, kind="mergesort")
-
-    strong = work[work["quality_tag"] == "strong"]
-    picks = strong.head(top_n) if len(strong) else work.head(min(top_n, 5))
-    picks_html = "".join(_pick_card(r) for _, r in picks.iterrows())
 
     rows_html: list[str] = []
     for _, r in work.iterrows():
@@ -513,14 +600,14 @@ def build_earningsq_html(
 <div class="eq-wrap">
   <div class="eq-legend">
     <strong>How to read</strong>
-    <span>Start with <b>Strong</b> cards — surprise beat + profit growth + price cooperating.</span>
+    <span>Top cards ranked by <b>Surprise</b> — Sales / Profit / EPS YoY underneath (Watching-style tiles).</span>
     <span><span class="eq-badge eq-badge-strong">Strong</span> good print</span>
     <span><span class="eq-badge eq-badge-soft">Mild</span> positive but softer</span>
     <span><span class="eq-badge eq-badge-fade">Caution</span> big surprise, weak price</span>
     {f'<span><strong>Coverage</strong> {html.escape(coverage)}</span>' if coverage else ''}
   </div>
 
-  <div class="eq-section-label">Top picks · {html.escape(meta)}</div>
+  <div class="eq-section-label">Top by surprise · {html.escape(meta)} · {len(picks)} cards</div>
   <div class="eq-picks">{picks_html or '<div class="eq-muted">No strong picks in this filter.</div>'}</div>
 
   <div class="eq-section-label">All prints · {strong_n} strong · {fade_n} caution</div>

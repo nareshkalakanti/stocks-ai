@@ -1,4 +1,4 @@
-"""Factor investing — momentum (12–1) scan."""
+"""Factor investing — Chen composite (mom / value / vol / sector) scan."""
 
 from stocks.strategies.factor.service import (
     analyze_factor,

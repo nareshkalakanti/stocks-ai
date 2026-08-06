@@ -1,4 +1,4 @@
-"""Momentum factor scores from price history (12m–skip-1m)."""
+"""Momentum helpers kept for imports; Quant Factor scan uses ``construction``."""
 
 from __future__ import annotations
 
@@ -10,9 +10,8 @@ import pandas as pd
 from stocks.core.text_utils import safe_str
 from stocks.market.momentum import LOOKBACK_1M, momentum_from_close
 
-HISTORY_PERIOD = "2y"
+HISTORY_PERIOD = "3y"
 HISTORY_INTERVAL = "1d"
-# Include any Yahoo-priced name; full 12–1 momentum still needs longer history.
 MIN_BARS = 1
 
 
@@ -32,7 +31,6 @@ def analyze_factor_stock(
     price = float(mom.get("current_price") or close.iloc[-1])
     price_1y = mom.get("price_1y")
     price_1m = mom.get("price_1m")
-    # Short history: still surface last price (and 1M if available).
     if price_1m is None and len(close) > LOOKBACK_1M:
         price_1m = round(float(close.iloc[-LOOKBACK_1M]), 2)
 
@@ -58,14 +56,13 @@ def analyze_factor_stock(
         "signal": "FACTOR",
         "date": date,
         "timeframe": "daily",
-        "pattern": "Momentum",
+        "pattern": "Factor",
         "pattern_code": "FACTOR",
         "detail": detail,
     }
 
 
 def _rank_pct(series: pd.Series, *, ascending: bool) -> pd.Series:
-    """Percentile rank 0–100 (NaN stays NaN)."""
     s = pd.to_numeric(series, errors="coerce")
     if s.notna().sum() < 2:
         return pd.Series(np.nan, index=series.index)
@@ -73,20 +70,13 @@ def _rank_pct(series: pd.Series, *, ascending: bool) -> pd.Series:
 
 
 def attach_factor_scores(df: pd.DataFrame) -> pd.DataFrame:
-    """Cross-sectional momentum score (0–100, higher = stronger 12–1 momentum)."""
     if df is None or df.empty:
         return df if df is not None else pd.DataFrame()
-
     out = df.copy()
+    if "composite" in out.columns:
+        out["score"] = pd.to_numeric(out["composite"], errors="coerce").round(3)
+        return out
     out["f_momentum"] = _rank_pct(out["momentum_pct"], ascending=True)
     out["score"] = out["f_momentum"].round(1)
     out["factors_used"] = out["f_momentum"].notna().astype(int)
-    out["detail"] = out.apply(
-        lambda row: (
-            f"Mom {row['momentum_pct']:+.1f}%"
-            if pd.notna(row.get("momentum_pct"))
-            else "momentum"
-        ),
-        axis=1,
-    )
     return out

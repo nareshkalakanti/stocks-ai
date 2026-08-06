@@ -269,8 +269,15 @@ def attach_pead_expand(
     cache_only: bool = False,
 ) -> pd.DataFrame:
     """Merge ``quarters`` + ``snapshot`` (MAs) onto each holdings row."""
-    if df is None or df.empty:
-        return df if df is not None else pd.DataFrame()
+    if df is None:
+        return pd.DataFrame()
+    if not isinstance(df, pd.DataFrame):
+        try:
+            df = pd.DataFrame(df)
+        except Exception:
+            return pd.DataFrame()
+    if df.empty:
+        return df
 
     out = df.copy()
     for col in ("quarters", "snapshot", "pe_ratio", "forward_pe", "roe"):
