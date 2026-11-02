@@ -212,7 +212,19 @@ def fetch_pead_expand_data(
         )
 
         pe_ratio = compute_trailing_pe(price_val, eps, info)
-        forward_pe = compute_forward_pe(price_val, eps, info)
+        market_cap = info.get("marketCap") if info else None
+        market_cap_cr = (
+            round(float(market_cap) / 1e7, 1)
+            if market_cap is not None and not (isinstance(market_cap, float) and pd.isna(market_cap))
+            else None
+        )
+        forward_pe = compute_forward_pe(
+            price_val,
+            eps,
+            info,
+            net_profit=net_profit,
+            market_cap_cr=market_cap_cr,
+        )
 
         snapshot = None
         if price_val is not None:

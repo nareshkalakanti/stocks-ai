@@ -197,6 +197,18 @@ class TestPeadCalculationLogic:
         fpe = compute_forward_pe(34.16, eps, info={})
         assert fpe == round(34.16 / (2.5 * 4), 1)
 
+    def test_forward_pe_mcap_over_np_run_rate(self):
+        """FF monitor cards use MCap ÷ (latest quarter net profit × 4)."""
+        np_s = pd.Series([36.05e7], index=[pd.Timestamp("2026-06-30")])
+        fpe = compute_forward_pe(
+            3409.7,
+            pd.Series([29.9], index=[pd.Timestamp("2026-06-30")]),
+            info={"marketCap": 2064e7},
+            net_profit=np_s,
+            market_cap_cr=2064.0,
+        )
+        assert fpe == 14.3
+
     def test_ff_reference_dates_are_iso(self):
         for row in ff_reference_by_ticker().values():
             rd = row.get("result_date")
@@ -428,6 +440,53 @@ class TestPeadFfMonitorAug2026:
         row = df[df["ticker"] == "STLTECH"].iloc[0]
         assert float(row["ff_pead_score"]) == 61.5
         assert row["our_pead_score"] is not None
+
+
+class TestPeadFfMonitorAug2026Screenshots:
+    """FinanciallyFree PEAD Result Monitor — KMEW, SPECIALITY, GAEL, SPORTKING (Aug 2026)."""
+
+    MONITOR_TICKERS = ("KMEW", "SPECIALITY", "GAEL", "SPORTKING")
+    SCORE_TOL = 3.5
+    FPE_TOL = 0.3
+
+    def test_monitor_cases_present(self):
+        tickers = {c["ticker"] for c in ff_monitor_cases()}
+        for t in self.MONITOR_TICKERS:
+            assert t in tickers
+
+    @pytest.mark.parametrize("ticker", MONITOR_TICKERS)
+    def test_ff_mode_score_matches_monitor_card(self, ticker: str):
+        card = ff_monitor_case(ticker)["monitor_card"]
+        row = {
+            "sales_yoy": card["sales_yoy_pct"],
+            "sales_qoq": card["sales_qoq_pct"],
+            "np_yoy": card["np_yoy_pct"],
+            "np_qoq": card["np_qoq_pct"],
+            "forward_pe": card["forward_pe"],
+        }
+        ours = float(score_pead2_ff(pd.DataFrame([row]))["pead_score"].iloc[0])
+        assert abs(ours - float(card["pead_score"])) <= self.SCORE_TOL
+
+    @pytest.mark.parametrize("ticker", MONITOR_TICKERS)
+    def test_forward_pe_from_mcap_and_np(self, ticker: str):
+        card = ff_monitor_case(ticker)["monitor_card"]
+        np_inr = float(card["np_q0_crore"]) * 1e7
+        np_s = pd.Series([np_inr], index=[pd.Timestamp("2026-06-30")])
+        ours = compute_forward_pe(
+            card.get("price"),
+            pd.Series([card.get("eps_q0", 1.0)], index=[pd.Timestamp("2026-06-30")]),
+            info={"marketCap": float(card["mcap_cr"]) * 1e7},
+            net_profit=np_s,
+            market_cap_cr=float(card["mcap_cr"]),
+        )
+        assert_close(ours, card["forward_pe"], self.FPE_TOL, f"{ticker}.forward_pe")
+
+    def test_score_comparison_includes_new_batch(self):
+        df = ff_monitor_score_comparison()
+        for ticker in self.MONITOR_TICKERS:
+            assert ticker in set(df["ticker"])
+            row = df[df["ticker"] == ticker].iloc[0]
+            assert abs(float(row["our_pead_score"]) - float(row["ff_pead_score"])) <= self.SCORE_TOL
 
 
 class TestPeadUnitValidation:

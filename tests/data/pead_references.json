@@ -1051,5 +1051,106 @@
         }
       }
     ]
+  },
+  "ff_pead_monitor_2026_08_29": {
+    "notes": [
+      "FinanciallyFree PEAD Result Monitor screenshots (2026-08-29) — KMEW, SPECIALITY, GAEL, SPORTKING.",
+      "Forward PE on cards = MCap Cr ÷ (latest quarter net profit Cr × 4).",
+      "Run: pytest tests/test_pead_validation.py::TestPeadFfMonitorAug2026Screenshots -q"
+    ],
+    "cases": [
+      {
+        "ticker": "KMEW",
+        "company": "Knowledge Marine & Engineering Works Ltd",
+        "result_label": "Q1 FY27",
+        "nse_code": "KMEW",
+        "monitor_card": {
+          "pead_score": 68.6,
+          "forward_pe": 17.7,
+          "sales_yoy_pct": 138.1,
+          "sales_qoq_pct": 70.7,
+          "np_yoy_pct": 466.7,
+          "np_qoq_pct": 166.7,
+          "revenue_q0_crore": 115.41,
+          "revenue_q1_crore": 67.62,
+          "revenue_yoy_crore": 48.47,
+          "np_q0_crore": 62.75,
+          "np_q1_crore": 23.53,
+          "np_yoy_crore": 11.08,
+          "eps_q0": 25.67,
+          "price": 2737.9,
+          "mcap_cr": 4438
+        }
+      },
+      {
+        "ticker": "SPECIALITY",
+        "company": "Speciality Restaurants Ltd",
+        "result_label": "Q1 FY27",
+        "bse_code": "534425",
+        "monitor_card": {
+          "pead_score": 37.1,
+          "forward_pe": 17.7,
+          "sales_yoy_pct": 16.8,
+          "sales_qoq_pct": 9.1,
+          "np_yoy_pct": 38.9,
+          "np_qoq_pct": 149.1,
+          "revenue_q0_crore": 127.03,
+          "revenue_q1_crore": 116.42,
+          "revenue_yoy_crore": 108.77,
+          "np_q0_crore": 7.11,
+          "np_q1_crore": 2.85,
+          "np_yoy_crore": 5.12,
+          "eps_q0": 1.45,
+          "price": 151.0,
+          "mcap_cr": 502
+        }
+      },
+      {
+        "ticker": "GAEL",
+        "company": "Gujarat Ambuja Exports Ltd",
+        "result_label": "Q1 FY27",
+        "bse_code": "524226",
+        "monitor_card": {
+          "pead_score": 49.5,
+          "forward_pe": 10.8,
+          "sales_yoy_pct": 23.5,
+          "sales_qoq_pct": 8.7,
+          "np_yoy_pct": 171.9,
+          "np_qoq_pct": 30.6,
+          "revenue_q0_crore": 1594.22,
+          "revenue_q1_crore": 1466.51,
+          "revenue_yoy_crore": 1291.23,
+          "np_q0_crore": 176.77,
+          "np_q1_crore": 135.32,
+          "np_yoy_crore": 65.02,
+          "eps_q0": 3.85,
+          "price": 170.0,
+          "mcap_cr": 7635
+        }
+      },
+      {
+        "ticker": "SPORTKING",
+        "company": "Sportking India Ltd",
+        "result_label": "Q1 FY27",
+        "bse_code": "539221",
+        "monitor_card": {
+          "pead_score": 55.2,
+          "forward_pe": 6.2,
+          "sales_yoy_pct": 20.1,
+          "sales_qoq_pct": 10.5,
+          "np_yoy_pct": 122.8,
+          "np_qoq_pct": 131.9,
+          "revenue_q0_crore": 703.68,
+          "revenue_q1_crore": 636.78,
+          "revenue_yoy_crore": 585.8,
+          "np_q0_crore": 75.97,
+          "np_q1_crore": 32.76,
+          "np_yoy_crore": 34.1,
+          "eps_q0": 5.98,
+          "price": 201.35,
+          "mcap_cr": 1878
+        }
+      }
+    ]
   }
 }

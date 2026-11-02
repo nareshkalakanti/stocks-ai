@@ -25,11 +25,21 @@ CFO_FIELDS = (
 
 PEAD_HIGH_SCORE_MIN = 40.0
 
-# Reverse-engineered from FF Result Monitor cards (YASHO / AEROFLEX / STLTECH, 2026-08).
-# score ≈ mean(sales_yoy, sales_qoq) + max(0, (PE_CHEAP_MAX − forward_pe) × PE_BONUS_PER_POINT)
+# Reverse-engineered from FF Result Monitor cards (Aug 2026 batch).
 FF_MONITOR_PE_CHEAP_MAX = 20.0
 FF_MONITOR_PE_BONUS_PER_POINT = 2.4
+FF_MONITOR_PE_ULTRA_CHEAP_MAX = 8.0
+FF_MONITOR_PE_ULTRA_BONUS_PER_POINT = 3.5
 FF_MONITOR_GROWTH_CAP = 100.0
+FF_MONITOR_SALES_LOW_THRESHOLD = 18.0
+FF_MONITOR_NP_BLEND_MIN_GAP = 15.0
+FF_MONITOR_NP_BLEND_MAX_NP = 80.0
+FF_MONITOR_NP_BLEND_WEIGHT = 0.30
+FF_MONITOR_NP_YOY_BLEND_TRIGGER = 100.0
+FF_MONITOR_NP_YOY_BLEND_CAP = 70.0
+FF_MONITOR_SALES_HIGH_THRESHOLD = 70.0
+FF_MONITOR_SALES_HIGH_BASE = 60.0
+FF_MONITOR_SALES_HIGH_DAMP = 0.12
 
 _GROWTH_QOQ_COLUMNS = ("sales_qoq", "np_qoq", "eps_qoq", "ebidt_qoq")
 
@@ -414,9 +424,34 @@ def compute_forward_pe(
     price: float | None,
     eps: pd.Series,
     info: dict | None = None,
+    *,
+    net_profit: pd.Series | None = None,
+    market_cap_cr: float | None = None,
 ) -> float | None:
-    """FF-style: price ÷ (latest quarter EPS × 4). Sentinel 999 when run-rate EPS ≤ 0."""
-    del info  # ignore yfinance forwardPE — FF uses run-rate from quarterly EPS
+    """
+    FinanciallyFree Result Monitor forward PE.
+
+    Primary: market cap ÷ (latest quarter net profit × 4) when both are available.
+    Fallback: price ÷ (latest quarter EPS × 4). Sentinel 999 when run-rate ≤ 0.
+    """
+    if net_profit is not None and not net_profit.dropna().empty:
+        np_s = net_profit.dropna().sort_index().astype(float)
+        run_rate_np = float(np_s.iloc[-1]) * 4.0
+        if run_rate_np <= 0:
+            return 999.0
+        mcap_inr: float | None = None
+        if info:
+            raw = info.get("marketCap")
+            if raw is not None and not (isinstance(raw, float) and pd.isna(raw)):
+                mcap_inr = float(raw)
+        if mcap_inr is None and market_cap_cr is not None and market_cap_cr > 0:
+            mcap_inr = float(market_cap_cr) * 1e7
+        if mcap_inr is not None and mcap_inr > 0:
+            pe = mcap_inr / run_rate_np
+            if pe > 500:
+                return 999.0
+            return round(pe, 1)
+
     if price is None or price <= 0:
         return None
     s = eps.dropna().sort_index().astype(float)
@@ -849,39 +884,94 @@ def _apply_ff_forward_pe_when_yoy_missing(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _ff_cap_growth(val: float | None, *, growth_cap: float) -> float | None:
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return None
+    try:
+        return max(-growth_cap, min(growth_cap, float(val)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _ff_monitor_growth_mean(*values: float | None) -> float | None:
+    parts = [v for v in values if v is not None]
+    return float(np.mean(parts)) if parts else None
+
+
 def _ff_monitor_pead_score(
     sales_yoy: float | None,
     sales_qoq: float | None,
     forward_pe: float | None,
     *,
+    np_yoy: float | None = None,
+    np_qoq: float | None = None,
     pe_cheap_max: float = FF_MONITOR_PE_CHEAP_MAX,
     pe_bonus_per_point: float = FF_MONITOR_PE_BONUS_PER_POINT,
+    pe_ultra_cheap_max: float = FF_MONITOR_PE_ULTRA_CHEAP_MAX,
+    pe_ultra_bonus_per_point: float = FF_MONITOR_PE_ULTRA_BONUS_PER_POINT,
     growth_cap: float = FF_MONITOR_GROWTH_CAP,
+    sales_low_threshold: float = FF_MONITOR_SALES_LOW_THRESHOLD,
+    np_blend_min_gap: float = FF_MONITOR_NP_BLEND_MIN_GAP,
+    np_blend_max_np: float = FF_MONITOR_NP_BLEND_MAX_NP,
+    np_blend_weight: float = FF_MONITOR_NP_BLEND_WEIGHT,
+    np_yoy_blend_trigger: float = FF_MONITOR_NP_YOY_BLEND_TRIGGER,
+    np_yoy_blend_cap: float = FF_MONITOR_NP_YOY_BLEND_CAP,
+    sales_high_threshold: float = FF_MONITOR_SALES_HIGH_THRESHOLD,
+    sales_high_base: float = FF_MONITOR_SALES_HIGH_BASE,
+    sales_high_damp: float = FF_MONITOR_SALES_HIGH_DAMP,
 ) -> float | None:
     """
-    FinanciallyFree Result Monitor–style score (fitted 2026-08 cards).
+    FinanciallyFree Result Monitor–style score (fitted Aug 2026 cards).
 
-    mean(capped sales YoY/QoQ) + cheap-Fwd-PE bonus when PE < ``pe_cheap_max``.
-    NP / EPS / returns are intentionally excluded — they overshoot FF monitor cards.
+    Sales-led growth core with optional NP uplift on moderate sales / strong profits,
+    dampening for extreme sales spikes, and cheap-forward-PE bonus tiers.
     """
-    parts: list[float] = []
-    for raw in (sales_yoy, sales_qoq):
-        if raw is None or (isinstance(raw, float) and pd.isna(raw)):
-            continue
+    sales_g = _ff_monitor_growth_mean(
+        _ff_cap_growth(sales_yoy, growth_cap=growth_cap),
+        _ff_cap_growth(sales_qoq, growth_cap=growth_cap),
+    )
+    np_yoy_c = _ff_cap_growth(np_yoy, growth_cap=growth_cap)
+    np_qoq_c = _ff_cap_growth(np_qoq, growth_cap=growth_cap)
+    np_g = _ff_monitor_growth_mean(np_yoy_c, np_qoq_c)
+    np_blend_g = np_g
+    if np_yoy is not None and not (isinstance(np_yoy, float) and pd.isna(np_yoy)):
         try:
-            parts.append(max(-growth_cap, min(growth_cap, float(raw))))
+            if float(np_yoy) > np_yoy_blend_trigger:
+                np_blend_g = _ff_monitor_growth_mean(
+                    _ff_cap_growth(min(float(np_yoy), np_yoy_blend_cap), growth_cap=growth_cap),
+                    np_qoq_c,
+                )
         except (TypeError, ValueError):
-            continue
-    if not parts:
+            pass
+    if sales_g is None and np_g is None:
         return None
-    score = float(np.mean(parts))
+
+    if sales_g is None:
+        score = np_g
+    elif np_g is None:
+        score = sales_g
+    elif (
+        sales_g < sales_low_threshold
+        and np_g > sales_g + np_blend_min_gap
+        and np_g < np_blend_max_np
+    ):
+        score = sales_g * (1.0 - np_blend_weight) + np_blend_g * np_blend_weight
+    else:
+        score = sales_g
+
+    if score is not None and score > sales_high_threshold:
+        score = sales_high_base + (score - sales_high_base) * sales_high_damp
+
     try:
         pe = float(forward_pe) if forward_pe is not None and not pd.isna(forward_pe) else None
     except (TypeError, ValueError):
         pe = None
-    if pe is not None and 0 < pe < 500 and pe < pe_cheap_max:
-        score += (pe_cheap_max - pe) * pe_bonus_per_point
-    return round(score, 1)
+    if pe is not None and 0 < pe < 500:
+        if pe < pe_cheap_max:
+            score = (score or 0.0) + (pe_cheap_max - pe) * pe_bonus_per_point
+        if pe < pe_ultra_cheap_max:
+            score = (score or 0.0) + (pe_ultra_cheap_max - pe) * pe_ultra_bonus_per_point
+    return round(float(score), 1) if score is not None else None
 
 
 def score_pead2_ff_weighted(
@@ -973,16 +1063,34 @@ def score_pead2_ff(
         if "forward_pe" in out.columns
         else pd.Series(np.nan, index=out.index)
     )
+    np_yoy = (
+        pd.to_numeric(out["np_yoy"], errors="coerce")
+        if "np_yoy" in out.columns
+        else pd.Series(np.nan, index=out.index)
+    )
+    np_qoq = (
+        pd.to_numeric(out["np_qoq"], errors="coerce")
+        if "np_qoq" in out.columns
+        else pd.Series(np.nan, index=out.index)
+    )
 
     scores: list[float] = []
     need_fallback: list[int] = []
-    for i, (sy, sq, pe) in enumerate(
-        zip(sales_yoy.tolist(), sales_qoq.tolist(), forward_pe.tolist())
+    for i, (sy, sq, ny, nq, pe) in enumerate(
+        zip(
+            sales_yoy.tolist(),
+            sales_qoq.tolist(),
+            np_yoy.tolist(),
+            np_qoq.tolist(),
+            forward_pe.tolist(),
+        )
     ):
         s = _ff_monitor_pead_score(
             None if sy is None or (isinstance(sy, float) and pd.isna(sy)) else float(sy),
             None if sq is None or (isinstance(sq, float) and pd.isna(sq)) else float(sq),
             None if pe is None or (isinstance(pe, float) and pd.isna(pe)) else float(pe),
+            np_yoy=None if ny is None or (isinstance(ny, float) and pd.isna(ny)) else float(ny),
+            np_qoq=None if nq is None or (isinstance(nq, float) and pd.isna(nq)) else float(nq),
         )
         if s is None:
             need_fallback.append(i)

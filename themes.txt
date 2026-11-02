@@ -1,0 +1,105 @@
+# Investment themes
+# Source: stocks/market/investment_themes.py
+# Tags are regex-extracted from About / Yahoo copy into company_profile_cache.theme_tags
+
+## Theme groups (Watching chips)
+
+Transmission
+  tags: acsr, aaac, opgw, ehv_cables, xlpe, copper, aluminium, power_transmission
+  search: acsr | copper | aluminium
+
+Transformers
+  tags: transformer_oil, crgo_steel, amorphous_core, copper_windings, bushings, tap_changers, radiators, ester_fluid
+  search: transformer oil | crgo | copper windings
+
+Switchgear
+  tags: switchgear, busducts, busbars, vcb, gis, ais, sf6
+  search: switchgear | busbar | sf6
+
+Backup
+  tags: industrial_ups, flywheel, lead_acid, lifepo4, diesel_genset, bess
+  search: ups | bess | diesel generator
+
+Cooling
+  tags: liquid_cooling, immersion_cooling, direct_to_chip, chilled_water, crah, crac, heat_exchanger, cdu
+  search: liquid cooling | crah | heat exchanger
+
+AI Infra
+  tags: all AI-infra tags below
+  search: data center | transformer oil | switchgear
+
+## Base tags
+
+copper
+aluminium
+cobalt
+nickel
+zinc
+steel
+cdmo
+api
+formulation
+pharma
+biotech
+defence
+ev
+renewable
+semiconductor
+specialty_chem
+packaging
+auto
+railways
+infra
+fmcg
+it_services
+
+## AI / data-center power infrastructure tags
+
+# Transmission & cable
+acsr
+aaac
+opgw
+ehv_cables
+xlpe
+
+# Transformer core & fluids
+transformer_oil
+crgo_steel
+amorphous_core
+copper_windings
+bushings
+tap_changers
+radiators
+ester_fluid
+
+# Switchgear & in-facility distribution
+switchgear
+busducts
+busbars
+vcb
+gis
+ais
+sf6
+
+# Backup & storage
+industrial_ups
+flywheel
+lead_acid
+lifepo4
+diesel_genset
+bess
+
+# Data-center cooling
+liquid_cooling
+immersion_cooling
+direct_to_chip
+chilled_water
+crah
+crac
+heat_exchanger
+cdu
+
+# Grid / power infra
+power_transmission
+smart_grid
+data_center

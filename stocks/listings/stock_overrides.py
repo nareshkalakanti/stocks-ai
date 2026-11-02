@@ -187,6 +187,15 @@ _CLASSIFICATION_OVERRIDES: tuple[dict[str, str], ...] = (
         "sub_sector": "Renewable Energy Equipment & Services",
     },
     {
+        # Renewable IPP (solar / wind / hybrid / BESS) — recent NSE listing.
+        "ticker": "JNPR",
+        "market": "NSE",
+        "name": "Juniper Green Energy Limited",
+        "sector": "Power & Utilities",
+        "industry": "Power Generation",
+        "sub_sector": "Power Generation",
+    },
+    {
         "ticker": "SKIL",
         "sector": "Real Estate & Construction",
         "industry": "Construction & Engineering",

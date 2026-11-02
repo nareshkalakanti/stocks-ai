@@ -50,7 +50,7 @@ def ff_monitor_cases() -> list[dict]:
     """FinanciallyFree PEAD Result Monitor reference cases (KPL, WPIL, YASHO, …)."""
     refs = load_pead_references()
     cases: list[dict] = []
-    for key in ("ff_pead_monitor_2026_07_13", "ff_pead_monitor_2026_08_01"):
+    for key in ("ff_pead_monitor_2026_07_13", "ff_pead_monitor_2026_08_01", "ff_pead_monitor_2026_08_29"):
         batch = refs.get(key, {})
         cases.extend(list(batch.get("cases", [])))
     return cases

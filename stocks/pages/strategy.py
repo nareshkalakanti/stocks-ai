@@ -109,6 +109,7 @@ STRATEGY_SECTIONS = (
     "H&T",
     "Governance",
     "Watching",
+    "Napkin",
 )
 
 
@@ -194,6 +195,10 @@ def render_strategy() -> None:
         from stocks.pages.watching import render_watching
 
         render_watching(show_title=False)
+    elif section == "Napkin":
+        from stocks.pages.napkin import render_napkin
+
+        render_napkin(show_title=False)
 
 def _price_change_has_expand(df: pd.DataFrame) -> bool:
     if df is None or df.empty:

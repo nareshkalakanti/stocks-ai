@@ -1,209 +1,298 @@
-"""Napkin Investing — LotusDew near-term vs terminal PE framework."""
+"""Napkin Investing Framework tab — Watching List universe, PEAD-style report."""
 
 from __future__ import annotations
 
-import streamlit as st
 import pandas as pd
+import streamlit as st
 
-from stocks.core.config import (
-    INDIA_STOCKS_DATASET,
-    NAPKIN_HORIZON_YEARS,
-    NAPKIN_NEAR_WEIGHT,
-    PEAD2_CACHE_HOURS,
-    cap_tier_id_from_label,
+from stocks.scans.list_playlist import (
+    WATCHING_LIST_LABELS,
+    format_watching_list_option,
 )
-from stocks.dashboards.report_html import embed_html_iframe
-from stocks.listings.stocks_data import load_india_stocks
-from stocks.scans.holdings_playlist import is_holdings_playlist
-from stocks.scans.scan_toolbar import (
-    COMPACT_SCAN_BTN_COL_WIDTH,
-    base_scan_extra_widths,
-    inject_scan_toolbar_css,
-    render_base_scan_filters,
-    scan_toolbar_row,
+from stocks.scans.scan_toolbar import inject_scan_toolbar_css
+from stocks.strategies.napkin.html import (
+    build_napkin_html,
+    embed_napkin_report,
+    enrich_napkin_display,
+    napkin_iframe_height,
 )
-from stocks.scans.scan_universe import cap_tier_min_mcap_cr, resolve_cap_tier_id
-from stocks.scans.stock_filters import apply_stock_filters
-from stocks.strategies.napkin.service import prepare_pead_universe, run_napkin_scan
-from stocks.strategies.napkin.strategy import format_napkin_export_df, napkin_caption
-from stocks.strategies.pead2.html import build_pead2_dashboard_html, pead2_iframe_height
-from stocks.strategies.pead2.service import (
-    Pead2ScanCoverage,
-    expand_pead_candidates_to_universe,
+from stocks.strategies.napkin.napkin_framework import (
+    DEFAULT_BASE_RATE,
+    DEFAULT_BASE_TV_WEIGHT,
+    DEFAULT_CURRENT_RATE,
+    DEFAULT_MIN_ADV,
+    NapkinParams,
+    adj_tv_weight,
+    near_term_weight,
+    run_napkin_pipeline,
 )
 
-
-def _inject_css() -> None:
-    if st.session_state.get("_napkin_scan_css"):
-        return
-    inject_scan_toolbar_css()
-    st.session_state["_napkin_scan_css"] = True
+# Same session key as Watching — do not fork list selection.
+_WATCHING_LIST_KEY = "watching_list_v2"
+_RESULT_KEY = "napkin_fw_result_v1"
 
 
-def _filter_key(filters, *, cap_tier_id: str) -> tuple:
-    return (
-        filters.market,
-        tuple(filters.sectors),
-        tuple(filters.industries),
-        filters.search,
-        cap_tier_id,
+def _load_list_universe(list_label: str) -> pd.DataFrame:
+    """Watching list + local name/sector/market/website enrichment."""
+    from stocks.pages.watching import _raw_for_list
+    from stocks.shared.early_edge import enrich_watching_board
+
+    raw = _raw_for_list(list_label)
+    if raw is None or raw.empty:
+        return pd.DataFrame(columns=["ticker", "name", "market", "sector", "website"])
+    try:
+        enriched = enrich_watching_board(raw, list_tag=list_label, fetch_live_prices=False)
+    except Exception:
+        enriched = raw.copy()
+    if enriched is None or enriched.empty:
+        enriched = raw.copy()
+    out = enriched.copy()
+    out["ticker"] = out["ticker"].astype(str).str.strip().str.upper()
+    if "name" not in out.columns:
+        out["name"] = out["ticker"]
+    if "sector" not in out.columns and "industry" in out.columns:
+        out["sector"] = out["industry"]
+    cols = [
+        c
+        for c in ("ticker", "name", "market", "sector", "industry", "website", "market_cap_cr")
+        if c in out.columns
+    ]
+    return out[cols].drop_duplicates("ticker").reset_index(drop=True)
+
+
+def _scatter(scored: pd.DataFrame):
+    try:
+        import plotly.graph_objects as go
+    except Exception:
+        return None
+    if scored is None or scored.empty:
+        return None
+    df = scored.copy()
+    df["required_cagr"] = pd.to_numeric(df["required_cagr"], errors="coerce")
+    df["expected_cagr"] = pd.to_numeric(df["expected_cagr"], errors="coerce")
+    df = df.dropna(subset=["required_cagr", "expected_cagr"])
+    # Clip extreme outliers so Buys stay visible
+    df = df[(df["required_cagr"] <= 1.2) & (df["expected_cagr"] <= 1.2)]
+    if df.empty:
+        return None
+
+    color_map = {
+        "Napkin Buy": "#15803d",
+        "Fair Value": "#64748b",
+        "Overvalued": "#b91c1c",
+    }
+    fig = go.Figure()
+    for verd, color in color_map.items():
+        sub = df[df["verdict"] == verd]
+        if sub.empty:
+            continue
+        fig.add_trace(
+            go.Scatter(
+                x=sub["required_cagr"],
+                y=sub["expected_cagr"],
+                mode="markers",
+                name=verd,
+                marker=dict(color=color, size=8, opacity=0.85),
+                text=sub["ticker"],
+                customdata=sub[["pe"]].fillna("—"),
+                hovertemplate="%{text}<br>PE=%{customdata[0]}<br>Req=%{x:.1%}<br>Exp=%{y:.1%}<extra></extra>",
+            )
+        )
+    lo = 0.0
+    hi = float(max(df["required_cagr"].max(), df["expected_cagr"].max(), 0.2))
+    fig.add_trace(
+        go.Scatter(
+            x=[lo, hi],
+            y=[lo, hi],
+            mode="lines",
+            name="Exp = Req",
+            line=dict(dash="dash", color="#94a3b8", width=1),
+            hoverinfo="skip",
+        )
     )
+    fig.update_layout(
+        height=280,
+        margin=dict(l=8, r=8, t=8, b=8),
+        xaxis_title="Required CAGR",
+        yaxis_title="Expected CAGR",
+        xaxis_tickformat=".0%",
+        yaxis_tickformat=".0%",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=11)),
+        plot_bgcolor="#fff",
+        paper_bgcolor="#fff",
+    )
+    return fig
 
 
 def render_napkin(*, show_title: bool = True) -> None:
-    _inject_css()
-
-    try:
-        stocks = load_india_stocks()
-    except Exception as exc:
-        st.error(f"Could not load dataset `{INDIA_STOCKS_DATASET}`: {exc}")
-        return
+    inject_scan_toolbar_css()
 
     if show_title:
-        st.markdown("### Napkin Investing")
-    st.caption(napkin_caption())
+        st.markdown("### Napkin Investing Framework")
+    st.caption("What growth does the current PE actually demand?")
 
-    with scan_toolbar_row(*base_scan_extra_widths(COMPACT_SCAN_BTN_COL_WIDTH)) as row:
-        filters, cap_tier_label_ui = render_base_scan_filters(
-            stocks,
-            row,
-            key_prefix="napkin",
-            cap_tier_key="napkin_cap_tier",
-        )
-        cap_tier_id = resolve_cap_tier_id(
-            filters.market, cap_tier_id_from_label(cap_tier_label_ui)
-        )
-        min_mcap_cr = cap_tier_min_mcap_cr(cap_tier_id)
-        filtered = apply_stock_filters(stocks, filters)
+    list_opts = list(WATCHING_LIST_LABELS)
+    if _WATCHING_LIST_KEY not in st.session_state or st.session_state[_WATCHING_LIST_KEY] not in list_opts:
+        st.session_state[_WATCHING_LIST_KEY] = list_opts[0]
 
-        filter_key = _filter_key(
-            filters,
-            cap_tier_id=cap_tier_id,
+    with st.container(border=True):
+        r1 = st.columns([1.4, 1.0, 1.0, 1.0], vertical_alignment="bottom", gap="small")
+        with r1[0]:
+            selected = st.selectbox(
+                "List",
+                list_opts,
+                key=_WATCHING_LIST_KEY,
+                format_func=format_watching_list_option,
+                help="Same list as Watching — Napkin runs on this universe.",
             )
-        if st.session_state.get("napkin_filter_key") != filter_key:
-            st.session_state.napkin_filter_key = filter_key
-            st.session_state.pop("napkin_candidates", None)
-
-        universe, _, _ = prepare_pead_universe(filtered, cap_tier_id=cap_tier_id)
-
-        with row[4]:
-            run_clicked = st.button(
-                "Scan",
-                type="primary",
-                width="stretch",
-                key="napkin_scan",
-                help=(
-                    f"Load PEAD fundamentals (cache ≤ {PEAD2_CACHE_HOURS}h), apply "
-                    f"LotusDew napkin: near-term weight {NAPKIN_NEAR_WEIGHT:.0%} over "
-                    f"{NAPKIN_HORIZON_YEARS}Y vs terminal value."
-                ),
+        with r1[1]:
+            base_rate = st.slider(
+                "Base Interest Rate (%)",
+                1.0,
+                15.0,
+                float(DEFAULT_BASE_RATE),
+                0.1,
+                key="napkin_fw_base_rate",
+            )
+        with r1[2]:
+            current_rate = st.slider(
+                "Current 10Y Yield (%)",
+                1.0,
+                15.0,
+                float(DEFAULT_CURRENT_RATE),
+                0.1,
+                key="napkin_fw_current_rate",
+            )
+        with r1[3]:
+            base_tv_pct = st.slider(
+                "Base Terminal Weight (%)",
+                40,
+                95,
+                int(round(DEFAULT_BASE_TV_WEIGHT * 100)),
+                1,
+                key="napkin_fw_tv",
             )
 
-    holdings_view = is_holdings_playlist(filters.market)
+        r2 = st.columns([1.0, 1.0, 1.2], vertical_alignment="bottom", gap="small")
+        with r2[0]:
+            min_adv = st.slider(
+                "min_adv (₹)",
+                0.0,
+                50_000_000.0,
+                float(DEFAULT_MIN_ADV),
+                100_000.0,
+                key="napkin_fw_min_adv",
+            )
+        with r2[1]:
+            force_full = st.checkbox(
+                "Force full run (slow)",
+                value=False,
+                key="napkin_fw_force",
+                help="NSE / NSE SME: fetch fundamentals for every price-screen survivor.",
+            )
+        with r2[2]:
+            run_clicked = st.button("Run Napkin", type="primary", width="stretch", key="napkin_fw_run")
+
+    params = NapkinParams(
+        base_rate=float(base_rate),
+        current_rate=float(current_rate),
+        base_tv_weight=float(base_tv_pct) / 100.0,
+        min_adv=float(min_adv),
+        force_full=bool(force_full),
+    )
+    adj = adj_tv_weight(params.base_rate, params.current_rate, params.base_tv_weight)
+    near = near_term_weight(params.base_rate, params.current_rate, params.base_tv_weight)
 
     if run_clicked:
-        if universe.empty:
-            st.warning("No stocks match the current filters.")
-            return
+        universe = _load_list_universe(selected)
+        prog = st.progress(0.0, text="Napkin — price screen…")
 
-        progress = st.progress(0, text="Napkin Investing — loading…")
+        def _on_fund(done: int, total: int) -> None:
+            if total:
+                prog.progress(min(1.0, done / total), text=f"Fetching fundamentals {done}/{total}…")
 
-        def _progress(done: int, total: int) -> None:
-            if total <= 0:
-                progress.progress(1.0, text="Done")
-                return
-            progress.progress(
-                min(done / total, 1.0),
-                text=f"Napkin Investing {done:,}/{total:,}…",
-            )
+        result = run_napkin_pipeline(
+            universe,
+            selected,
+            params,
+            progress_callback=_on_fund,
+        )
+        prog.empty()
+        st.session_state[_RESULT_KEY] = result
+        st.session_state[_RESULT_KEY + "_list"] = selected
 
-        try:
-            result = run_napkin_scan(
-                universe,
-                progress_callback=_progress,
-                min_mcap_cr=min_mcap_cr,
-            )
-        except Exception as exc:
-            progress.empty()
-            st.error(f"Napkin Investing scan failed: {exc}")
-            return
-        progress.empty()
-
-        st.session_state.napkin_candidates = result.get("candidates")
-        st.session_state.napkin_candidates_previous = result.get("candidates_previous")
-        st.session_state.napkin_cache_hits = int(result.get("cache_hits") or 0)
-        coverage = result.get("coverage")
-        if isinstance(coverage, Pead2ScanCoverage):
-            st.session_state.napkin_coverage = coverage
-
-        fetched = int(result.get("fetched") or 0)
-        if fetched > 0:
-            st.caption(
-                f"Updated **{int(result.get('saved') or 0):,}** tickers from Yahoo "
-                f"({fetched:,} tried)."
-            )
-
-    candidates = st.session_state.get("napkin_candidates")
-    candidates_previous = st.session_state.get("napkin_candidates_previous")
-
-    if candidates is None:
-        st.caption("Set filters, then click **Scan**.")
-        return
-
-    if holdings_view and not universe.empty:
-        candidates = expand_pead_candidates_to_universe(universe, candidates)
-        if candidates_previous is not None and not candidates_previous.empty:
-            candidates_previous = expand_pead_candidates_to_universe(
-                universe, candidates_previous
-            )
-
-    if not isinstance(candidates, pd.DataFrame) or candidates.empty:
+    result = st.session_state.get(_RESULT_KEY)
+    if result is None:
         st.caption(
-            "No napkin-scorable names in this universe "
-            "(need a usable PE — try widening filters or refreshing cache)."
+            f"Terminal **{adj:.0%}** · Near **{near:.0%}** — pick a List, then **Run Napkin**."
+        )
+        st.caption(
+            "Educational tool based on the Lotusdew Napkin Framework. Not investment advice."
         )
         return
 
-    prev_df = (
-        candidates_previous
-        if isinstance(candidates_previous, pd.DataFrame) and not candidates_previous.empty
-        else pd.DataFrame()
-    )
-    cache_hits = int(st.session_state.get("napkin_cache_hits") or 0)
-    tq_n = (
-        int(candidates["has_tq"].fillna(False).astype(bool).sum())
-        if "has_tq" in candidates.columns
-        else 0
-    )
-    bb_n = (
-        int(candidates["has_bb"].fillna(False).astype(bool).sum())
-        if "has_bb" in candidates.columns
-        else 0
+    list_used = st.session_state.get(_RESULT_KEY + "_list") or selected
+    scored = enrich_napkin_display(result.scored, result.universe)
+    gaps = 0
+    if scored is not None and not scored.empty and "verdict" in scored.columns:
+        gaps = int(
+            scored["verdict"].isin(["Insufficient Data", "Unprofitable"]).sum()
+        )
+    health = (
+        f"{result.in_list} in list · {result.passed_price} screened · "
+        f"{result.fundamentals_available} with PE · {result.scored_n} scored"
+        + (f" · {gaps} gaps" if gaps else "")
+        + f" · Prices {result.prices_ts or '—'} · Fund {result.fundamentals_ts or '—'}"
     )
 
-    embed_html = build_pead2_dashboard_html(
-        candidates,
-        df_previous=prev_df,
-        title="Napkin Investing",
-        list_label="Napkin screen",
-        standalone=False,
-        variant="napkin",
-        default_sort_col="pead_score",
-        score_high_min=50.0,
+    html_doc = build_napkin_html(
+        scored,
+        list_label=str(list_used),
+        adj_tv=adj,
+        near_w=near,
+        health=health,
     )
+    n_show = len(scored) if scored is not None else 0
+    # Default chip shows Buys — height for visible subset approx
+    embed_napkin_report(html_doc, height=napkin_iframe_height(min(n_show, 25)))
+
+    with st.expander("Scatter (Req vs Exp)", expanded=False):
+        fig = _scatter(scored)
+        if fig is not None:
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.caption("No plottable rows (need both Required and Expected CAGR).")
+
+    if scored is not None and not scored.empty:
+        export_cols = [
+            c
+            for c in (
+                "ticker",
+                "name",
+                "pe",
+                "pe_source",
+                "required_cagr",
+                "expected_cagr",
+                "napkin_score",
+                "verdict",
+                "growth_source",
+                "data_note",
+                "sc",
+                "tv",
+                "website",
+            )
+            if c in scored.columns
+        ]
+        st.download_button(
+            "Download Napkin CSV",
+            data=scored[export_cols].to_csv(index=False).encode("utf-8"),
+            file_name="napkin_framework.csv",
+            mime="text/csv",
+            key="napkin_fw_csv",
+        )
+
+    for note in result.notes:
+        st.caption(f"· {note}")
     st.caption(
-        f"{len(candidates)} names · {cache_hits:,} from DB · "
-        f"TQ **{tq_n}** · BB **{bb_n}** · "
-        f"score ≥50 ⇒ growth covers required near-term CAGR · "
-        f"**click a row** to expand detail."
-    )
-    embed_html_iframe(embed_html, height=pead2_iframe_height(len(candidates)))
-
-    csv = format_napkin_export_df(candidates).to_csv(index=False).encode("utf-8")
-    st.download_button(
-        "Download Napkin CSV",
-        data=csv,
-        file_name="napkin_investing.csv",
-        mime="text/csv",
-        key="napkin_csv",
+        "Educational tool based on the Lotusdew Napkin Framework. Not investment advice."
     )

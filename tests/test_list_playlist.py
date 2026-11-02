@@ -23,7 +23,9 @@ from stocks.listings.stocks_data import market_options
 
 
 def test_watching_list_labels():
-    assert WATCHING_LIST_LABELS[0] == EARLY_EDGE_PLAYLIST_LABEL
+    assert WATCHING_LIST_LABELS[0] == NSE_WATCHING_LABEL
+    assert WATCHING_LIST_LABELS[1] == NSE_SME_WATCHING_LABEL
+    assert EARLY_EDGE_PLAYLIST_LABEL in WATCHING_LIST_LABELS
     assert HOLDINGS_PLAYLIST_LABEL in WATCHING_LIST_LABELS
     for label in FUND_WATCHLIST_PLAYLIST_LABELS:
         assert label in WATCHING_LIST_LABELS

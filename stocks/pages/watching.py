@@ -11,6 +11,7 @@ from stocks.listings.stocks_data import apply_market_column_filter, load_india_s
 from stocks.scans.holdings_playlist import HOLDINGS_PLAYLIST_LABEL
 from stocks.scans.list_playlist import (
     MARKET_WATCHING_LIST_LABELS,
+    NSE_WATCHING_LABEL,
     WATCHING_COMMON_LIST_LABELS,
     WATCHING_LIST_LABELS,
     format_watching_list_option,
@@ -45,7 +46,7 @@ from stocks.shared.portfolio import (
 
 from stocks.shared.watching_common_html import build_watching_common_html
 
-_WATCHING_LIST_KEY = "watching_list"
+_WATCHING_LIST_KEY = "watching_list_v2"
 _COMMON_TILES_MAX = 12
 _BOARD_PAGE_SIZE = 100
 _PAGINATED_LISTS = frozenset(MARKET_WATCHING_LIST_LABELS)
@@ -459,8 +460,15 @@ def render_watching(*, show_title: bool = True) -> None:
         st.markdown("### Watching")
 
     list_opts = list(WATCHING_LIST_LABELS)
-    if _WATCHING_LIST_KEY not in st.session_state or st.session_state[_WATCHING_LIST_KEY] not in list_opts:
-        st.session_state[_WATCHING_LIST_KEY] = EARLY_EDGE_PLAYLIST_LABEL
+    # Prefer NSE as default; migrate prior Early Edge session once.
+    prev = st.session_state.get("watching_list")
+    if _WATCHING_LIST_KEY not in st.session_state:
+        if prev in list_opts and prev not in (EARLY_EDGE_PLAYLIST_LABEL,):
+            st.session_state[_WATCHING_LIST_KEY] = prev
+        else:
+            st.session_state[_WATCHING_LIST_KEY] = NSE_WATCHING_LABEL
+    elif st.session_state[_WATCHING_LIST_KEY] not in list_opts:
+        st.session_state[_WATCHING_LIST_KEY] = NSE_WATCHING_LABEL
 
     inject_scan_toolbar_css()
     with st.container(border=True):
@@ -472,7 +480,7 @@ def render_watching(*, show_title: bool = True) -> None:
                 key=_WATCHING_LIST_KEY,
                 format_func=format_watching_list_option,
                 help=(
-                    "Early Edge, Holdings, Negen, Niveshaay, NSE, NSE SME — "
+                    "NSE, NSE SME, Early Edge, Holdings, Negen, Niveshaay — "
                     "same board; NSE / SME page with ‹ › inside the table toolbar."
                 ),
             )

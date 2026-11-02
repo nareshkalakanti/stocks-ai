@@ -8,6 +8,8 @@ data/logs/
 data/models/
 data/dashboard_cache/
 data/nse_xbrl_cache/
+data/napkin/fundamentals/*.json
+data/napkin/prices/
 data/nse_equity_l.csv
 data/nse_sme_equity.csv
 data/nse_surveillance_cache.json

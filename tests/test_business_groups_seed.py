@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from stocks.core.database import (
     business_group_members_count,
     business_groups_count,
@@ -15,8 +17,18 @@ from stocks.shared.business_groups import ensure_business_groups, seed_default_b
 from stocks.scans.business_groups_playlist import business_groups_playlist_count
 
 
-def test_seed_default_business_groups_from_optional_file(tmp_path, monkeypatch):
+@pytest.fixture
+def isolated_db(tmp_path, monkeypatch):
+    """Point SQLite at a temp file so tests never wipe production stocks_ai.db."""
+    db_path = tmp_path / "test_stocks_ai.db"
+    monkeypatch.setattr("stocks.core.database.DB_PATH", db_path)
+    monkeypatch.setattr("stocks.core.config.DB_PATH", db_path)
+    monkeypatch.setattr("stocks.core.database._db_initialized_path", None)
     init_db()
+    return db_path
+
+
+def test_seed_default_business_groups_from_optional_file(isolated_db, tmp_path, monkeypatch):
     clear_all_business_groups()
     assert business_groups_count() == 0
 
@@ -46,8 +58,7 @@ def test_seed_default_business_groups_from_optional_file(tmp_path, monkeypatch):
     assert business_groups_playlist_count(seed_if_empty=False) > 0
 
 
-def test_seed_default_business_groups_skips_when_populated(tmp_path, monkeypatch):
-    init_db()
+def test_seed_default_business_groups_skips_when_populated(isolated_db, tmp_path, monkeypatch):
     seed_path = tmp_path / "business_groups_seed.json"
     seed_path.write_text(
         json.dumps(
@@ -78,8 +89,7 @@ def test_seed_default_business_groups_skips_when_populated(tmp_path, monkeypatch
     assert business_groups_count() == 1
 
 
-def test_ensure_business_groups_reseeds_when_under_populated(tmp_path, monkeypatch):
-    init_db()
+def test_ensure_business_groups_reseeds_when_under_populated(isolated_db, tmp_path, monkeypatch):
     clear_all_business_groups()
     save_business_group(
         "Partial Group",

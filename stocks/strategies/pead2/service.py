@@ -876,10 +876,22 @@ def _pead2_row_for_lag(
         "result_date": pd.Timestamp(result_date).strftime("%Y-%m-%d"),
         "quarter_end": quarter_end.strftime("%Y-%m-%d"),
         "price": round(price_val, 2) if price_val is not None else None,
-        "forward_pe": compute_forward_pe(price_val, ep_g, info),
+        "forward_pe": compute_forward_pe(
+            price_val,
+            ep_g,
+            info,
+            net_profit=np_g,
+            market_cap_cr=market_cap_cr,
+        ),
         "pe_ratio": compute_trailing_pe(price_val, ep_g, info)
         if lag == 0
-        else compute_forward_pe(price_val, ep_g, info),
+        else compute_forward_pe(
+            price_val,
+            ep_g,
+            info,
+            net_profit=np_g,
+            market_cap_cr=market_cap_cr,
+        ),
         "returns_pct": returns_pct,
         "daily_ret_pct": daily_ret_pct,
         "cf_profit": compute_cf_profit(cf_g, np_g),
