@@ -9,6 +9,7 @@ import pandas as pd
 import yfinance as yf
 
 from stocks.core.json_utils import is_nullish
+from stocks.core.text_utils import safe_str
 
 
 NET_INCOME_FIELDS = (
@@ -1196,3 +1197,65 @@ def score_pead2_candidates(
     if resolved == "percentile":
         return score_pead2_percentile(df, weights=percentile_weights)
     return score_pead2_ff(df, weights=percentile_weights)
+
+
+def rescore_pead_board(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Recompute ``pead_score`` from the growth / Fwd PE columns already on the frame.
+
+    Keeps the board consistent after returns/price refreshes so the score always
+    matches the metrics shown in the same row.
+    """
+    if df is None or df.empty:
+        return df if df is not None else pd.DataFrame()
+    keep_order = [safe_str(t).upper() for t in df.get("ticker", pd.Series(dtype=str)).tolist()]
+    scored = score_pead2_candidates(df)
+    if scored.empty or "ticker" not in scored.columns or "pead_score" not in scored.columns:
+        return df
+    score_map = {
+        safe_str(t).upper(): s
+        for t, s in zip(scored["ticker"], scored["pead_score"], strict=False)
+    }
+    out = df.copy()
+    out["pead_score"] = [
+        score_map.get(safe_str(t).upper(), out.iloc[i].get("pead_score"))
+        for i, t in enumerate(out.get("ticker", pd.Series(dtype=str)).tolist())
+    ]
+    # Preserve caller row order (HTML/JS may re-sort).
+    if keep_order and "ticker" in out.columns:
+        rank = {t: i for i, t in enumerate(keep_order)}
+        out["_ord"] = out["ticker"].map(lambda t: rank.get(safe_str(t).upper(), 10**9))
+        out = out.sort_values("_ord", kind="mergesort").drop(columns=["_ord"])
+    return out.reset_index(drop=True)
+
+
+def latest_eps_np_from_quarters(
+    quarters: dict | None,
+) -> tuple[float | None, float | None]:
+    """Latest panel EPS (Rs) and Net Profit (₹ Cr display units) from expand quarters."""
+    if not isinstance(quarters, dict):
+        return None, None
+    eps_val: float | None = None
+    np_cr: float | None = None
+    for row in quarters.get("rows") or []:
+        label = str(row.get("label") or "").strip().lower()
+        values = row.get("values") or []
+        if not values:
+            continue
+        # Panels are oldest→newest; take last non-null.
+        latest = None
+        for v in reversed(values):
+            if v is None or (isinstance(v, float) and pd.isna(v)):
+                continue
+            try:
+                latest = float(v)
+                break
+            except (TypeError, ValueError):
+                continue
+        if latest is None:
+            continue
+        if "eps" in label:
+            eps_val = latest
+        elif "net profit" in label:
+            np_cr = latest
+    return eps_val, np_cr

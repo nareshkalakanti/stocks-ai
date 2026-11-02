@@ -1118,10 +1118,48 @@ def _refresh_returns_blob(ticker: str, market: str | None, blob: dict) -> dict |
         row["daily_ret_pct"] = daily_ret_pct
         if price_val is not None:
             row["price"] = price_val
+            # Keep Fwd PE aligned with the refreshed price (run-rate EPS / NP).
+            from stocks.strategies.pead2.strategy import (
+                compute_forward_pe,
+                compute_trailing_pe,
+                latest_eps_np_from_quarters,
+            )
+
+            eps_val, np_cr = latest_eps_np_from_quarters(row.get("quarters"))
+            eps_s = (
+                pd.Series([float(eps_val)], index=[pd.Timestamp(result_date)])
+                if eps_val is not None
+                else pd.Series(dtype=float)
+            )
+            np_s = (
+                pd.Series([float(np_cr) * 1e7], index=[pd.Timestamp(result_date)])
+                if np_cr is not None
+                else None
+            )
+            mcap_cr = out.get("market_cap_cr")
             snap = row.get("snapshot")
+            if mcap_cr is None and isinstance(snap, dict):
+                mcap_cr = snap.get("market_cap_cr")
+            fpe = compute_forward_pe(
+                price_val,
+                eps_s,
+                info,
+                net_profit=np_s,
+                market_cap_cr=float(mcap_cr) if mcap_cr is not None else None,
+            )
+            if fpe is not None:
+                row["forward_pe"] = fpe
+            tpe = compute_trailing_pe(price_val, eps_s, info)
+            if tpe is not None:
+                row["pe_ratio"] = tpe
             if isinstance(snap, dict):
                 snap = dict(snap)
                 snap["price"] = price_val
+                if fpe is not None:
+                    snap["forward_pe"] = fpe
+                if tpe is not None:
+                    snap["pe_ratio"] = tpe
+                    snap["pe"] = tpe
                 row["snapshot"] = snap
         lags["0"] = row
         out["lags"] = lags
