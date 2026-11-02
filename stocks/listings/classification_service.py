@@ -49,14 +49,19 @@ def _tuple_from_row(sector="", industry="", subsector="") -> tuple[str, str, str
 
 
 def _read_classification_db(db_path: Path, *, has_bse_code: bool) -> pd.DataFrame:
+    """Read stock-analysis classification sqlite; skip missing/unreadable files."""
     if not db_path.is_file():
         return pd.DataFrame()
     cols = ["nse_code", "sector", "industry", "subsector"]
     if has_bse_code:
         cols.insert(1, "bse_code")
     query = f"SELECT {', '.join(cols)} FROM stocks"
-    with sqlite3.connect(db_path) as conn:
-        return pd.read_sql(query, conn)
+    try:
+        with sqlite3.connect(f"file:{db_path.resolve()}?mode=ro", uri=True) as conn:
+            return pd.read_sql(query, conn)
+    except (OSError, sqlite3.Error):
+        # macOS TCC / sandbox can stat Documents paths but block sqlite open.
+        return pd.DataFrame()
 
 
 def load_classification_maps(

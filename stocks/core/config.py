@@ -20,12 +20,25 @@ INDIA_STOCKS_DATASET = "NSE equity listings (EQUITY_L + SME)"
 
 load_dotenv(ENV_PATH)
 
-STOCK_ANALYSIS_SQLITE_DIR = Path(
-    os.getenv(
-        "STOCK_ANALYSIS_SQLITE_DIR",
-        "/Users/nareshkalakanti/Documents/stocks/stock-analysis/sqlite",
-    )
+# Prefer project-local copies (data/stock_analysis_sqlite/{NSE,SME,BSE}.db).
+# Fall back to the sibling stock-analysis checkout when present and readable.
+_STOCK_ANALYSIS_SQLITE_LOCAL = DATA_DIR / "stock_analysis_sqlite"
+_STOCK_ANALYSIS_SQLITE_DEFAULT = Path(
+    "/Users/nareshkalakanti/Documents/stocks/stock-analysis/sqlite"
 )
+
+
+def _resolve_stock_analysis_sqlite_dir() -> Path:
+    env = os.getenv("STOCK_ANALYSIS_SQLITE_DIR", "").strip()
+    if env:
+        return Path(env)
+    local = _STOCK_ANALYSIS_SQLITE_LOCAL
+    if (local / "NSE.db").is_file() or (local / "SME.db").is_file():
+        return local
+    return _STOCK_ANALYSIS_SQLITE_DEFAULT
+
+
+STOCK_ANALYSIS_SQLITE_DIR = _resolve_stock_analysis_sqlite_dir()
 
 METRICS_CACHE_HOURS = int(os.getenv("METRICS_CACHE_HOURS", "4"))
 FUNDAMENTALS_CACHE_HOURS = int(os.getenv("FUNDAMENTALS_CACHE_HOURS", "24"))

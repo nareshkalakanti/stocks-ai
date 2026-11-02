@@ -10,6 +10,8 @@ data/dashboard_cache/
 data/nse_xbrl_cache/
 data/napkin/fundamentals/*.json
 data/napkin/prices/
+# Optional local copies of stock-analysis classification DBs (NSE.db / SME.db / BSE.db)
+data/stock_analysis_sqlite/*.db
 data/nse_equity_l.csv
 data/nse_sme_equity.csv
 data/nse_surveillance_cache.json

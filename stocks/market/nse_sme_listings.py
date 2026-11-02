@@ -134,8 +134,11 @@ def _listings_from_sme_sqlite() -> pd.DataFrame:
         FROM stocks
         WHERE nse_code IS NOT NULL AND TRIM(nse_code) != ''
     """
-    with sqlite3.connect(path) as conn:
-        df = pd.read_sql(query, conn)
+    try:
+        with sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True) as conn:
+            df = pd.read_sql(query, conn)
+    except (OSError, sqlite3.Error):
+        return pd.DataFrame()
     if df.empty:
         return pd.DataFrame()
     df["ticker"] = df["ticker"].map(lambda x: safe_str(x).upper())

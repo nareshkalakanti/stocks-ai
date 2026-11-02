@@ -204,9 +204,13 @@ def load_india_stocks(*, force_refresh: bool = False) -> pd.DataFrame:
         )
         cached = load_stocks_from_db()
         if not cached.empty:
-            return _sync_holdings_listings(
-                _finalize_stocks(_with_nse_listings(cached, force_fetch=True))
-            )
+            # Avoid re-running the same failing enrichment path; serve cached rows.
+            try:
+                return _sync_holdings_listings(
+                    apply_display_sector_mapping(apply_stock_overrides(cached))
+                )
+            except Exception:
+                return _sync_holdings_listings(cached)
         raise
 
 
